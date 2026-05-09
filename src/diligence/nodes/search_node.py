@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import sys
 
 import structlog
@@ -43,7 +44,7 @@ async def search_node(state: DiligenceState) -> dict:
                 failed_queries += 1
                 log.warning("search_timeout", dimension=dim.id, query=query)
                 sys.stderr.write(f"  [{dim.name}] search timeout: {query}\n")
-            except (OSError, ValueError) as exc:
+            except (OSError, ValueError, RuntimeError, json.JSONDecodeError) as exc:
                 failed_queries += 1
                 log.warning("search_error", dimension=dim.id, query=query, error=str(exc))
                 sys.stderr.write(f"  [{dim.name}] search error: {query} -- {exc}\n")
