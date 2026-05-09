@@ -52,7 +52,9 @@ dimensions:
     search_queries:
       - "{target} 工商注册信息"
       - "{target} 统一社会信用代码"
-      - "{target} 注册资本 法定代表人"
+      - "{target} 注册资本"
+      - "{target} 法定代表人"
+      - "{target} 工商年报"
     summary_prompt: |
       请从以下搜索结果中提取"{target}"的工商基本信息。
 
@@ -73,6 +75,8 @@ dimensions:
     search_queries:
       - "{target} 所属行业"
       - "{target} 主营业务 产品"
+      - "{target} 经营范围"
+      - "{target} 行业资质"
     summary_prompt: |
       请从以下搜索结果中提取"{target}"的行业与细分信息，包括所属行业、细分赛道、主营业务。
       搜索结果：
@@ -86,6 +90,7 @@ dimensions:
     search_queries:
       - "{target} 员工人数 规模"
       - "{target} 参保人数"
+      - "{target} 股东信息"
     summary_prompt: |
       请从以下搜索结果中提取"{target}"的员工规模信息。
       搜索结果：
@@ -99,6 +104,8 @@ dimensions:
     search_queries:
       - "{target} 企业性质 民营 国有 外资"
       - "{target} 股权结构"
+      - "{target} 行政处罚"
+      - "{target} 招投标"
     summary_prompt: |
       请从以下搜索结果中分析"{target}"的企业背景，包括民营/国有/外资/合资/上市类型。
       搜索结果：
@@ -111,8 +118,10 @@ dimensions:
     required: false
     search_queries:
       - "{target} 高新技术企业"
-      - "{target} 专精特新 小巨人"
+      - "{target} 专精特新"
+      - "{target} 小巨人"
       - "{target} 双软认证"
+      - "{target} 质量管理体系认证"
     summary_prompt: |
       请从以下搜索结果中提取"{target}"的科技属性资质。
       搜索结果：
@@ -124,7 +133,8 @@ dimensions:
     enabled: true
     required: false
     search_queries:
-      - "{target} 发明专利 实用新型"
+      - "{target} 专利"
+      - "{target} 商标"
       - "{target} 软件著作权"
     summary_prompt: |
       请从以下搜索结果中提取"{target}"的知识产权信息。
@@ -137,6 +147,7 @@ dimensions:
     enabled: true
     required: false
     search_queries:
+      - "{target} 产品"
       - "{target} 产品 核心竞争力"
       - "{target} 客户 市场定位"
     summary_prompt: |
@@ -150,7 +161,8 @@ dimensions:
     enabled: true
     required: false
     search_queries:
-      - "{target} 上市 股票代码"
+      - "{target} 上市"
+      - "{target} 股票代码"
       - "{target} 拟上市 辅导备案"
     summary_prompt: |
       请从以下搜索结果中提取"{target}"的上市情况。
