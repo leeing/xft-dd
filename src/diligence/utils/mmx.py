@@ -29,12 +29,16 @@ async def run_mmx_search(
     timeout: int = 30,
     max_results: int = 10,
 ) -> list[SearchItem]:
-    """Run `mmx search <query>` as subprocess with MINIMAX_* env vars removed."""
+    """Run `mmx search query --q <query> --output json` with MINIMAX_* env vars removed."""
     env = {k: v for k, v in _env.items() if not k.startswith("MINIMAX_")}
     proc = await asyncio.create_subprocess_exec(
         "mmx",
         "search",
+        "query",
+        "--q",
         query,
+        "--output",
+        "json",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         env=env,
