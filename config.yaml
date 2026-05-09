@@ -3,7 +3,7 @@ schema_version: "1.0"
 target: ""
 dimension_concurrency: 5
 query_concurrency_per_dimension: 2
-search_timeout_seconds: 30
+search_timeout_seconds: 60
 max_results_per_query: 10
 model: "MiniMax-M2.7-Highspeed"
 output_language: "zh-CN"

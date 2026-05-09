@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 from datetime import UTC, datetime
 
@@ -31,6 +32,17 @@ class _AISummaryOutput(BaseModel):
     confidence: str
     uncertain_facts: list[str]
     evidence_item_ids: list[str]
+
+
+_THINK_TAG_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
+_JSON_OBJECT_RE = re.compile(r"\{.*\}", re.DOTALL)
+
+
+def _extract_json(raw: str) -> str:
+    """Strip <think>...</think> blocks then extract the outermost JSON object."""
+    cleaned = _THINK_TAG_RE.sub("", raw).strip()
+    m = _JSON_OBJECT_RE.search(cleaned)
+    return m.group(0) if m else cleaned
 
 
 def get_ai_client() -> OpenAI:
@@ -103,7 +115,7 @@ async def summarize_node(state: DiligenceState) -> dict:
             messages=[{"role": "user", "content": prompt}],
         )
         raw_content = response.choices[0].message.content or ""
-        parsed = _AISummaryOutput.model_validate_json(raw_content)
+        parsed = _AISummaryOutput.model_validate_json(_extract_json(raw_content))
 
         valid_ids = {item.id for item in dsr.items}
         invalid_ids = [eid for eid in parsed.evidence_item_ids if eid not in valid_ids]
