@@ -105,7 +105,11 @@ class _BatchRunContext:
 
 
 def _init_batch_dir(  # noqa: PLR0913
-    targets: list[str], config: AppConfig, *, resume: bool, batch_dir: str | None,
+    targets: list[str],
+    config: AppConfig,
+    *,
+    resume: bool,
+    batch_dir: str | None,
 ) -> _BatchRunContext:
     """Resolve or create batch directory; validate resume consistency."""
     batch_cfg = config.batch
@@ -115,19 +119,18 @@ def _init_batch_dir(  # noqa: PLR0913
         current_map = {i + 1: t for i, t in enumerate(targets)}
         if current_map != stored.index_target_map:
             sys.stderr.write(
-                "error: input file does not match original batch. "
-                "Use original input file or remove --resume.\n"
+                "error: input file does not match original batch. Use original input file or remove --resume.\n"
             )
             msg = "batch mismatch"
             raise ValueError(msg)
-        return _BatchRunContext(bd=bd, batch_id=stored.batch_id, targets=targets,
-                               config=config, resume=resume, batch_dir=batch_dir)
+        return _BatchRunContext(
+            bd=bd, batch_id=stored.batch_id, targets=targets, config=config, resume=resume, batch_dir=batch_dir
+        )
 
     batch_id = _make_batch_id()
     bd = Path(batch_cfg.batch_runs_dir) / batch_id
     bd.mkdir(parents=True, exist_ok=True)
-    return _BatchRunContext(bd=bd, batch_id=batch_id, targets=targets,
-                            config=config, resume=resume, batch_dir=None)
+    return _BatchRunContext(bd=bd, batch_id=batch_id, targets=targets, config=config, resume=resume, batch_dir=None)
 
 
 def _write_summary(  # noqa: PLR0913
@@ -150,49 +153,65 @@ def _write_summary(  # noqa: PLR0913
         input_file=input_file,
         index_target_map={i + 1: t for i, t in enumerate(targets)},
         total=len(targets),
-        success=success, partial=partial, failed=failed, skipped=skipped,
-        started_at=started_at, finished_at=datetime.now(UTC), config_path=config_path,
+        success=success,
+        partial=partial,
+        failed=failed,
+        skipped=skipped,
+        started_at=started_at,
+        finished_at=datetime.now(UTC),
+        config_path=config_path,
     )
     (bd / "batch_meta.json").write_text(meta.model_dump_json(indent=2), encoding="utf-8")
 
     csv_path = bd / "batch_summary.csv"
     with csv_path.open("w", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(fh, fieldnames=[
-            "index", "target", "status", "run_id", "report_path",
-            "required_failed", "failed_dimensions", "error",
-        ])
+        writer = csv.DictWriter(
+            fh,
+            fieldnames=[
+                "index",
+                "target",
+                "status",
+                "run_id",
+                "report_path",
+                "required_failed",
+                "failed_dimensions",
+                "error",
+            ],
+        )
         writer.writeheader()
         for r in results:
-            writer.writerow({
-                "index": r.index, "target": r.target, "status": r.status,
-                "run_id": r.run_id or "", "report_path": r.report_path or "",
-                "required_failed": r.required_failed,
-                "failed_dimensions": ",".join(r.failed_dimensions),
-                "error": r.error or "",
-            })
+            writer.writerow(
+                {
+                    "index": r.index,
+                    "target": r.target,
+                    "status": r.status,
+                    "run_id": r.run_id or "",
+                    "report_path": r.report_path or "",
+                    "required_failed": r.required_failed,
+                    "failed_dimensions": ",".join(r.failed_dimensions),
+                    "error": r.error or "",
+                }
+            )
 
     md_lines = [
         "# Batch Due Diligence Summary",
         f"\n> Batch ID: {batch_id}",
-        f"> Total: {len(targets)} | Success: {success} | Partial: {partial} "
-        f"| Failed: {failed} | Skipped: {skipped}",
+        f"> Total: {len(targets)} | Success: {success} | Partial: {partial} | Failed: {failed} | Skipped: {skipped}",
         "\n## Company List",
         "\n| # | Company | Status | Required Failed | Report |",
         "|---|---------|--------|----------------|--------|",
     ]
     for r in results:
         report = r.report_path or "--"
-        md_lines.append(
-            f"| {r.index} | {r.target} | {r.status} | {'yes' if r.required_failed else 'no'} | {report} |"
-        )
+        md_lines.append(f"| {r.index} | {r.target} | {r.status} | {'yes' if r.required_failed else 'no'} | {report} |")
     (bd / "batch_summary.md").write_text("\n".join(md_lines), encoding="utf-8")
 
     errors_data = [
-        {"index": r.index, "target": r.target, "error": r.error}
-        for r in results if r.status == "failed" and r.error
+        {"index": r.index, "target": r.target, "error": r.error} for r in results if r.status == "failed" and r.error
     ]
     (bd / "batch_errors.json").write_text(
-        json.dumps(errors_data, ensure_ascii=False, indent=2), encoding="utf-8",
+        json.dumps(errors_data, ensure_ascii=False, indent=2),
+        encoding="utf-8",
     )
 
     sys.stderr.write("--\n")
@@ -265,7 +284,9 @@ async def _process_one(  # noqa: PLR0913
     async with semaphore:
         try:
             result = await run_company_graph(
-                target=target, config=config, output_dir=str(company_dir),
+                target=target,
+                config=config,
+                output_dir=str(company_dir),
             )
             return result.model_copy(update={"index": idx})
         except (RuntimeError, ValueError, OSError) as exc:
@@ -331,14 +352,23 @@ async def run_batch(  # noqa: PLR0913
     started_at = datetime.now(UTC)
     semaphore = asyncio.Semaphore(batch_cfg.company_concurrency)
 
-    results = list(await asyncio.gather(*[
-        _process_one(
-            idx=i + 1, target=t, total=len(targets),
-            companies_dir=companies_dir, semaphore=semaphore,
-            config=config, resume=resume, batch_dir=batch_dir,
+    results = list(
+        await asyncio.gather(
+            *[
+                _process_one(
+                    idx=i + 1,
+                    target=t,
+                    total=len(targets),
+                    companies_dir=companies_dir,
+                    semaphore=semaphore,
+                    config=config,
+                    resume=resume,
+                    batch_dir=batch_dir,
+                )
+                for i, t in enumerate(targets)
+            ]
         )
-        for i, t in enumerate(targets)
-    ]))
+    )
 
     _write_summary(ctx.bd, ctx.batch_id, results, targets, started_at, config_path, input_file)
     return _exit_code(results)

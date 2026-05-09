@@ -38,17 +38,13 @@ async def merge_node(state: DiligenceState) -> dict:
     errors: list[RunError] = []
 
     required_failed = [
-        d for d in active_dims
-        if d.required and (d.id not in summaries or summaries[d.id].status == "failed")
+        d for d in active_dims if d.required and (d.id not in summaries or summaries[d.id].status == "failed")
     ]
 
     formatted = _format_summaries(summaries, active_ids)
     prompt = config.merge_prompt.replace("{target}", target).replace("{summaries}", formatted)
 
-    report_lines: list[str] = [
-        f"WARNING: required dimension [{dim.name}] failed\n"
-        for dim in required_failed
-    ]
+    report_lines: list[str] = [f"WARNING: required dimension [{dim.name}] failed\n" for dim in required_failed]
 
     try:
         client = get_ai_client()
@@ -58,11 +54,13 @@ async def merge_node(state: DiligenceState) -> dict:
         )
         report_body = response.choices[0].message.content or ""
     except OpenAIError as exc:
-        errors.append(RunError(
-            stage="merge",
-            message=f"AI report generation failed: {exc}",
-            timestamp=datetime.now(UTC),
-        ))
+        errors.append(
+            RunError(
+                stage="merge",
+                message=f"AI report generation failed: {exc}",
+                timestamp=datetime.now(UTC),
+            )
+        )
         report_body = formatted
         log.warning("merge_fallback", error=str(exc))
 

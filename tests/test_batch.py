@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import csv
-import json
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
 from unittest.mock import patch
 
@@ -19,8 +17,11 @@ def _make_cfg(batch_runs_dir: str = "batch_runs") -> AppConfig:
         merge_prompt="综合{summaries}生成{target}的报告",
         dimensions=[
             Dimension(
-                id="basic_info", name="工商基本信息", order=10,
-                enabled=True, required=True,
+                id="basic_info",
+                name="工商基本信息",
+                order=10,
+                enabled=True,
+                required=True,
                 search_queries=["{target} 工商注册"],
                 summary_prompt="分析{target}\n{results}",
             )
@@ -35,13 +36,21 @@ def _cfg_file(tmp_path: Path, batch_runs_dir: str) -> Path:
         "model": "MiniMax-M2.7-Highspeed",
         "merge_prompt": "x",
         "dimensions": [
-            {"id": "basic_info", "name": "工商基本信息", "order": 10,
-             "enabled": True, "required": True,
-             "search_queries": ["q"], "summary_prompt": "p\n{results}"},
+            {
+                "id": "basic_info",
+                "name": "工商基本信息",
+                "order": 10,
+                "enabled": True,
+                "required": True,
+                "search_queries": ["q"],
+                "summary_prompt": "p\n{results}",
+            },
         ],
         "batch": {
-            "company_concurrency": 1, "continue_on_company_error": True,
-            "skip_existing": True, "batch_runs_dir": batch_runs_dir,
+            "company_concurrency": 1,
+            "continue_on_company_error": True,
+            "skip_existing": True,
+            "batch_runs_dir": batch_runs_dir,
         },
     }
     p = tmp_path / "config.yaml"
@@ -72,7 +81,10 @@ def test_parse_csv_reads_name_column(tmp_path: Path) -> None:
 def test_concurrency_limit_over_50_requires_flag() -> None:
     with pytest.raises(SystemExit) as exc:
         _check_concurrency_limit(
-            company_concurrency=2, dimension_concurrency=10, query_concurrency=5, force=False,
+            company_concurrency=2,
+            dimension_concurrency=10,
+            query_concurrency=5,
+            force=False,
         )
     assert exc.value.code == 1
 
@@ -80,13 +92,19 @@ def test_concurrency_limit_over_50_requires_flag() -> None:
 def test_concurrency_limit_over_50_with_flag_ok() -> None:
     # must not raise
     _check_concurrency_limit(
-        company_concurrency=2, dimension_concurrency=10, query_concurrency=5, force=True,
+        company_concurrency=2,
+        dimension_concurrency=10,
+        query_concurrency=5,
+        force=True,
     )
 
 
 def test_concurrency_limit_warns_over_30(capsys: pytest.CaptureFixture) -> None:
     _check_concurrency_limit(
-        company_concurrency=1, dimension_concurrency=10, query_concurrency=4, force=False,
+        company_concurrency=1,
+        dimension_concurrency=10,
+        query_concurrency=4,
+        force=False,
     )
     assert "warning" in capsys.readouterr().err.lower() or "⚠️" in capsys.readouterr().err
 
@@ -106,6 +124,7 @@ async def test_batch_company_failure_does_not_stop_others(tmp_path: Path) -> Non
         nonlocal call_count
         call_count += 1
         from diligence.models import CompanyRunResult
+
         if target == "公司A":
             msg = "公司A down"
             raise RuntimeError(msg)
@@ -113,10 +132,17 @@ async def test_batch_company_failure_does_not_stop_others(tmp_path: Path) -> Non
 
     with patch("diligence.batch.run_company_graph", side_effect=fake_run):
         await run_batch(
-            input_file=str(f), config=cfg, config_path=cfg_path,
-            only=None, skip=None, dry_run=False,
-            resume=False, batch_dir=None,
-            force_high_concurrency=True, verbose=False, name_column="name",
+            input_file=str(f),
+            config=cfg,
+            config_path=cfg_path,
+            only=None,
+            skip=None,
+            dry_run=False,
+            resume=False,
+            batch_dir=None,
+            force_high_concurrency=True,
+            verbose=False,
+            name_column="name",
         )
 
     assert call_count == 2
@@ -140,17 +166,28 @@ async def test_batch_resume_skips_completed(tmp_path: Path) -> None:
     company_dir = bd / "companies" / f"001-{hash_a}"
     company_dir.mkdir(parents=True, exist_ok=True)
     (company_dir / "final_report.md").write_text("existing report")
-    (company_dir / "run_meta.json").write_text(RunMeta(
-        run_id="r", target="公司A",
-        started_at=datetime.now(timezone.utc), finished_at=datetime.now(timezone.utc),
-        status="success", config_path="c", active_dimensions=["basic_info"],
-    ).model_dump_json())
+    (company_dir / "run_meta.json").write_text(
+        RunMeta(
+            run_id="r",
+            target="公司A",
+            started_at=datetime.now(UTC),
+            finished_at=datetime.now(UTC),
+            status="success",
+            config_path="c",
+            active_dimensions=["basic_info"],
+        ).model_dump_json()
+    )
 
     bm = BatchRunMeta(
         batch_id="existing_batch",
         index_target_map={1: "公司A", 2: "公司B"},
-        total=2, success=1, partial=0, failed=0, skipped=0,
-        started_at=datetime.now(timezone.utc), config_path="c",
+        total=2,
+        success=1,
+        partial=0,
+        failed=0,
+        skipped=0,
+        started_at=datetime.now(UTC),
+        config_path="c",
     )
     bd.mkdir(parents=True, exist_ok=True)
     (bd / "batch_meta.json").write_text(bm.model_dump_json())
@@ -160,14 +197,22 @@ async def test_batch_resume_skips_completed(tmp_path: Path) -> None:
     async def fake_run(target, config, output_dir):
         call_targets.append(target)
         from diligence.models import CompanyRunResult
+
         return CompanyRunResult(index=0, target=target, status="success", run_id="r")
 
     with patch("diligence.batch.run_company_graph", side_effect=fake_run):
         await run_batch(
-            input_file=str(f), config=cfg, config_path=cfg_path,
-            only=None, skip=None, dry_run=False,
-            resume=True, batch_dir=str(bd),
-            force_high_concurrency=True, verbose=False, name_column="name",
+            input_file=str(f),
+            config=cfg,
+            config_path=cfg_path,
+            only=None,
+            skip=None,
+            dry_run=False,
+            resume=True,
+            batch_dir=str(bd),
+            force_high_concurrency=True,
+            verbose=False,
+            name_column="name",
         )
 
     assert "公司A" not in call_targets
@@ -187,18 +232,30 @@ async def test_batch_resume_mismatch_exits(tmp_path: Path) -> None:
     bm = BatchRunMeta(
         batch_id="existing",
         index_target_map={1: "公司A", 2: "公司B"},
-        total=2, success=1, partial=0, failed=0, skipped=0,
-        started_at=datetime.now(timezone.utc), config_path="c",
+        total=2,
+        success=1,
+        partial=0,
+        failed=0,
+        skipped=0,
+        started_at=datetime.now(UTC),
+        config_path="c",
     )
     bd = batch_runs / "existing"
     bd.mkdir(parents=True, exist_ok=True)
     (bd / "batch_meta.json").write_text(bm.model_dump_json())
 
     exit_code = await run_batch(
-        input_file=str(f), config=cfg, config_path=cfg_path,
-        only=None, skip=None, dry_run=False,
-        resume=True, batch_dir=str(bd),
-        force_high_concurrency=True, verbose=False, name_column="name",
+        input_file=str(f),
+        config=cfg,
+        config_path=cfg_path,
+        only=None,
+        skip=None,
+        dry_run=False,
+        resume=True,
+        batch_dir=str(bd),
+        force_high_concurrency=True,
+        verbose=False,
+        name_column="name",
     )
     assert exit_code == 1
 
@@ -214,14 +271,22 @@ async def test_batch_produces_summary_files(tmp_path: Path) -> None:
 
     async def fake_run(target, config, output_dir):
         from diligence.models import CompanyRunResult
+
         return CompanyRunResult(index=0, target=target, status="success", run_id="r")
 
     with patch("diligence.batch.run_company_graph", side_effect=fake_run):
         await run_batch(
-            input_file=str(f), config=cfg, config_path=cfg_path,
-            only=None, skip=None, dry_run=False,
-            resume=False, batch_dir=None,
-            force_high_concurrency=True, verbose=False, name_column="name",
+            input_file=str(f),
+            config=cfg,
+            config_path=cfg_path,
+            only=None,
+            skip=None,
+            dry_run=False,
+            resume=False,
+            batch_dir=None,
+            force_high_concurrency=True,
+            verbose=False,
+            name_column="name",
         )
 
     batch_dirs = list(batch_runs.iterdir())
@@ -244,10 +309,17 @@ async def test_batch_dry_run_no_external_calls(tmp_path: Path) -> None:
     with patch("asyncio.create_subprocess_exec") as mock_exec:
         with patch("diligence.batch.run_company_graph") as mock_run:
             exit_code = await run_batch(
-                input_file=str(f), config=cfg, config_path=cfg_path,
-                only=None, skip=None, dry_run=True,
-                resume=False, batch_dir=None,
-                force_high_concurrency=True, verbose=False, name_column="name",
+                input_file=str(f),
+                config=cfg,
+                config_path=cfg_path,
+                only=None,
+                skip=None,
+                dry_run=True,
+                resume=False,
+                batch_dir=None,
+                force_high_concurrency=True,
+                verbose=False,
+                name_column="name",
             )
 
     mock_exec.assert_not_called()

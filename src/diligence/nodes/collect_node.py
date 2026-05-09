@@ -36,12 +36,14 @@ def collect_node(state: DiligenceState) -> dict:
         if dim.required:
             s: DimensionSummary | None = summaries.get(dim.id)
             if s is None or s.status == "failed":
-                errors.append(RunError(
-                    dimension_id=dim.id,
-                    stage=_COLLECT_STAGE,
-                    message=f"核心维度 [{dim.name}] failed, required dimension failure",
-                    timestamp=datetime.now(UTC),
-                ))
+                errors.append(
+                    RunError(
+                        dimension_id=dim.id,
+                        stage=_COLLECT_STAGE,
+                        message=f"核心维度 [{dim.name}] failed, required dimension failure",
+                        timestamp=datetime.now(UTC),
+                    )
+                )
                 log.warning("required_dimension_failed", dimension=dim.id)
 
     return {"errors": errors}

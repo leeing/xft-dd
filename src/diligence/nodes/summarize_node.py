@@ -93,10 +93,7 @@ async def summarize_node(state: DiligenceState) -> dict:
     max_sources = config.report_options.max_sources_per_dimension
 
     rendered = _render_results(dsr)
-    prompt = (
-        dim.summary_prompt.replace("{target}", target).replace("{results}", rendered)
-        + JSON_FORMAT_INSTRUCTION
-    )
+    prompt = dim.summary_prompt.replace("{target}", target).replace("{results}", rendered) + JSON_FORMAT_INSTRUCTION
 
     errors: list[RunError] = []
     try:
@@ -131,12 +128,14 @@ async def summarize_node(state: DiligenceState) -> dict:
         sys.stderr.write(f"  [{dim.name}] summary done, confidence={final_confidence}\n")
 
     except (json.JSONDecodeError, ValidationError, OpenAIError) as exc:
-        errors.append(RunError(
-            dimension_id=dim.id,
-            stage="summarize",
-            message=f"JSON parse failed: {exc}",
-            timestamp=datetime.now(UTC),
-        ))
+        errors.append(
+            RunError(
+                dimension_id=dim.id,
+                stage="summarize",
+                message=f"JSON parse failed: {exc}",
+                timestamp=datetime.now(UTC),
+            )
+        )
         summary = _fallback_summary(dsr, max_sources)
         log.warning("summarize_fallback", dimension=dim.id, error=str(exc))
         sys.stderr.write(f"  [{dim.name}] summary parse failed, using raw snippets\n")
