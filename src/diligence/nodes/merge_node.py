@@ -10,7 +10,7 @@ from openai import OpenAIError
 
 from diligence.config import AppConfig
 from diligence.models import DimensionSummary, RunError
-from diligence.nodes.summarize_node import get_ai_client
+from diligence.nodes.summarize_node import _THINK_TAG_RE, get_ai_client
 from diligence.state import DiligenceState
 
 log = structlog.get_logger(__name__)
@@ -52,7 +52,7 @@ async def merge_node(state: DiligenceState) -> dict:
             model=config.model,
             messages=[{"role": "user", "content": prompt}],
         )
-        report_body = response.choices[0].message.content or ""
+        report_body = _THINK_TAG_RE.sub("", response.choices[0].message.content or "").strip()
     except OpenAIError as exc:
         errors.append(
             RunError(
