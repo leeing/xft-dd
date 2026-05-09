@@ -48,9 +48,16 @@ async def merge_node(state: DiligenceState) -> dict:
 
     try:
         client = get_ai_client()
+        system_msg = (
+            "你是一个中国制造业行业顶级专家，对制造业行业有深刻理解，"
+            "善于综合多维度信息给出精准的企业尽调结论。"
+        )
         response = client.chat.completions.create(
             model=config.model,
-            messages=[{"role": "user", "content": prompt}],
+            messages=[
+                {"role": "system", "content": system_msg},
+                {"role": "user", "content": prompt},
+            ],
         )
         report_body = _THINK_TAG_RE.sub("", response.choices[0].message.content or "").strip()
     except OpenAIError as exc:

@@ -110,9 +110,16 @@ async def summarize_node(state: DiligenceState) -> dict:
     errors: list[RunError] = []
     try:
         client = get_ai_client()
+        system_msg = (
+            "你是中国制造业企业尽调专家，擅长从网络搜索结果中提取和分析企业信息，"
+            "对信息的可信度和来源有严格的判断标准。"
+        )
         response = client.chat.completions.create(
             model=config.model,
-            messages=[{"role": "user", "content": prompt}],
+            messages=[
+                {"role": "system", "content": system_msg},
+                {"role": "user", "content": prompt},
+            ],
         )
         raw_content = response.choices[0].message.content or ""
         parsed = _AISummaryOutput.model_validate_json(_extract_json(raw_content))
