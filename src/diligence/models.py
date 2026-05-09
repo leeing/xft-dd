@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 def make_item_id(*, url: str | None, title: str, snippet: str) -> str:
     """Stable 12-char sha1 ID: prefer URL, fallback to title+snippet concatenation."""
     key = url if url else (title + snippet)
-    return hashlib.sha1(key.encode()).hexdigest()[:12]
+    return hashlib.sha1(key.encode(), usedforsecurity=False).hexdigest()[:12]
 
 
 class SearchItem(BaseModel):
@@ -60,8 +60,15 @@ class RunError(BaseModel):
 
     dimension_id: str | None = None
     stage: Literal[
-        "config", "input", "init", "search", "summarize",
-        "collect", "merge", "save", "batch",
+        "config",
+        "input",
+        "init",
+        "search",
+        "summarize",
+        "collect",
+        "merge",
+        "save",
+        "batch",
     ]
     message: str
     timestamp: datetime

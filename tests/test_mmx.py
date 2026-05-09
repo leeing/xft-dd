@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -25,18 +25,20 @@ def _make_item(
         snippet=snippet,
         query=query,
         dimension_id=dim_id,
-        fetched_at=datetime.now(timezone.utc),
+        fetched_at=datetime.now(UTC),
     )
 
 
 @pytest.fixture()
 def mock_mmx_success():
-    mmx_output = json.dumps({
-        "organic": [
-            {"title": "企业A - 企查查", "link": "https://qcc.com/1", "snippet": "注册资本100万"},
-            {"title": "企业A - 天眼查", "link": "https://tianyancha.com/1", "snippet": "法人张三"},
-        ],
-    }).encode()
+    mmx_output = json.dumps(
+        {
+            "organic": [
+                {"title": "企业A - 企查查", "link": "https://qcc.com/1", "snippet": "注册资本100万"},
+                {"title": "企业A - 天眼查", "link": "https://tianyancha.com/1", "snippet": "法人张三"},
+            ],
+        }
+    ).encode()
 
     async def fake_exec(*args, **kwargs):
         proc = MagicMock()

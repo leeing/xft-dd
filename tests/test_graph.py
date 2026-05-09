@@ -5,8 +5,6 @@ import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from diligence.config import AppConfig, Dimension
 
 
@@ -35,15 +33,21 @@ async def test_run_company_graph_produces_artifacts(tmp_path: Path) -> None:
     cfg = _make_cfg()
     output_dir = str(tmp_path / "run_001")
 
-    mmx_output = json.dumps({"organic": [
-        {"title": "A", "link": "https://qcc.com/1", "snippet": "注册资本100万"},
-    ]}).encode()
-    ai_summary = json.dumps({
-        "summary": "某公司成立于2020年",
-        "confidence": "中",
-        "uncertain_facts": [],
-        "evidence_item_ids": [],
-    })
+    mmx_output = json.dumps(
+        {
+            "organic": [
+                {"title": "A", "link": "https://qcc.com/1", "snippet": "注册资本100万"},
+            ]
+        }
+    ).encode()
+    ai_summary = json.dumps(
+        {
+            "summary": "某公司成立于2020年",
+            "confidence": "中",
+            "uncertain_facts": [],
+            "evidence_item_ids": [],
+        }
+    )
     ai_report = "# 企业尽调报告：某公司\n\n## 一、工商基本信息\n**可信度：中**\n某公司成立于2020年"
 
     async def fake_exec(*args, **kwargs):
@@ -52,10 +56,12 @@ async def test_run_company_graph_produces_artifacts(tmp_path: Path) -> None:
         return proc
 
     mock_client = MagicMock()
-    mock_client.chat.completions.create = MagicMock(side_effect=[
-        MagicMock(choices=[MagicMock(message=MagicMock(content=ai_summary))]),
-        MagicMock(choices=[MagicMock(message=MagicMock(content=ai_report))]),
-    ])
+    mock_client.chat.completions.create = MagicMock(
+        side_effect=[
+            MagicMock(choices=[MagicMock(message=MagicMock(content=ai_summary))]),
+            MagicMock(choices=[MagicMock(message=MagicMock(content=ai_report))]),
+        ]
+    )
 
     with patch("asyncio.create_subprocess_exec", side_effect=fake_exec):
         with patch("diligence.nodes.summarize_node.get_ai_client", return_value=mock_client):
@@ -76,16 +82,17 @@ async def test_run_company_graph_run_id_unique(tmp_path: Path) -> None:
 
     cfg = _make_cfg()
     mmx_output = json.dumps({"organic": []}).encode()
-    ai_output = json.dumps({"summary": "s", "confidence": "待核实",
-                             "uncertain_facts": [], "evidence_item_ids": []})
+    ai_output = json.dumps({"summary": "s", "confidence": "待核实", "uncertain_facts": [], "evidence_item_ids": []})
     ai_report = "报告内容"
 
     def make_mock() -> MagicMock:
         m = MagicMock()
-        m.chat.completions.create = MagicMock(side_effect=[
-            MagicMock(choices=[MagicMock(message=MagicMock(content=ai_output))]),
-            MagicMock(choices=[MagicMock(message=MagicMock(content=ai_report))]),
-        ])
+        m.chat.completions.create = MagicMock(
+            side_effect=[
+                MagicMock(choices=[MagicMock(message=MagicMock(content=ai_output))]),
+                MagicMock(choices=[MagicMock(message=MagicMock(content=ai_report))]),
+            ]
+        )
         return m
 
     async def fake_exec(*args, **kwargs):
@@ -114,14 +121,16 @@ async def test_run_company_graph_required_fail_sets_flag(tmp_path: Path) -> None
 
     async def failing_exec(*args, **kwargs):
         proc = MagicMock()
+
         async def boom():
-            raise RuntimeError("mmx down")
+            msg = "mmx down"
+            raise RuntimeError(msg)
+
         proc.communicate = boom
         return proc
 
     ai_report = "报告内容"
-    ai_fallback = json.dumps({"summary": "s", "confidence": "待核实",
-                               "uncertain_facts": [], "evidence_item_ids": []})
+    ai_fallback = json.dumps({"summary": "s", "confidence": "待核实", "uncertain_facts": [], "evidence_item_ids": []})
 
     mock_sum = MagicMock()
     mock_sum.chat.completions.create = MagicMock(

@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from diligence.models import (
     BatchRunMeta,
     CompanyRunResult,
     DimensionSearchResult,
     RunMeta,
-    SearchItem,
     make_item_id,
 )
 
@@ -46,7 +45,7 @@ def test_run_meta_defaults() -> None:
     rm = RunMeta(
         run_id="20260509-120000-abc123",
         target="某公司",
-        started_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
         status="success",
         config_path="config.yaml",
         active_dimensions=["basic_info"],
@@ -70,7 +69,7 @@ def test_batch_run_meta_index_target_map() -> None:
         partial=0,
         failed=1,
         skipped=0,
-        started_at=datetime.now(timezone.utc),
+        started_at=datetime.now(UTC),
         config_path="config.yaml",
     )
     assert bm.index_target_map[1] == "公司A"

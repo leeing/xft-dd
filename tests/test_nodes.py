@@ -2,17 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
 
 from diligence.config import AppConfig, Dimension
 from diligence.models import (
     DimensionSearchResult,
     DimensionSummary,
-    RunError,
     SearchItem,
     make_item_id,
 )
@@ -56,7 +53,7 @@ def _make_search_result(
                 query="q",
                 dimension_id=dim_id,
                 rank=i,
-                fetched_at=datetime.now(timezone.utc),
+                fetched_at=datetime.now(UTC),
             )
         )
     return DimensionSearchResult(
@@ -87,13 +84,18 @@ def _base_state(cfg: AppConfig, tmp_path: Path) -> DiligenceState:
 
 # -- search_node --
 
+
 async def test_search_node_success(tmp_path: Path) -> None:
     from diligence.nodes.search_node import search_node
 
     cfg = _make_cfg()
-    mmx_output = json.dumps({"organic": [
-        {"title": "A", "link": "https://qcc.com/1", "snippet": "注册资本"},
-    ]}).encode()
+    mmx_output = json.dumps(
+        {
+            "organic": [
+                {"title": "A", "link": "https://qcc.com/1", "snippet": "注册资本"},
+            ]
+        }
+    ).encode()
 
     async def fake_exec(*args, **kwargs):
         proc = MagicMock()
@@ -135,13 +137,18 @@ async def test_search_node_timeout_produces_partial(tmp_path: Path) -> None:
         call_count += 1
         proc = MagicMock()
         if call_count == 1:
-            proc.communicate = AsyncMock(return_value=(
-                json.dumps({"organic": [{"title": "T", "link": "https://a.com", "snippet": "s"}]}).encode(), b"",
-            ))
+            proc.communicate = AsyncMock(
+                return_value=(
+                    json.dumps({"organic": [{"title": "T", "link": "https://a.com", "snippet": "s"}]}).encode(),
+                    b"",
+                )
+            )
         else:
+
             async def slow():
                 await asyncio.sleep(999)
                 return (b"", b"")
+
             proc.communicate = slow
         return proc
 
@@ -156,17 +163,20 @@ async def test_search_node_timeout_produces_partial(tmp_path: Path) -> None:
 
 # -- summarize_node --
 
+
 async def test_summarize_node_success(tmp_path: Path) -> None:
     from diligence.nodes.summarize_node import summarize_node
 
     cfg = _make_cfg()
     dsr = _make_search_result()
-    ai_response = json.dumps({
-        "summary": "某公司成立于2010年",
-        "confidence": "中",
-        "uncertain_facts": [],
-        "evidence_item_ids": [dsr.items[0].id],
-    })
+    ai_response = json.dumps(
+        {
+            "summary": "某公司成立于2010年",
+            "confidence": "中",
+            "uncertain_facts": [],
+            "evidence_item_ids": [dsr.items[0].id],
+        }
+    )
     mock_client = MagicMock()
     mock_client.chat.completions.create = MagicMock(
         return_value=MagicMock(choices=[MagicMock(message=MagicMock(content=ai_response))])
@@ -189,13 +199,19 @@ async def test_summarize_node_zero_results_forces_待核实(tmp_path: Path) -> N
 
     cfg = _make_cfg()
     dsr = DimensionSearchResult(
-        dimension_id="basic_info", dimension_name="工商基本信息",
-        status="success", items=[],
+        dimension_id="basic_info",
+        dimension_name="工商基本信息",
+        status="success",
+        items=[],
     )
-    ai_response = json.dumps({
-        "summary": "无信息", "confidence": "中",
-        "uncertain_facts": [], "evidence_item_ids": [],
-    })
+    ai_response = json.dumps(
+        {
+            "summary": "无信息",
+            "confidence": "中",
+            "uncertain_facts": [],
+            "evidence_item_ids": [],
+        }
+    )
     mock_client = MagicMock()
     mock_client.chat.completions.create = MagicMock(
         return_value=MagicMock(choices=[MagicMock(message=MagicMock(content=ai_response))])
@@ -216,10 +232,14 @@ async def test_summarize_node_one_result_caps_at_低(tmp_path: Path) -> None:
 
     cfg = _make_cfg()
     dsr = _make_search_result(n_items=1)
-    ai_response = json.dumps({
-        "summary": "一条结果", "confidence": "高",
-        "uncertain_facts": [], "evidence_item_ids": [dsr.items[0].id],
-    })
+    ai_response = json.dumps(
+        {
+            "summary": "一条结果",
+            "confidence": "高",
+            "uncertain_facts": [],
+            "evidence_item_ids": [dsr.items[0].id],
+        }
+    )
     mock_client = MagicMock()
     mock_client.chat.completions.create = MagicMock(
         return_value=MagicMock(choices=[MagicMock(message=MagicMock(content=ai_response))])
@@ -266,15 +286,21 @@ async def test_summarize_node_fallback_truncates_at_1500(tmp_path: Path) -> None
     items = [
         SearchItem(
             id=make_item_id(url=f"https://example.com/{i}", title=f"t{i}", snippet=long_snippet),
-            title=f"t{i}", url=f"https://example.com/{i}", snippet=long_snippet,
-            query="q", dimension_id="basic_info", rank=i,
-            fetched_at=datetime.now(timezone.utc),
+            title=f"t{i}",
+            url=f"https://example.com/{i}",
+            snippet=long_snippet,
+            query="q",
+            dimension_id="basic_info",
+            rank=i,
+            fetched_at=datetime.now(UTC),
         )
         for i in range(4)
     ]
     dsr = DimensionSearchResult(
-        dimension_id="basic_info", dimension_name="工商基本信息",
-        status="success", items=items,
+        dimension_id="basic_info",
+        dimension_name="工商基本信息",
+        status="success",
+        items=items,
     )
     mock_client = MagicMock()
     mock_client.chat.completions.create = MagicMock(
@@ -297,11 +323,14 @@ async def test_summarize_node_hallucinated_ids_filtered(tmp_path: Path) -> None:
 
     cfg = _make_cfg()
     dsr = _make_search_result(n_items=2)
-    ai_response = json.dumps({
-        "summary": "摘要", "confidence": "中",
-        "uncertain_facts": [],
-        "evidence_item_ids": [dsr.items[0].id, "hallucinated000"],
-    })
+    ai_response = json.dumps(
+        {
+            "summary": "摘要",
+            "confidence": "中",
+            "uncertain_facts": [],
+            "evidence_item_ids": [dsr.items[0].id, "hallucinated000"],
+        }
+    )
     mock_client = MagicMock()
     mock_client.chat.completions.create = MagicMock(
         return_value=MagicMock(choices=[MagicMock(message=MagicMock(content=ai_response))])
@@ -320,14 +349,19 @@ async def test_summarize_node_hallucinated_ids_filtered(tmp_path: Path) -> None:
 
 # -- collect_node --
 
+
 async def test_collect_node_all_present(tmp_path: Path) -> None:
     from diligence.nodes.collect_node import collect_node
 
     cfg = _make_cfg()
     summary = DimensionSummary(
-        dimension_id="basic_info", dimension_name="工商基本信息",
-        status="success", summary="ok", confidence="中",
-        uncertain_facts=[], evidence_item_ids=[],
+        dimension_id="basic_info",
+        dimension_name="工商基本信息",
+        status="success",
+        summary="ok",
+        confidence="中",
+        uncertain_facts=[],
+        evidence_item_ids=[],
     )
     state = _base_state(cfg, tmp_path)
     state["summaries_by_dimension"] = {"basic_info": summary}
@@ -342,10 +376,14 @@ async def test_collect_node_required_failed_produces_error(tmp_path: Path) -> No
 
     cfg = _make_cfg()
     failed_summary = DimensionSummary(
-        dimension_id="basic_info", dimension_name="工商基本信息",
-        status="failed", summary="搜索失败，建议人工核查",
-        confidence="待核实", uncertain_facts=["搜索失败"],
-        evidence_item_ids=[], error="all queries failed",
+        dimension_id="basic_info",
+        dimension_name="工商基本信息",
+        status="failed",
+        summary="搜索失败，建议人工核查",
+        confidence="待核实",
+        uncertain_facts=["搜索失败"],
+        evidence_item_ids=[],
+        error="all queries failed",
     )
     state = _base_state(cfg, tmp_path)
     state["summaries_by_dimension"] = {"basic_info": failed_summary}

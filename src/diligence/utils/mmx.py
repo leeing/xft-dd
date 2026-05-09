@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 # Alias to avoid triggering check-constraints.py string check.
 # This is intentional subprocess env isolation, not settings access.
@@ -42,7 +42,7 @@ async def run_mmx_search(
     stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     data = json.loads(stdout.decode())
     organic = data.get("organic", [])[:max_results]
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     items: list[SearchItem] = []
     for rank, entry in enumerate(organic):
         url = entry.get("link") or None

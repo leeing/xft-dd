@@ -4,8 +4,9 @@ import textwrap
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
-from diligence.config import AppConfig, Dimension, load_config
+from diligence.config import load_config
 
 
 def _write_config(tmp_path: Path, content: str) -> Path:
@@ -40,7 +41,9 @@ def test_load_config_valid(tmp_path: Path) -> None:
 
 
 def test_active_dimensions_excludes_disabled(tmp_path: Path) -> None:
-    content = MINIMAL_CONFIG + """
+    content = (
+        MINIMAL_CONFIG
+        + """
   - id: industry
     name: 行业与细分
     order: 20
@@ -50,6 +53,7 @@ def test_active_dimensions_excludes_disabled(tmp_path: Path) -> None:
       - "{target} 行业"
     summary_prompt: "{target}\\n{results}"
 """
+    )
     p = _write_config(tmp_path, content)
     cfg = load_config(str(p))
     active = [d for d in cfg.dimensions if d.enabled]
@@ -59,7 +63,7 @@ def test_active_dimensions_excludes_disabled(tmp_path: Path) -> None:
 
 def test_load_config_missing_required_field(tmp_path: Path) -> None:
     p = _write_config(tmp_path, 'schema_version: "1.0"\nmodel: "m"\nmerge_prompt: "p"\n')
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):  # noqa: PT011
         load_config(str(p))
 
 

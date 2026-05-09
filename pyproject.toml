@@ -36,7 +36,7 @@ select = [
 unfixable = ["S307", "S609", "S301", "S302", "S105", "S106", "S107"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["S101", "PLR2004", "ARG001"]
+"tests/**/*.py" = ["S101", "PLR2004", "ARG001", "S324", "S603", "PLW1510", "FBT001", "FBT002", "N802", "SIM117", "I001"]
 "src/diligence/utils/mmx.py" = ["S603", "S607"]
 
 [tool.ruff.lint.mccabe]
