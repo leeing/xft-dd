@@ -53,3 +53,4 @@ warn_return_any = true
 testpaths = ["tests"]
 addopts = "-v --tb=short"
 asyncio_mode = "auto"
+pythonpath = ["."]
