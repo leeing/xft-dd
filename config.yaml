@@ -1,0 +1,158 @@
+schema_version: "1.0"
+
+target: ""
+dimension_concurrency: 5
+query_concurrency_per_dimension: 2
+search_timeout_seconds: 30
+max_results_per_query: 10
+model: "MiniMax-M2.7-Highspeed"
+output_language: "zh-CN"
+runs_dir: "runs"
+
+source_policy:
+  authoritative_domains:
+    - "gsxt.gov.cn"
+    - "cnipa.gov.cn"
+    - "sse.com.cn"
+    - "szse.cn"
+    - "innocom.gov.cn"
+  commercial_sources:
+    - "qcc.com"
+    - "tianyancha.com"
+    - "aiqicha.baidu.com"
+
+report_options:
+  include_sources: true
+  include_checklist: true
+  max_sources_per_dimension: 5
+
+batch:
+  company_concurrency: 1
+  continue_on_company_error: true
+  skip_existing: true
+  batch_runs_dir: "batch_runs"
+
+merge_prompt: |
+  你是中国制造业顶级专家。以下是对"{target}"各维度的尽调摘要：
+
+  {summaries}
+
+  请综合以上信息，输出一份精简的企业尽调报告：
+  1. 按维度分节，保留各维度的可信度标注
+  2. 在报告末尾生成"人工核验清单"，列出所有"待核实"项及建议核验渠道
+  3. 不得编造未出现在维度摘要中的事实
+  4. 不相关数据不出现
+
+dimensions:
+  - id: basic_info
+    name: 工商基本信息
+    order: 10
+    enabled: true
+    required: true
+    search_queries:
+      - "{target} 工商注册信息"
+      - "{target} 统一社会信用代码"
+      - "{target} 注册资本 法定代表人"
+    summary_prompt: |
+      请从以下搜索结果中提取"{target}"的工商基本信息。
+
+      可信度判断标准：
+      - 高：多个来源一致，且含官网/政府/交易所等权威来源
+      - 中：多个商业信息网站一致（企查查、天眼查、爱企查等）
+      - 低：只有单一网页、新闻、自媒体或招聘页
+      - 待核实：搜索结果不完整、互相冲突、时间过旧，或无结果
+
+      搜索结果：
+      {results}
+
+  - id: industry
+    name: 行业与细分
+    order: 20
+    enabled: true
+    required: false
+    search_queries:
+      - "{target} 所属行业"
+      - "{target} 主营业务 产品"
+    summary_prompt: |
+      请从以下搜索结果中提取"{target}"的行业与细分信息，包括所属行业、细分赛道、主营业务。
+      搜索结果：
+      {results}
+
+  - id: scale
+    name: 员工规模
+    order: 30
+    enabled: true
+    required: false
+    search_queries:
+      - "{target} 员工人数 规模"
+      - "{target} 参保人数"
+    summary_prompt: |
+      请从以下搜索结果中提取"{target}"的员工规模信息。
+      搜索结果：
+      {results}
+
+  - id: background
+    name: 企业背景
+    order: 40
+    enabled: true
+    required: false
+    search_queries:
+      - "{target} 企业性质 民营 国有 外资"
+      - "{target} 股权结构"
+    summary_prompt: |
+      请从以下搜索结果中分析"{target}"的企业背景，包括民营/国有/外资/合资/上市类型。
+      搜索结果：
+      {results}
+
+  - id: tech_cert
+    name: 科技属性资质
+    order: 50
+    enabled: true
+    required: false
+    search_queries:
+      - "{target} 高新技术企业"
+      - "{target} 专精特新 小巨人"
+      - "{target} 双软认证"
+    summary_prompt: |
+      请从以下搜索结果中提取"{target}"的科技属性资质。
+      搜索结果：
+      {results}
+
+  - id: ip
+    name: 知识产权
+    order: 60
+    enabled: true
+    required: false
+    search_queries:
+      - "{target} 发明专利 实用新型"
+      - "{target} 软件著作权"
+    summary_prompt: |
+      请从以下搜索结果中提取"{target}"的知识产权信息。
+      搜索结果：
+      {results}
+
+  - id: product
+    name: 产品与定位
+    order: 70
+    enabled: true
+    required: false
+    search_queries:
+      - "{target} 产品 核心竞争力"
+      - "{target} 客户 市场定位"
+    summary_prompt: |
+      请从以下搜索结果中提取"{target}"的产品与定位信息。
+      搜索结果：
+      {results}
+
+  - id: listing
+    name: 上市情况
+    order: 80
+    enabled: true
+    required: false
+    search_queries:
+      - "{target} 上市 股票代码"
+      - "{target} 拟上市 辅导备案"
+    summary_prompt: |
+      请从以下搜索结果中提取"{target}"的上市情况。
+      搜索结果：
+      {results}
