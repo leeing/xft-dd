@@ -67,3 +67,6 @@ testpaths = ["tests"]
 addopts = "-v --tb=short"
 asyncio_mode = "auto"
 pythonpath = ["."]
+filterwarnings = [
+    "ignore::langchain_core._api.deprecation.LangChainPendingDeprecationWarning",
+]
