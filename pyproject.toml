@@ -25,6 +25,7 @@ dev = [
     "pytest-mock",
     "structlog",
     "types-pyyaml>=6.0.12.20260508",
+    "pytest-cov>=7.1.0",
 ]
 
 [build-system]
