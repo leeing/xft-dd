@@ -1,11 +1,9 @@
 schema_version: "1.0"
 
-target: ""
 dimension_concurrency: 5
 query_concurrency_per_dimension: 2
 search_timeout_seconds: 60
 max_results_per_query: 10
-output_language: "zh-CN"
 runs_dir: "runs"
 
 # AI 角色提示词 — 可按行业/场景定制（不改代码）
@@ -15,19 +13,6 @@ merge_system_prompt: "你是一个中国制造业行业顶级专家，对制造�
 # Playwright 全文抓取参数（仅在维度设置 fetch_enabled: true 时生效）
 playwright_fetch_timeout: 25
 playwright_fetch_concurrency: 2
-
-source_policy:
-  authoritative_domains:
-    - "gsxt.gov.cn"
-    - "cnipa.gov.cn"
-    - "sse.com.cn"
-    - "szse.cn"
-    - "innocom.gov.cn"
-  commercial_sources:
-    - "qcc.com"
-    - "tianyancha.com"
-    - "aiqicha.baidu.com"
-    - "qyml.curtao.com"
 
 report_options:
   include_sources: true

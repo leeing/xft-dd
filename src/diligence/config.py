@@ -20,13 +20,6 @@ class ReportOptions(BaseModel):
     max_sources_per_dimension: int = 5
 
 
-class SourcePolicy(BaseModel):
-    """Domain trust classification for confidence scoring."""
-
-    authoritative_domains: list[str] = Field(default_factory=list)
-    commercial_sources: list[str] = Field(default_factory=list)
-
-
 class BatchConfig(BaseModel):
     """Batch mode configuration."""
 
@@ -54,14 +47,11 @@ class AppConfig(BaseModel):
     """Root application configuration."""
 
     schema_version: str = "1.0"
-    target: str = ""
     dimension_concurrency: int = Field(default=5, ge=1, le=20)
     query_concurrency_per_dimension: int = Field(default=2, ge=1, le=5)
     search_timeout_seconds: int = 30
     max_results_per_query: int = 10
-    output_language: str = "zh-CN"
     runs_dir: str = "runs"
-    source_policy: SourcePolicy = Field(default_factory=SourcePolicy)
     report_options: ReportOptions = Field(default_factory=ReportOptions)
     batch: BatchConfig = Field(default_factory=BatchConfig)
 
