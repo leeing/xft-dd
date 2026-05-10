@@ -58,7 +58,7 @@ async def test_run_company_graph_produces_artifacts(tmp_path: Path) -> None:
     ai_report = "# 企业尽调报告：某公司\n\n## 一、工商基本信息\n**可信度：中**\n某公司成立于2020年"
 
     mock_client = MagicMock()
-    mock_client.chat.completions.create = MagicMock(
+    mock_client.chat.completions.create = AsyncMock(
         side_effect=[
             MagicMock(choices=[MagicMock(message=MagicMock(content=ai_summary))]),
             MagicMock(choices=[MagicMock(message=MagicMock(content=ai_report))]),
@@ -88,7 +88,7 @@ async def test_run_company_graph_run_id_unique(tmp_path: Path) -> None:
 
     def make_mock() -> MagicMock:
         m = MagicMock()
-        m.chat.completions.create = MagicMock(
+        m.chat.completions.create = AsyncMock(
             side_effect=[
                 MagicMock(choices=[MagicMock(message=MagicMock(content=ai_output))]),
                 MagicMock(choices=[MagicMock(message=MagicMock(content=ai_report))]),
@@ -125,11 +125,11 @@ async def test_run_company_graph_required_fail_sets_flag(tmp_path: Path) -> None
     ai_fallback = json.dumps({"summary": "s", "confidence": "待核实", "uncertain_facts": [], "evidence_item_ids": []})
 
     mock_sum = MagicMock()
-    mock_sum.chat.completions.create = MagicMock(
+    mock_sum.chat.completions.create = AsyncMock(
         return_value=MagicMock(choices=[MagicMock(message=MagicMock(content=ai_fallback))])
     )
     mock_merge = MagicMock()
-    mock_merge.chat.completions.create = MagicMock(
+    mock_merge.chat.completions.create = AsyncMock(
         return_value=MagicMock(choices=[MagicMock(message=MagicMock(content=ai_report))])
     )
 

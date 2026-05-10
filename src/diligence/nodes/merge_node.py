@@ -50,7 +50,7 @@ async def merge_node(state: DiligenceState) -> dict[str, object]:
 
     try:
         client = get_ai_client()
-        response = client.chat.completions.create(
+        response = await client.chat.completions.create(
             model=settings.llm_model,
             messages=[
                 {"role": "system", "content": config.merge_system_prompt},

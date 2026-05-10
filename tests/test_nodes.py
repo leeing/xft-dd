@@ -171,7 +171,7 @@ async def test_summarize_node_success(tmp_path: Path) -> None:
         }
     )
     mock_client = MagicMock()
-    mock_client.chat.completions.create = MagicMock(
+    mock_client.chat.completions.create = AsyncMock(
         return_value=MagicMock(choices=[MagicMock(message=MagicMock(content=ai_response))])
     )
 
@@ -206,7 +206,7 @@ async def test_summarize_node_zero_results_forces_待核实(tmp_path: Path) -> N
         }
     )
     mock_client = MagicMock()
-    mock_client.chat.completions.create = MagicMock(
+    mock_client.chat.completions.create = AsyncMock(
         return_value=MagicMock(choices=[MagicMock(message=MagicMock(content=ai_response))])
     )
 
@@ -234,7 +234,7 @@ async def test_summarize_node_one_result_caps_at_低(tmp_path: Path) -> None:
         }
     )
     mock_client = MagicMock()
-    mock_client.chat.completions.create = MagicMock(
+    mock_client.chat.completions.create = AsyncMock(
         return_value=MagicMock(choices=[MagicMock(message=MagicMock(content=ai_response))])
     )
 
@@ -254,7 +254,7 @@ async def test_summarize_node_json_parse_failure_fallback(tmp_path: Path) -> Non
     cfg = _make_cfg()
     dsr = _make_search_result(n_items=3)
     mock_client = MagicMock()
-    mock_client.chat.completions.create = MagicMock(
+    mock_client.chat.completions.create = AsyncMock(
         return_value=MagicMock(choices=[MagicMock(message=MagicMock(content="这不是JSON内容"))])
     )
 
@@ -296,7 +296,7 @@ async def test_summarize_node_fallback_truncates_at_1500(tmp_path: Path) -> None
         items=items,
     )
     mock_client = MagicMock()
-    mock_client.chat.completions.create = MagicMock(
+    mock_client.chat.completions.create = AsyncMock(
         return_value=MagicMock(choices=[MagicMock(message=MagicMock(content="not json"))])
     )
 
@@ -325,7 +325,7 @@ async def test_summarize_node_hallucinated_ids_filtered(tmp_path: Path) -> None:
         }
     )
     mock_client = MagicMock()
-    mock_client.chat.completions.create = MagicMock(
+    mock_client.chat.completions.create = AsyncMock(
         return_value=MagicMock(choices=[MagicMock(message=MagicMock(content=ai_response))])
     )
 

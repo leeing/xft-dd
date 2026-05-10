@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from typing import Literal
 
 import structlog
-from openai import OpenAI, OpenAIError
+from openai import AsyncOpenAI, OpenAIError
 from openai.types.chat import ChatCompletionMessageParam
 from pydantic import BaseModel, ValidationError
 
@@ -59,13 +59,19 @@ def _extract_json(raw: str) -> str:
     return m.group(0) if m else cleaned
 
 
-def get_ai_client() -> OpenAI:
-    """Return an OpenAI-compatible client for the reasoning/summarize layer.
+_ai_client: AsyncOpenAI | None = None
+
+
+def get_ai_client() -> AsyncOpenAI:
+    """Return a cached AsyncOpenAI-compatible client for the reasoning/summarize layer.
 
     Uses LLM_* env vars when set; falls back to MINIMAX_* for backward compatibility.
     """
-    api_key = settings.llm_api_key or settings.minimax_api_key
-    return OpenAI(api_key=api_key, base_url=settings.llm_base_url)
+    global _ai_client  # noqa: PLW0603
+    if _ai_client is None:
+        api_key = settings.llm_api_key or settings.minimax_api_key
+        _ai_client = AsyncOpenAI(api_key=api_key, base_url=settings.llm_base_url)
+    return _ai_client
 
 
 def _apply_confidence_floor(
@@ -142,7 +148,7 @@ async def summarize_node(state: DiligenceState) -> dict[str, object]:
             {"role": "system", "content": config.summarize_system_prompt},
             {"role": "user", "content": prompt},
         ]
-        response = client.chat.completions.create(model=settings.llm_model, messages=messages)
+        response = await client.chat.completions.create(model=settings.llm_model, messages=messages)
         llm_calls += 1
         llm_tokens += response.usage.total_tokens if response.usage else 0
         raw_content = response.choices[0].message.content or ""
@@ -158,7 +164,7 @@ async def summarize_node(state: DiligenceState) -> dict[str, object]:
                 {"role": "assistant", "content": raw_content},
                 {"role": "user", "content": _JSON_RETRY_PROMPT},
             ]
-            retry_response = client.chat.completions.create(model=settings.llm_model, messages=messages)
+            retry_response = await client.chat.completions.create(model=settings.llm_model, messages=messages)
             llm_calls += 1
             llm_tokens += retry_response.usage.total_tokens if retry_response.usage else 0
             retry_content = retry_response.choices[0].message.content or ""
