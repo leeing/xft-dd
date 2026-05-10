@@ -53,7 +53,7 @@ dimensions:
     order: 10
     enabled: true
     required: true
-    fetch_enabled: false
+    fetch_enabled: true
     minimax_queries:
       - '"{target}" 统一社会信用代码'
       - '"{target}" 法定代表人'
