@@ -18,13 +18,10 @@
 from __future__ import annotations
 
 import asyncio
-import http.client
-import json
 import re
-import ssl
 from datetime import UTC, datetime
-from functools import lru_cache
 
+import httpx
 import structlog
 
 from diligence.models import SearchItem, make_item_id
@@ -49,51 +46,30 @@ def _clean_answer(raw: str) -> str:
     return cleaned.strip()
 
 
-@lru_cache(maxsize=1)
-def _ssl_context() -> ssl.SSLContext:
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
-    return ctx
-
-
-def _query_metaso_sync(api_key: str, query: str, timeout: int = 30) -> tuple[str, int]:
-    """Synchronous HTTP call to metaso API. Returns (cleaned_answer, credits)."""
-    conn = http.client.HTTPSConnection(_METASO_HOST, timeout=timeout, context=_ssl_context())
-    payload = json.dumps(
-        {
-            "q": query,
-            "model": _METASO_MODEL,
-            "format": "simple",
-            "conciseSnippet": True,
-        }
-    )
+async def query_metaso(api_key: str, query: str, timeout: int = 30) -> tuple[str, int]:
+    """Query metaso AI search API. Returns (cleaned_answer, credits)."""
+    url = f"https://{_METASO_HOST}{_METASO_PATH}"
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Accept": "application/json",
         "Content-Type": "application/json",
     }
-    conn.request("POST", _METASO_PATH, payload, headers)
-    res = conn.getresponse()
-    data = json.loads(res.read())
-    conn.close()
+    payload = {
+        "q": query,
+        "model": _METASO_MODEL,
+        "format": "simple",
+        "conciseSnippet": True,
+    }
+    async with httpx.AsyncClient(timeout=timeout, verify=False) as client:  # noqa: S501
+        response = await client.post(url, headers=headers, json=payload)
+        response.raise_for_status()
+
+    data = response.json()
     if "answer" not in data:
         log.warning("metaso_no_answer", query=query[:60], keys=list(data.keys()))
         return "", 0
     credits: int = data.get("credits", 0)
     return _clean_answer(data["answer"]), credits
-
-
-async def query_metaso(api_key: str, query: str, timeout: int = 30) -> tuple[str, int]:
-    """Async wrapper: run the blocking HTTP call in a thread pool. Returns (answer, credits)."""
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(
-        None,
-        _query_metaso_sync,
-        api_key,
-        query,
-        timeout,
-    )
 
 
 def make_metaso_item(answer: str, query: str, dimension_id: str) -> SearchItem:
@@ -149,7 +125,7 @@ async def fetch_metaso_items(
                     return None, credits
                 log.debug("metaso_ok", query=query[:60], chars=len(answer))
                 return make_metaso_item(answer, query, dimension_id), credits
-            except (TimeoutError, OSError, json.JSONDecodeError) as exc:
+            except (TimeoutError, OSError, httpx.HTTPError, ValueError) as exc:
                 log.warning("metaso_failed", query=query[:60], error=str(exc))
                 return None, 0
 
