@@ -17,7 +17,7 @@ from diligence.nodes.route_node import route_node
 from diligence.nodes.save_node import save_node
 from diligence.nodes.search_node import search_node
 from diligence.nodes.summarize_node import summarize_node
-from diligence.state import DiligenceState
+from diligence.state import DiligenceState, merge_cost
 
 log = structlog.get_logger(__name__)
 
@@ -36,9 +36,16 @@ async def _search_summarize_node(state: DiligenceState) -> dict[str, object]:
         },
     }
     summarize_out = await summarize_node(merged_state)
+    # Manually merge cost so neither branch overwrites the other.
+    # (Python dict merge with ** would silently drop search_out["cost"].)
+    combined_cost = merge_cost(
+        search_out.get("cost", CostRecord()),  # type: ignore[arg-type]
+        summarize_out.get("cost", CostRecord()),  # type: ignore[arg-type]
+    )
     return {
         **search_out,
         **summarize_out,
+        "cost": combined_cost,
     }
 
 
