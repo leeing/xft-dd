@@ -430,3 +430,33 @@ def test_save_node_uses_state_started_at(tmp_path: Path) -> None:
     save_node(state)
     meta = json.loads((tmp_path / "run_meta.json").read_text())
     assert meta["started_at"].startswith("2026-01-01")
+
+
+def test_save_node_started_at_none_uses_fallback(tmp_path: Path) -> None:
+    """save_node must not crash and must produce valid run_meta when started_at is None."""
+    from diligence.models import CostRecord
+    from diligence.nodes.save_node import save_node
+
+    cfg = _make_cfg()
+    dsr = _make_search_result()
+    summary = DimensionSummary(
+        dimension_id="basic_info",
+        dimension_name="工商基本信息",
+        status="success",
+        summary="ok",
+        confidence="中",
+        uncertain_facts=[],
+        evidence_item_ids=[],
+    )
+    state = _base_state(cfg, tmp_path)
+    state["started_at"] = None  # sentinel: init_node failed
+    state["run_id"] = "test-run"
+    state["report"] = "report content"
+    state["search_results_by_dimension"] = {"basic_info": dsr}
+    state["summaries_by_dimension"] = {"basic_info": summary}
+    state["cost"] = CostRecord()
+
+    save_node(state)
+    meta = json.loads((tmp_path / "run_meta.json").read_text())
+    assert meta["started_at"] is not None  # fallback datetime was used
+    assert meta["finished_at"] is not None

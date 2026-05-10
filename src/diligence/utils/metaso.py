@@ -60,7 +60,7 @@ async def query_metaso(api_key: str, query: str, timeout: int = 30) -> tuple[str
         "format": "simple",
         "conciseSnippet": True,
     }
-    async with httpx.AsyncClient(timeout=timeout, verify=False) as client:  # noqa: S501
+    async with httpx.AsyncClient(timeout=timeout, verify=False) as client:  # noqa: S501 — metaso.cn uses cert that fails in some environments
         response = await client.post(url, headers=headers, json=payload)
         response.raise_for_status()
         data = response.json()
