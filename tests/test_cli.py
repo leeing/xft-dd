@@ -105,6 +105,28 @@ def test_only_filter_limits_dimensions() -> None:
     assert filtered[0].id == "ip"
 
 
+def test_validate_args_target_too_long() -> None:
+    """Target longer than 200 chars should be rejected."""
+    result = _run_main(["A" * 201])
+    assert result.returncode == 1
+    assert "too long" in result.stderr
+
+
+def test_validate_args_target_exactly_max_len() -> None:
+    """Target of exactly 200 chars should not fail length validation."""
+    import argparse
+    import importlib
+    import sys as _sys
+
+    root = str(Path(__file__).parent.parent)
+    if root not in _sys.path:
+        _sys.path.insert(0, root)
+
+    main_module = importlib.import_module("main")
+    args = argparse.Namespace(batch=None, target="A" * 200)
+    assert main_module._validate_args(args) is None
+
+
 def test_skip_filter_removes_dimension() -> None:
     from diligence.config import AppConfig, Dimension
 

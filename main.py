@@ -109,12 +109,21 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+_MAX_TARGET_LEN = 200
+
+
 def _validate_args(args: argparse.Namespace) -> str | None:
     """Return error message if args are invalid, else None."""
     if args.batch and args.target:
         return "error: --batch and target name cannot be used together"
-    if not args.batch and (not args.target or not args.target.strip()):
-        return "error: target company name cannot be empty"
+    if not args.batch:
+        if not args.target or not args.target.strip():
+            return "error: target company name cannot be empty"
+        if len(args.target.strip()) > _MAX_TARGET_LEN:
+            return (
+                f"error: target company name too long "
+                f"(max {_MAX_TARGET_LEN} characters, got {len(args.target.strip())})"
+            )
     return None
 
 
