@@ -1,8 +1,8 @@
 schema_version: "1.0"
 
-dimension_concurrency: 5
-query_concurrency_per_dimension: 2
-search_timeout_seconds: 60
+dimension_concurrency: 8
+query_concurrency_per_dimension: 5
+search_timeout_seconds: 30
 max_results_per_query: 10
 runs_dir: "runs"
 
