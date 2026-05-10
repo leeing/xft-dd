@@ -18,7 +18,7 @@ from pathlib import Path
 
 import structlog
 
-from diligence.config import AppConfig
+from diligence.config import AppConfig, Dimension
 from diligence.graph import run_company_graph
 from diligence.models import BatchRunMeta, CompanyRunResult, RunMeta
 
@@ -227,7 +227,7 @@ def _exit_code(results: list[CompanyRunResult]) -> int:
     return 0
 
 
-def _dry_run_preview(targets: list[str], dims: list, config: AppConfig, *, verbose: bool) -> None:  # noqa: FBT001
+def _dry_run_preview(targets: list[str], dims: list[Dimension], config: AppConfig, *, verbose: bool) -> None:  # noqa: FBT001
     batch_cfg = config.batch
     est = batch_cfg.company_concurrency * config.dimension_concurrency * config.query_concurrency_per_dimension
     sys.stderr.write("batch dry-run preview\n")
@@ -245,7 +245,7 @@ def _dry_run_preview(targets: list[str], dims: list, config: AppConfig, *, verbo
         sys.stderr.write(f"    {i}. {t}\n")
     if verbose and targets and dims:
         sys.stderr.write(f"\n  [sample] dimension '{dims[0].name}' queries for '{targets[0]}':\n")
-        for q in dims[0].search_queries:
+        for q in dims[0].minimax_queries:
             sys.stderr.write(f"    - {q.replace('{target}', targets[0])}\n")
     sys.stderr.write("--\n")
 

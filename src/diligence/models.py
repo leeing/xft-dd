@@ -20,12 +20,13 @@ def make_item_id(*, url: str | None, title: str, snippet: str) -> str:
 
 
 class SearchItem(BaseModel):
-    """Single search result from mmx search."""
+    """Single search result from MiniMax Search or Metaso AI."""
 
     id: str
     title: str
     url: str | None = None
     snippet: str
+    full_text: str = ""  # Playwright-fetched full page text; empty = not fetched
     query: str
     dimension_id: str
     rank: int | None = None
@@ -53,6 +54,16 @@ class DimensionSummary(BaseModel):
     uncertain_facts: list[str]
     evidence_item_ids: list[str]
     error: str | None = None
+
+
+class CostRecord(BaseModel):
+    """API usage counters for one run."""
+
+    minimax_search_calls: int = 0  # MiniMax Search POST 成功次数
+    llm_calls: int = 0  # LLM completions.create 调用次数（含 JSON retry）
+    llm_tokens_total: int = 0  # LLM total_tokens 累计
+    metaso_calls: int = 0  # Metaso 查询成功次数
+    metaso_credits_total: int = 0  # Metaso credits 累计
 
 
 class RunError(BaseModel):
@@ -86,6 +97,7 @@ class RunMeta(BaseModel):
     failed_dimensions: list[str] = Field(default_factory=list)
     config_path: str
     active_dimensions: list[str]
+    cost: CostRecord = Field(default_factory=CostRecord)
 
 
 class CompanyRunResult(BaseModel):

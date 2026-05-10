@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import structlog
 from langgraph.graph import END, START, StateGraph
 
 from diligence.config import AppConfig
-from diligence.models import CompanyRunResult, RunMeta
+from diligence.models import CompanyRunResult, CostRecord, RunMeta
 from diligence.nodes.collect_node import collect_node
 from diligence.nodes.init_node import init_node
 from diligence.nodes.merge_node import merge_node
@@ -23,7 +24,7 @@ log = structlog.get_logger(__name__)
 _cache: dict[str, object] = {}
 
 
-async def _search_summarize_node(state: DiligenceState) -> dict:
+async def _search_summarize_node(state: DiligenceState) -> dict[str, object]:
     """Combined per-dimension branch: search then summarize, preserving current_dimension."""
     search_out = await search_node(state)
     # Merge search results into a local state copy so summarize can read them
@@ -31,7 +32,7 @@ async def _search_summarize_node(state: DiligenceState) -> dict:
         **state,
         "search_results_by_dimension": {
             **state.get("search_results_by_dimension", {}),
-            **search_out["search_results_by_dimension"],
+            **search_out.get("search_results_by_dimension", {}),  # type: ignore[dict-item]
         },
     }
     summarize_out = await summarize_node(merged_state)
@@ -41,7 +42,7 @@ async def _search_summarize_node(state: DiligenceState) -> dict:
     }
 
 
-def _get_compiled():
+def _get_compiled() -> Any:
     if "graph" not in _cache:
         g = StateGraph(DiligenceState)
         g.add_node("init_node", init_node)
@@ -86,6 +87,7 @@ async def run_company_graph(
         "search_results_by_dimension": {},
         "summaries_by_dimension": {},
         "errors": [],
+        "cost": CostRecord(),
         "report": "",
         "report_path": "",
         "artifacts_dir": "",

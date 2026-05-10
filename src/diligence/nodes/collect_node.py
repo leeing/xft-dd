@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Literal
 
 import structlog
 
@@ -12,13 +13,13 @@ from diligence.state import DiligenceState
 
 log = structlog.get_logger(__name__)
 
-_COLLECT_STAGE = "collect"
+_COLLECT_STAGE: Literal["collect"] = "collect"
 
 
-def collect_node(state: DiligenceState) -> dict:
+def collect_node(state: DiligenceState) -> dict[str, object]:
     """Verify completeness and flag required-dimension failures."""
     active: list[Dimension] = state["active_dimensions"]
-    summaries: dict = state["summaries_by_dimension"]
+    summaries: dict[str, DimensionSummary] = state["summaries_by_dimension"]
 
     active_ids = {d.id for d in active}
     missing = active_ids - set(summaries.keys())

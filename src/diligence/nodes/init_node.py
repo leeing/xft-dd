@@ -21,7 +21,7 @@ def make_run_id(target: str) -> str:
     return f"{ts}-{hash6}"
 
 
-def init_node(state: DiligenceState) -> dict:
+def init_node(state: DiligenceState) -> dict[str, object]:
     """Initialise run: generate run_id, filter enabled dimensions, create output dir."""
     config: AppConfig = state["config"]
     target: str = state["target"]
