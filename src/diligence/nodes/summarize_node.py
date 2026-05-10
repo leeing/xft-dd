@@ -6,6 +6,7 @@ import json
 import re
 import sys
 from datetime import UTC, datetime
+from typing import Literal
 
 import structlog
 from openai import OpenAI, OpenAIError
@@ -19,11 +20,13 @@ from diligence.state import DiligenceState
 log = structlog.get_logger(__name__)
 
 _CONFIDENCE_ORDER: dict[str, int] = {"高": 3, "中": 2, "低": 1, "待核实": 0}
-_CONFIDENCE_NAMES: dict[int, str] = {3: "高", 2: "中", 1: "低", 0: "待核实"}
+_CONFIDENCE_NAMES: dict[int, Literal["高", "中", "低", "待核实"]] = {3: "高", 2: "中", 1: "低", 0: "待核实"}
 
 JSON_FORMAT_INSTRUCTION = (
-    "\nOutput ONLY valid JSON (no markdown code fences):\n"
-    '{"summary": "...", "confidence": "高|中|低|待核实", "uncertain_facts": [...], "evidence_item_ids": [...]}'
+    "\n\n【重要】请严格按以下 JSON 格式输出，不加任何 markdown 标记（不加```json）：\n"
+    '{"summary": "200字以内的综合摘要", "confidence": "高|中|低|待核实", '
+    '"uncertain_facts": ["待核实项1", "待核实项2"], "evidence_item_ids": ["item_id_1"]}'
+    "\n不要在 JSON 前后输出任何其他内容。"
 )
 
 
@@ -38,9 +41,19 @@ _THINK_TAG_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
 _JSON_OBJECT_RE = re.compile(r"\{.*\}", re.DOTALL)
 
 
+_CODE_FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
+
+
 def _extract_json(raw: str) -> str:
-    """Strip <think>...</think> blocks then extract the outermost JSON object."""
+    """Strip <think> blocks and code fences, then extract the outermost JSON object."""
     cleaned = _THINK_TAG_RE.sub("", raw).strip()
+    # Try code-fenced JSON first (```json ... ```)
+    fence_match = _CODE_FENCE_RE.search(cleaned)
+    if fence_match:
+        candidate = fence_match.group(1).strip()
+        if candidate.startswith("{"):
+            return candidate
+    # Fall back to bare JSON object extraction
     m = _JSON_OBJECT_RE.search(cleaned)
     return m.group(0) if m else cleaned
 
@@ -56,7 +69,7 @@ def _apply_confidence_floor(
     *,
     all_urls_empty: bool,
     status: str,
-) -> str:
+) -> Literal["高", "中", "低", "待核实"]:
     """Hard program rules that override AI-assigned confidence."""
     if status == "failed" or items_count == 0:
         return "待核实"
@@ -69,11 +82,13 @@ def _apply_confidence_floor(
 
 
 def _render_results(dsr: DimensionSearchResult) -> str:
-    lines = [
-        f"[id={item.id}] title: {item.title} | url: {item.url or 'none'} | snippet: {item.snippet}"
-        for item in dsr.items
-    ]
-    return "\n".join(lines) if lines else "(no search results)"
+    """Render items for the AI prompt. Uses full_text if available, otherwise snippet."""
+    lines = []
+    for item in dsr.items:
+        content = item.full_text if item.full_text else item.snippet
+        source = "full_page" if item.full_text else "snippet"
+        lines.append(f"[id={item.id}] [{source}] title: {item.title} | url: {item.url or 'none'}\n{content}")
+    return "\n\n---\n".join(lines) if lines else "(no search results)"
 
 
 _SNIPPET_TRUNCATE_LIMIT = 1500
@@ -96,9 +111,15 @@ def _fallback_summary(dsr: DimensionSearchResult, max_sources: int) -> Dimension
     )
 
 
-async def summarize_node(state: DiligenceState) -> dict:
+_JSON_RETRY_PROMPT = (
+    "你上一次的输出不是合法 JSON。请重新输出，只输出 JSON 对象，不要任何其他内容：\n"
+    '{"summary": "摘要内容", "confidence": "高|中|低|待核实", "uncertain_facts": [], "evidence_item_ids": []}'
+)
+
+
+async def summarize_node(state: DiligenceState) -> dict[str, object]:
     """Call AI to summarise search results for the current dimension."""
-    dim: Dimension = state["current_dimension"]
+    dim: Dimension = state["current_dimension"]  # type: ignore[assignment]
     target: str = state["target"]
     config: AppConfig = state["config"]
     dsr: DimensionSearchResult = state["search_results_by_dimension"][dim.id]
@@ -111,18 +132,30 @@ async def summarize_node(state: DiligenceState) -> dict:
     try:
         client = get_ai_client()
         system_msg = (
-            "你是中国制造业企业尽调专家，擅长从网络搜索结果中提取和分析企业信息，"
-            "对信息的可信度和来源有严格的判断标准。"
+            "你是中国制造业企业尽调专家，擅长从网络搜索结果中提取和分析企业信息，对信息的可信度和来源有严格的判断标准。"
+            "你的输出必须是合法 JSON，不包含任何其他内容。"
         )
-        response = client.chat.completions.create(
-            model=config.model,
-            messages=[
-                {"role": "system", "content": system_msg},
-                {"role": "user", "content": prompt},
-            ],
-        )
+        messages: list[dict[str, str]] = [
+            {"role": "system", "content": system_msg},
+            {"role": "user", "content": prompt},
+        ]
+        response = client.chat.completions.create(model=config.model, messages=messages)
         raw_content = response.choices[0].message.content or ""
-        parsed = _AISummaryOutput.model_validate_json(_extract_json(raw_content))
+
+        # Attempt 1: parse directly
+        try:
+            parsed = _AISummaryOutput.model_validate_json(_extract_json(raw_content))
+        except (json.JSONDecodeError, ValidationError):
+            # Attempt 2: ask model to fix its own output
+            log.warning("json_parse_retry", dimension=dim.id)
+            messages = [
+                *messages,
+                {"role": "assistant", "content": raw_content},
+                {"role": "user", "content": _JSON_RETRY_PROMPT},
+            ]
+            retry_response = client.chat.completions.create(model=config.model, messages=messages)
+            retry_content = retry_response.choices[0].message.content or ""
+            parsed = _AISummaryOutput.model_validate_json(_extract_json(retry_content))
 
         valid_ids = {item.id for item in dsr.items}
         invalid_ids = [eid for eid in parsed.evidence_item_ids if eid not in valid_ids]
