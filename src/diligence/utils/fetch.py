@@ -30,6 +30,8 @@ from urllib.parse import quote
 
 import structlog
 from playwright.async_api import Browser, BrowserContext, Page, async_playwright
+from playwright.async_api import Error as PlaywrightError
+from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from diligence.models import SearchItem, make_item_id
 
@@ -90,7 +92,7 @@ async def _fetch_page_text(url: str, timeout_ms: int = 15000) -> str:
             log.warning("fetch_short_response", url=url, chars=len(text))
             return ""
         return text[:MAX_FULL_TEXT_CHARS]
-    except Exception as exc:
+    except (PlaywrightTimeoutError, PlaywrightError) as exc:
         log.warning("fetch_page_failed", url=url, error=str(exc))
         return ""
     finally:
