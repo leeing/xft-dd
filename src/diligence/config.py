@@ -38,7 +38,6 @@ class Dimension(BaseModel):
     enabled: bool = True
     required: bool = False
     fetch_enabled: bool = False  # Enable Playwright page fetch to enrich search results
-    always_inject: bool = False  # Inject synthetic items for fetchable_domains even if not in search results
     minimax_queries: list[str]
     metaso_queries: list[str] = Field(default_factory=list)  # 秘塔AI自然语言查询
     summary_prompt: str
@@ -56,10 +55,10 @@ class AppConfig(BaseModel):
     report_options: ReportOptions = Field(default_factory=ReportOptions)
     batch: BatchConfig = Field(default_factory=BatchConfig)
 
-    # Playwright fetchable domains: key = domain fragment used for URL matching,
-    # value = URL template with {target} placeholder (URL-encoded automatically).
-    # Example: {"example.com": "https://example.com/search?q={target}"}
-    fetchable_domains: dict[str, str] = Field(default_factory=dict)
+    # Playwright fetchable domains: list of domain fragments used for URL matching.
+    # Any search result whose URL contains one of these fragments will be fetched.
+    # Example: ["example.com", "anothersite.cn"]
+    fetchable_domains: list[str] = Field(default_factory=list)
 
     # AI system prompts — configurable to adapt to different industries/scenarios
     summarize_system_prompt: str = (

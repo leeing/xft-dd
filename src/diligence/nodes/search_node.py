@@ -99,7 +99,6 @@ async def _apply_metaso(
 async def _apply_playwright(
     items: list[SearchItem],
     dim: Dimension,
-    target: str,
     config: AppConfig,
 ) -> list[SearchItem]:
     """Enrich items with full page text via Playwright when fetch_enabled; returns original on failure."""
@@ -109,10 +108,7 @@ async def _apply_playwright(
     try:
         enriched = await enrich_items(
             items=items,
-            target=target,
-            dimension_id=dim.id,
             fetchable_domains=config.fetchable_domains,
-            always_inject=dim.always_inject,
             fetch_timeout=config.playwright_fetch_timeout,
             concurrency=config.playwright_fetch_concurrency,
         )
@@ -141,7 +137,7 @@ async def search_node(state: DiligenceState) -> dict[str, object]:
     deduped, metaso_credits = await _apply_metaso(deduped, dim, target)
     metaso_active = settings.metaso_enabled and bool(settings.metaso_api_key) and bool(dim.metaso_queries)
     metaso_calls = len(dim.metaso_queries) if metaso_active else 0
-    deduped = await _apply_playwright(deduped, dim, target, config)
+    deduped = await _apply_playwright(deduped, dim, config)
 
     total_queries = len(dim.minimax_queries)
     dim_status: Literal["success", "partial", "failed"]

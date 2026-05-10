@@ -15,25 +15,22 @@ publicly-accessible sources are identified. Set fetch_enabled: false in
 config.yaml dimensions to skip enrichment.
 
 To re-enable fetching for a new domain:
-1. Add domain → URL pattern to FETCHABLE_DOMAINS
-2. Test with the headed browser: headed mode bypasses basic bot detection
-3. If homepage warmup is needed, add to _WARMUP_URLS
-4. Set fetch_enabled: true in the relevant dimension(s)
+1. Add the domain fragment to fetchable_domains list in config.yaml
+2. Set fetch_enabled: true on the relevant dimension(s)
+3. Test with the headed browser: headed mode bypasses basic bot detection
 """
 
 from __future__ import annotations
 
 import asyncio
 import sys
-from datetime import UTC, datetime
-from urllib.parse import quote
 
 import structlog
 from playwright.async_api import Browser, BrowserContext, Page, async_playwright
 from playwright.async_api import Error as PlaywrightError
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
-from diligence.models import SearchItem, make_item_id
+from diligence.models import SearchItem
 
 log = structlog.get_logger(__name__)
 
@@ -92,68 +89,38 @@ async def _fetch_page_text(url: str, timeout_ms: int = 15000) -> str:
         await ctx.close()
 
 
-def _is_fetchable(url: str | None, fetchable_domains: dict[str, str]) -> bool:
-    """Return True if this item's domain is whitelisted for fetching."""
+def _is_fetchable(url: str | None, fetchable_domains: list[str]) -> bool:
+    """Return True if this item's URL contains a whitelisted domain fragment."""
     if not url:
         return False
     return any(domain in url for domain in fetchable_domains)
 
 
-def _synthetic_item(target: str, domain_key: str, url_template: str, dimension_id: str) -> SearchItem:
-    """Create a synthetic SearchItem for a domain we always want to fetch."""
-    url = url_template.replace("{target}", quote(target))
-    return SearchItem(
-        id=make_item_id(url=url, title=f"{domain_key} 直查", snippet=""),
-        title=f"{target} - {domain_key}",
-        url=url,
-        snippet="",
-        query=f"[直接抓取] {domain_key}",
-        dimension_id=dimension_id,
-        fetched_at=datetime.now(UTC),
-    )
-
-
-async def enrich_items(  # noqa: PLR0913 — keyword-only args keep call sites readable
+async def enrich_items(
     items: list[SearchItem],
-    target: str,
-    dimension_id: str,
-    fetchable_domains: dict[str, str],
+    fetchable_domains: list[str],
     *,
-    always_inject: bool = False,
     fetch_timeout: int = 25,
     concurrency: int = 2,
 ) -> list[SearchItem]:
-    """Playwright-fetch whitelisted items + optionally inject synthetic items.
+    """Playwright-fetch items whose URL matches a whitelisted domain fragment.
 
     Args:
-        items: Existing search results to enrich.
-        target: Company name (used for synthetic item URL building).
-        dimension_id: Dimension tag for new SearchItems.
-        fetchable_domains: Mapping of domain fragment → URL template with {target}.
-        always_inject: If True, inject synthetic items for all fetchable_domains
-            even if they didn't appear in search results.
+        items: Search results to enrich.
+        fetchable_domains: Domain fragments to whitelist (e.g. ["example.com"]).
+            Any item whose URL contains one of these fragments will be fetched.
         fetch_timeout: Per-page fetch timeout in seconds.
         concurrency: Max concurrent Playwright page fetches.
 
-    Returns enriched item list. Items without full_text keep their original snippet.
-    No-op when fetchable_domains is empty.
+    Returns enriched item list. Items without a matching domain keep their
+    original snippet. No-op when fetchable_domains is empty.
     """
-    # Build the work list: (item, url_to_fetch)
     work: list[tuple[SearchItem, str]] = []
-
-    # 1) Always-inject synthetics for all fetchable_domains when always_inject is True.
-    if always_inject and fetchable_domains:
-        for domain_key, url_template in fetchable_domains.items():
-            synthetic = _synthetic_item(target, domain_key, url_template, dimension_id)
-            items = [synthetic, *items]
-            work.append((synthetic, synthetic.url))  # type: ignore[arg-type]
-
-    # 2) Also fetch any whitelisted detail/operation URLs that MiniMax Search returned.
-    already_in_work = {url for _, url in work}
+    seen: set[str] = set()
     for item in items:
-        if item.url and _is_fetchable(item.url, fetchable_domains) and item.url not in already_in_work:
+        if item.url and _is_fetchable(item.url, fetchable_domains) and item.url not in seen:
             work.append((item, item.url))
-            already_in_work.add(item.url)
+            seen.add(item.url)
 
     if not work:
         return items
