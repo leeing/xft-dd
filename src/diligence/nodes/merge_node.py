@@ -71,6 +71,9 @@ async def merge_node(state: DiligenceState) -> dict[str, object]:
         log.warning("merge_fallback", error=str(exc))
 
     report_lines.append(report_body)
+    # Append real report generation timestamp so it's never hardcoded
+    now_cn = datetime.now(UTC).astimezone()
+    report_lines.append(f"\n*报告生成时间：{now_cn.year}年{now_cn.month}月{now_cn.day}日*")
     report = "\n".join(report_lines)
 
     sys.stdout.write("\n[Final Report]\n")

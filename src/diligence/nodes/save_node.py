@@ -63,11 +63,12 @@ def save_node(state: DiligenceState) -> dict[str, object]:
         encoding="utf-8",
     )
 
+    finished_at = datetime.now(UTC)
     meta = RunMeta(
         run_id=run_id,
         target=target,
         started_at=started_at,
-        finished_at=datetime.now(UTC),
+        finished_at=finished_at,
         status=run_status,
         required_failed=required_failed,
         failed_dimensions=failed_dims,
@@ -77,8 +78,10 @@ def save_node(state: DiligenceState) -> dict[str, object]:
     )
     (output_dir / "run_meta.json").write_text(meta.model_dump_json(indent=2), encoding="utf-8")
 
-    log.info("artifacts_saved", output_dir=str(output_dir), status=run_status)
+    elapsed = (finished_at - started_at).total_seconds()
+    log.info("artifacts_saved", output_dir=str(output_dir), status=run_status, elapsed_seconds=elapsed)
     sys.stderr.write(f"\nArtifacts saved: {output_dir}/\n")
+    sys.stderr.write(f"⏱️  总耗时：{elapsed:.1f} 秒\n")
     sys.stderr.write("💰 本次调用成本：\n")
     sys.stderr.write(f"   MiniMax Search: {cost.minimax_search_calls} 次\n")
     sys.stderr.write(f"   LLM 推理: {cost.llm_calls} 次，tokens: {cost.llm_tokens_total:,}\n")
