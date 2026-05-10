@@ -40,7 +40,7 @@ class DiligenceState(TypedDict):
     target: str
     config: AppConfig
     run_id: str
-    started_at: datetime  # set by init_node; used by save_node for run_meta
+    started_at: datetime | None  # set by init_node; None until init completes
     active_dimensions: list[Dimension]
     output_dir: str  # single: runs/{run_id}/ ; batch: batch_runs/{bid}/companies/{idx}-{hash}/
 

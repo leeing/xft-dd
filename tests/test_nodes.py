@@ -386,3 +386,47 @@ async def test_collect_node_required_failed_produces_error(tmp_path: Path) -> No
     result = collect_node(state)
     errors = result.get("errors", [])
     assert any("核心" in e.message or "required" in e.message.lower() for e in errors)
+
+
+# -- init_node --
+
+
+def test_init_node_sets_started_at(tmp_path: Path) -> None:
+    from diligence.nodes.init_node import init_node
+
+    cfg = _make_cfg()
+    state = _base_state(cfg, tmp_path)
+    result = init_node(state)
+    assert "started_at" in result
+    started = result["started_at"]
+    assert isinstance(started, datetime)
+    assert started.tzinfo is not None  # must be timezone-aware
+
+
+def test_save_node_uses_state_started_at(tmp_path: Path) -> None:
+    from diligence.models import CostRecord
+    from diligence.nodes.save_node import save_node
+
+    cfg = _make_cfg()
+    fixed_start = datetime(2026, 1, 1, 0, 0, 0, tzinfo=UTC)
+    dsr = _make_search_result()
+    summary = DimensionSummary(
+        dimension_id="basic_info",
+        dimension_name="工商基本信息",
+        status="success",
+        summary="ok",
+        confidence="中",
+        uncertain_facts=[],
+        evidence_item_ids=[],
+    )
+    state = _base_state(cfg, tmp_path)
+    state["started_at"] = fixed_start
+    state["run_id"] = "test-run"
+    state["report"] = "report content"
+    state["search_results_by_dimension"] = {"basic_info": dsr}
+    state["summaries_by_dimension"] = {"basic_info": summary}
+    state["cost"] = CostRecord()
+
+    save_node(state)
+    meta = json.loads((tmp_path / "run_meta.json").read_text())
+    assert meta["started_at"].startswith("2026-01-01")

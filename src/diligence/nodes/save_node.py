@@ -37,7 +37,11 @@ def save_node(state: DiligenceState) -> dict[str, object]:
     search_results: dict[str, DimensionSearchResult] = state["search_results_by_dimension"]
     active_dims = state["active_dimensions"]
     cost: CostRecord = state["cost"]
-    started_at: datetime = state["started_at"]
+    started_at_raw = state["started_at"]
+    if started_at_raw is None:
+        log.warning("started_at_missing", note="init_node may have failed; using save time as fallback")
+        started_at_raw = datetime.now(UTC)
+    started_at: datetime = started_at_raw
 
     failed_dims = [s.dimension_id for s in summaries.values() if s.status == "failed"]
     required_failed = any(d.required and d.id in failed_dims for d in active_dims)
