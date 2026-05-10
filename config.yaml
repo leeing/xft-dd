@@ -54,11 +54,12 @@ dimensions:
     search_queries:
       - '"{target}" 统一社会信用代码'
       - '"{target}" 法定代表人'
-      - '"{target}" 注册资本 成立日期'
-      - '"{target}" 注册地址 经营范围'
-      - '"{target}" 参保人数 员工人数'
-      - '{target} 工商信息 启信宝'
-      - '{target} 企业信息 企查查'
+      - '"{target}" 注册资本'
+      - '"{target}" 成立日期'
+      - '"{target}" 注册地址'
+      - '"{target}" 经营范围'
+      - '"{target}" 参保人数'
+      - '"{target}" 经营状态'
     summary_prompt: |
       请从以下搜索结果中提取"{target}"的工商基本信息。
 
@@ -101,9 +102,10 @@ dimensions:
     enabled: true
     required: false
     search_queries:
-      - '"{target}" 行业 经营范围 主营业务'
-      - '"{target}" 所属行业 国民经济分类'
-      - '"{target}" 主营产品 产品类目'
+      - '"{target}" 所属行业'
+      - '"{target}" 经营范围'
+      - '"{target}" 主营业务'
+      - '"{target}" 主营产品'
     summary_prompt: |
       请从以下搜索结果中提取"{target}"的行业与细分信息。
       重点提取：所属行业（国民经济行业分类）、细分赛道、主营业务描述、经营范围摘要。
@@ -118,8 +120,9 @@ dimensions:
     enabled: true
     required: false
     search_queries:
-      - '"{target}" 参保人数 员工'
-      - '"{target}" 员工规模 人数 招聘'
+      - '"{target}" 参保人数'
+      - '"{target}" 员工人数'
+      - '"{target}" 员工规模'
     summary_prompt: |
       请从以下搜索结果中提取"{target}"的员工规模信息。
       信源说明：企查查「参保」数据为社保缴纳人数（最精确）；BOSS直聘/猎聘提供规模区间（如100-499人）。
@@ -134,10 +137,11 @@ dimensions:
     enabled: true
     required: false
     search_queries:
-      - '"{target}" 股东 持股比例 实际控制人'
-      - '"{target}" 企业性质 民营 国有 外资'
-      - '"{target}" 行政处罚 司法风险 失信'
-      - '{target} 工商 天眼查'
+      - '"{target}" 股东'
+      - '"{target}" 实际控制人'
+      - '"{target}" 行政处罚'
+      - '"{target}" 失信'
+      - '"{target}" 被执行人'
     summary_prompt: |
       请从以下搜索结果中分析"{target}"的企业背景。
       重点提取：企业性质（民营/国有/外资/合资）、实际控制人、主要股东及持股比例、是否有行政处罚/失信记录。
@@ -146,7 +150,13 @@ dimensions:
       - 即使"{target}"在结果中仅被侧面提及，也应从中提取企业性质等可推断信息
       - 注册资本规模+成立年份等信息可辅助判断是否为民营小微企业
       - 未见行政处罚/失信记录时，明确写"未发现"而非"待核实"
-      - 企查查与天眼查股东数据一致则标「高」；仅一方有数据标「中」；无股权结构数据标「低」
+      - 企查查与天眼查股东数据一致则标「高」；仅一方有数据标「中」；无股权结构但能推断企业性质标「低」
+
+      【可信度判断】
+      - 高：企业性质 + 实控人/股权结构来自≥2个权威来源且一致
+      - 中：企业性质可从多个来源合理推断，或有单一来源的股权数据
+      - 低：仅能推断企业性质，无股权/实控人数据
+      - 待核实：连企业性质也无法判断
 
       搜索结果：
       {results}
@@ -157,9 +167,10 @@ dimensions:
     enabled: true
     required: false
     search_queries:
-      - '"{target}" 高新技术企业 证书编号'
-      - '"{target}" 专精特新 小巨人'
-      - '"{target}" 资质认证 ISO 双软'
+      - '"{target}" 高新技术企业'
+      - '"{target}" 专精特新'
+      - '"{target}" 隐形冠军'
+      - '"{target}" 资质认证'
     summary_prompt: |
       请从以下搜索结果中提取"{target}"的科技属性资质。
       重点提取：高新技术企业（证书编号+认定年份）、专精特新/小巨人、双软认证、ISO认证、其他行业资质。
@@ -174,12 +185,26 @@ dimensions:
     enabled: true
     required: false
     search_queries:
-      - '"{target}" 专利 商标 著作权'
-      - '"{target}" 发明专利 实用新型 外观设计'
+      - '"{target}" 专利'
+      - '"{target}" 商标'
+      - '"{target}" 软件著作权'
+      - '"{target}" 发明专利'
+      - '"{target}" 实用新型'
     summary_prompt: |
       请从以下搜索结果中提取"{target}"的知识产权信息。
       重点提取：专利总数（发明/实用新型/外观分类）、商标数量及主要商标名、软件著作权数量。
-      企查查与爱企查数据一致标「高」，仅一方有数据标「中」。
+
+      【信源权重】
+      - 国家知识产权局(cnipa.gov.cn)/Google Patents：最权威，列出具体专利号
+      - 企查查/天眼查/启信宝：次权威，给出汇总数字
+      - 招聘平台/新闻：仅作辅助参考
+      - 当汇总数字与明细不一致时，采信权威信源的汇总数字，并注明"明细仅列举部分"
+
+      【可信度判断】
+      - 高：有权威平台汇总数字且≥2个平台数据一致
+      - 中：有具体专利号/商标号/著作权登记号等明细数据（即使无汇总数字）
+      - 低：仅有模糊描述，无具体编号
+      - 待核实：完全无数据
 
       搜索结果：
       {results}
@@ -190,11 +215,11 @@ dimensions:
     enabled: true
     required: false
     search_queries:
-      - '"{target}" 主营产品 核心竞争力'
-      - '"{target}" 客户案例 合作品牌'
-      - '"{target}" 产品目录 产品系列'
+      - '"{target}" 主营产品'
+      - '"{target}" 核心产品'
+      - '"{target}" 客户'
+      - '"{target}" 供应商'
       - '{target} site:1688.com'
-      - '{target} 佛山 家具五金 供应商'
     summary_prompt: |
       请从以下搜索结果中提取"{target}"的产品与市场定位信息。
       制造业采购平台(curtao.com, 1688.com)的产品目录最具参考价值；官网/展会信息作为补充。
@@ -210,8 +235,9 @@ dimensions:
     enabled: true
     required: false
     search_queries:
-      - '"{target}" 上市 股票代码 板块'
-      - '"{target}" 拟上市 辅导备案 IPO'
+      - '"{target}" 上市'
+      - '"{target}" 股票代码'
+      - '"{target}" IPO'
     summary_prompt: |
       请从以下搜索结果中提取"{target}"的上市情况。
       重点提取：是否上市、股票代码、上市板块、是否有拟上市/辅导备案记录。
