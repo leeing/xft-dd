@@ -63,8 +63,7 @@ async def query_metaso(api_key: str, query: str, timeout: int = 30) -> tuple[str
     async with httpx.AsyncClient(timeout=timeout, verify=False) as client:  # noqa: S501
         response = await client.post(url, headers=headers, json=payload)
         response.raise_for_status()
-
-    data = response.json()
+        data = response.json()
     if "answer" not in data:
         log.warning("metaso_no_answer", query=query[:60], keys=list(data.keys()))
         return "", 0
