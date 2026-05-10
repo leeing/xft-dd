@@ -5,12 +5,13 @@ import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
+
 from diligence.config import AppConfig, Dimension
 
 
 def _make_cfg() -> AppConfig:
     return AppConfig(
-        model="MiniMax-M2.7-Highspeed",
         merge_prompt="请综合{summaries}生成{target}的报告",
         dimensions=[
             Dimension(
@@ -19,11 +20,23 @@ def _make_cfg() -> AppConfig:
                 order=10,
                 enabled=True,
                 required=True,
-                search_queries=["{target} 工商注册"],
+                minimax_queries=["{target} 工商注册"],
                 summary_prompt="请分析{target}的工商信息。\n{results}",
             )
         ],
     )
+
+
+def _make_httpx_client(organic: list[dict]) -> MagicMock:
+    """Build a mock httpx.AsyncClient that returns *organic* as search results."""
+    mock_resp = MagicMock(spec=httpx.Response)
+    mock_resp.json.return_value = {"organic": organic, "base_resp": {"status_code": 0}}
+    mock_resp.raise_for_status = MagicMock()
+    mock_client = MagicMock()
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    mock_client.post = AsyncMock(return_value=mock_resp)
+    return mock_client
 
 
 async def test_run_company_graph_produces_artifacts(tmp_path: Path) -> None:
@@ -33,13 +46,7 @@ async def test_run_company_graph_produces_artifacts(tmp_path: Path) -> None:
     cfg = _make_cfg()
     output_dir = str(tmp_path / "run_001")
 
-    mmx_output = json.dumps(
-        {
-            "organic": [
-                {"title": "A", "link": "https://qcc.com/1", "snippet": "注册资本100万"},
-            ]
-        }
-    ).encode()
+    organic = [{"title": "A", "link": "https://qcc.com/1", "snippet": "注册资本100万", "date": ""}]
     ai_summary = json.dumps(
         {
             "summary": "某公司成立于2020年",
@@ -50,11 +57,6 @@ async def test_run_company_graph_produces_artifacts(tmp_path: Path) -> None:
     )
     ai_report = "# 企业尽调报告：某公司\n\n## 一、工商基本信息\n**可信度：中**\n某公司成立于2020年"
 
-    async def fake_exec(*args, **kwargs):
-        proc = MagicMock()
-        proc.communicate = AsyncMock(return_value=(mmx_output, b""))
-        return proc
-
     mock_client = MagicMock()
     mock_client.chat.completions.create = MagicMock(
         side_effect=[
@@ -63,7 +65,7 @@ async def test_run_company_graph_produces_artifacts(tmp_path: Path) -> None:
         ]
     )
 
-    with patch("asyncio.create_subprocess_exec", side_effect=fake_exec):
+    with patch("diligence.utils.minimax_search.httpx.AsyncClient", return_value=_make_httpx_client(organic)):
         with patch("diligence.nodes.summarize_node.get_ai_client", return_value=mock_client):
             with patch("diligence.nodes.merge_node.get_ai_client", return_value=mock_client):
                 result = await run_company_graph(target="某公司", config=cfg, output_dir=output_dir)
@@ -81,7 +83,6 @@ async def test_run_company_graph_run_id_unique(tmp_path: Path) -> None:
     from diligence.graph import run_company_graph
 
     cfg = _make_cfg()
-    mmx_output = json.dumps({"organic": []}).encode()
     ai_output = json.dumps({"summary": "s", "confidence": "待核实", "uncertain_facts": [], "evidence_item_ids": []})
     ai_report = "报告内容"
 
@@ -95,15 +96,10 @@ async def test_run_company_graph_run_id_unique(tmp_path: Path) -> None:
         )
         return m
 
-    async def fake_exec(*args, **kwargs):
-        proc = MagicMock()
-        proc.communicate = AsyncMock(return_value=(mmx_output, b""))
-        return proc
-
     results = []
     for i in range(2):
         out_dir = str(tmp_path / f"run_{i:03d}")
-        with patch("asyncio.create_subprocess_exec", side_effect=fake_exec):
+        with patch("diligence.utils.minimax_search.httpx.AsyncClient", return_value=_make_httpx_client([])):
             with patch("diligence.nodes.summarize_node.get_ai_client", return_value=make_mock()):
                 with patch("diligence.nodes.merge_node.get_ai_client", return_value=make_mock()):
                     r = await run_company_graph("某公司", cfg, out_dir)
@@ -119,15 +115,11 @@ async def test_run_company_graph_required_fail_sets_flag(tmp_path: Path) -> None
 
     cfg = _make_cfg()
 
-    async def failing_exec(*args, **kwargs):
-        proc = MagicMock()
-
-        async def boom():
-            msg = "mmx down"
-            raise RuntimeError(msg)
-
-        proc.communicate = boom
-        return proc
+    # Client that always raises TimeoutException (simulates all queries failing)
+    failing_client = MagicMock()
+    failing_client.__aenter__ = AsyncMock(return_value=failing_client)
+    failing_client.__aexit__ = AsyncMock(return_value=False)
+    failing_client.post = AsyncMock(side_effect=httpx.TimeoutException("down"))
 
     ai_report = "报告内容"
     ai_fallback = json.dumps({"summary": "s", "confidence": "待核实", "uncertain_facts": [], "evidence_item_ids": []})
@@ -141,7 +133,7 @@ async def test_run_company_graph_required_fail_sets_flag(tmp_path: Path) -> None
         return_value=MagicMock(choices=[MagicMock(message=MagicMock(content=ai_report))])
     )
 
-    with patch("asyncio.create_subprocess_exec", side_effect=failing_exec):
+    with patch("diligence.utils.minimax_search.httpx.AsyncClient", return_value=failing_client):
         with patch("diligence.nodes.summarize_node.get_ai_client", return_value=mock_sum):
             with patch("diligence.nodes.merge_node.get_ai_client", return_value=mock_merge):
                 result = await run_company_graph("某公司", cfg, str(tmp_path / "run_fail"))

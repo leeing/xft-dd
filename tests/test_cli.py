@@ -20,7 +20,7 @@ def _cfg_file(tmp_path: Path) -> Path:
                 "order": 10,
                 "enabled": True,
                 "required": True,
-                "search_queries": ["{target} 工商注册"],
+                "minimax_queries": ["{target} 工商注册"],
                 "summary_prompt": "{target}\n{results}",
             }
         ],
@@ -77,7 +77,6 @@ def test_only_filter_limits_dimensions() -> None:
     from diligence.config import AppConfig, Dimension
 
     cfg = AppConfig(
-        model="m",
         merge_prompt="x",
         dimensions=[
             Dimension(
@@ -86,7 +85,7 @@ def test_only_filter_limits_dimensions() -> None:
                 order=10,
                 enabled=True,
                 required=True,
-                search_queries=["q"],
+                minimax_queries=["q"],
                 summary_prompt="p\n{results}",
             ),
             Dimension(
@@ -95,7 +94,7 @@ def test_only_filter_limits_dimensions() -> None:
                 order=60,
                 enabled=True,
                 required=False,
-                search_queries=["q"],
+                minimax_queries=["q"],
                 summary_prompt="p\n{results}",
             ),
         ],
@@ -110,7 +109,6 @@ def test_skip_filter_removes_dimension() -> None:
     from diligence.config import AppConfig, Dimension
 
     cfg = AppConfig(
-        model="m",
         merge_prompt="x",
         dimensions=[
             Dimension(
@@ -119,7 +117,7 @@ def test_skip_filter_removes_dimension() -> None:
                 order=10,
                 enabled=True,
                 required=True,
-                search_queries=["q"],
+                minimax_queries=["q"],
                 summary_prompt="p\n{results}",
             ),
             Dimension(
@@ -128,7 +126,7 @@ def test_skip_filter_removes_dimension() -> None:
                 order=80,
                 enabled=True,
                 required=False,
-                search_queries=["q"],
+                minimax_queries=["q"],
                 summary_prompt="p\n{results}",
             ),
         ],

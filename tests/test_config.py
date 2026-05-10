@@ -17,7 +17,6 @@ def _write_config(tmp_path: Path, content: str) -> Path:
 
 MINIMAL_CONFIG = """
 schema_version: "1.0"
-model: "MiniMax-M2.7-Highspeed"
 merge_prompt: "请综合{summaries}生成{target}的报告"
 dimensions:
   - id: basic_info
@@ -25,7 +24,7 @@ dimensions:
     order: 10
     enabled: true
     required: true
-    search_queries:
+    minimax_queries:
       - "{target} 工商注册信息"
     summary_prompt: "请从以下结果中提取{target}的工商信息。\\n{results}"
 """
@@ -34,7 +33,6 @@ dimensions:
 def test_load_config_valid(tmp_path: Path) -> None:
     p = _write_config(tmp_path, MINIMAL_CONFIG)
     cfg = load_config(str(p))
-    assert cfg.model == "MiniMax-M2.7-Highspeed"
     assert len(cfg.dimensions) == 1
     assert cfg.dimensions[0].id == "basic_info"
     assert cfg.dimensions[0].required is True
@@ -49,7 +47,7 @@ def test_active_dimensions_excludes_disabled(tmp_path: Path) -> None:
     order: 20
     enabled: false
     required: false
-    search_queries:
+    minimax_queries:
       - "{target} 行业"
     summary_prompt: "{target}\\n{results}"
 """
@@ -62,7 +60,7 @@ def test_active_dimensions_excludes_disabled(tmp_path: Path) -> None:
 
 
 def test_load_config_missing_required_field(tmp_path: Path) -> None:
-    p = _write_config(tmp_path, 'schema_version: "1.0"\nmodel: "m"\nmerge_prompt: "p"\n')
+    p = _write_config(tmp_path, 'schema_version: "1.0"\nmerge_prompt: "p"\n')
     with pytest.raises(ValidationError):  # noqa: PT011
         load_config(str(p))
 
@@ -78,7 +76,6 @@ def test_load_config_schema_version_mismatch_warns(tmp_path: Path, capsys: pytes
 def test_dimension_order_sorted(tmp_path: Path) -> None:
     content = """
 schema_version: "1.0"
-model: "MiniMax-M2.7-Highspeed"
 merge_prompt: "x"
 dimensions:
   - id: ip
@@ -86,14 +83,14 @@ dimensions:
     order: 60
     enabled: true
     required: false
-    search_queries: ["{target} 专利"]
+    minimax_queries: ["{target} 专利"]
     summary_prompt: "{target}\\n{results}"
   - id: basic_info
     name: 工商基本信息
     order: 10
     enabled: true
     required: true
-    search_queries: ["{target} 工商"]
+    minimax_queries: ["{target} 工商"]
     summary_prompt: "{target}\\n{results}"
 """
     p = _write_config(tmp_path, content)

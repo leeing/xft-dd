@@ -13,7 +13,6 @@ from diligence.config import AppConfig, BatchConfig, Dimension
 
 def _make_cfg(batch_runs_dir: str = "batch_runs") -> AppConfig:
     return AppConfig(
-        model="MiniMax-M2.7-Highspeed",
         merge_prompt="综合{summaries}生成{target}的报告",
         dimensions=[
             Dimension(
@@ -22,7 +21,7 @@ def _make_cfg(batch_runs_dir: str = "batch_runs") -> AppConfig:
                 order=10,
                 enabled=True,
                 required=True,
-                search_queries=["{target} 工商注册"],
+                minimax_queries=["{target} 工商注册"],
                 summary_prompt="分析{target}\n{results}",
             )
         ],
@@ -42,7 +41,7 @@ def _cfg_file(tmp_path: Path, batch_runs_dir: str) -> Path:
                 "order": 10,
                 "enabled": True,
                 "required": True,
-                "search_queries": ["q"],
+                "minimax_queries": ["q"],
                 "summary_prompt": "p\n{results}",
             },
         ],

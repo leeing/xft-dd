@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-import asyncio
 import json
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import httpx
 
 from diligence.config import AppConfig, Dimension
 from diligence.models import (
@@ -18,7 +19,6 @@ from diligence.state import DiligenceState
 
 def _make_cfg() -> AppConfig:
     return AppConfig(
-        model="MiniMax-M2.7-Highspeed",
         merge_prompt="请综合{summaries}生成{target}的报告",
         dimensions=[
             Dimension(
@@ -27,7 +27,7 @@ def _make_cfg() -> AppConfig:
                 order=10,
                 enabled=True,
                 required=True,
-                search_queries=["{target} 工商注册"],
+                minimax_queries=["{target} 工商注册"],
                 summary_prompt="请分析{target}的工商信息。\n{results}",
             )
         ],
@@ -89,21 +89,18 @@ async def test_search_node_success(tmp_path: Path) -> None:
     from diligence.nodes.search_node import search_node
 
     cfg = _make_cfg()
-    mmx_output = json.dumps(
-        {
-            "organic": [
-                {"title": "A", "link": "https://qcc.com/1", "snippet": "注册资本"},
-            ]
-        }
-    ).encode()
+    organic = [{"title": "A", "link": "https://qcc.com/1", "snippet": "注册资本", "date": ""}]
 
-    async def fake_exec(*args, **kwargs):
-        proc = MagicMock()
-        proc.communicate = AsyncMock(return_value=(mmx_output, b""))
-        return proc
+    mock_client = MagicMock()
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    mock_resp = MagicMock(spec=httpx.Response)
+    mock_resp.json.return_value = {"organic": organic}
+    mock_resp.raise_for_status = MagicMock()
+    mock_client.post = AsyncMock(return_value=mock_resp)
 
     state = _base_state(cfg, tmp_path)
-    with patch("asyncio.create_subprocess_exec", side_effect=fake_exec):
+    with patch("diligence.utils.minimax_search.httpx.AsyncClient", return_value=mock_client):
         result = await search_node(state)
 
     dsr = result["search_results_by_dimension"]["basic_info"]
@@ -116,7 +113,6 @@ async def test_search_node_timeout_produces_partial(tmp_path: Path) -> None:
     from diligence.nodes.search_node import search_node
 
     cfg = AppConfig(
-        model="m",
         merge_prompt="x",
         dimensions=[
             Dimension(
@@ -125,35 +121,32 @@ async def test_search_node_timeout_produces_partial(tmp_path: Path) -> None:
                 order=10,
                 enabled=True,
                 required=True,
-                search_queries=["{target} 工商", "{target} 信用代码"],
+                minimax_queries=["{target} 工商", "{target} 信用代码"],
                 summary_prompt="x\n{results}",
             )
         ],
     )
     call_count = 0
 
-    async def fake_exec(*args, **kwargs):
+    def make_client(**_kwargs: object) -> MagicMock:
         nonlocal call_count
         call_count += 1
-        proc = MagicMock()
+        mock_client = MagicMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
         if call_count == 1:
-            proc.communicate = AsyncMock(
-                return_value=(
-                    json.dumps({"organic": [{"title": "T", "link": "https://a.com", "snippet": "s"}]}).encode(),
-                    b"",
-                )
-            )
+            mock_resp = MagicMock(spec=httpx.Response)
+            mock_resp.json.return_value = {
+                "organic": [{"title": "T", "link": "https://a.com", "snippet": "s", "date": ""}]
+            }
+            mock_resp.raise_for_status = MagicMock()
+            mock_client.post = AsyncMock(return_value=mock_resp)
         else:
-
-            async def slow():
-                await asyncio.sleep(999)
-                return (b"", b"")
-
-            proc.communicate = slow
-        return proc
+            mock_client.post = AsyncMock(side_effect=httpx.TimeoutException("timed out"))
+        return mock_client
 
     state = _base_state(cfg, tmp_path)
-    with patch("asyncio.create_subprocess_exec", side_effect=fake_exec):
+    with patch("diligence.utils.minimax_search.httpx.AsyncClient", side_effect=make_client):
         result = await search_node(state)
 
     dsr = result["search_results_by_dimension"]["basic_info"]
