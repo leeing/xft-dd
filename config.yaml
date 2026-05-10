@@ -14,6 +14,14 @@ merge_system_prompt: "你是一个中国制造业行业顶级专家，对制造�
 playwright_fetch_timeout: 25
 playwright_fetch_concurrency: 2
 
+# 可抓取域名白名单：domain片段 → 含 {target} 占位符的 URL 模板
+# 留空则 Playwright 抓取全面禁用（即使 fetch_enabled: true）。
+# 示例：
+#   fetchable_domains:
+#     "example.com": "https://example.com/search?q={target}"
+#     "anothersite.cn": "https://anothersite.cn/company/{target}"
+fetchable_domains: {}
+
 report_options:
   include_sources: true
   include_checklist: true

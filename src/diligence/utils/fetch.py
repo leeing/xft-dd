@@ -37,13 +37,6 @@ from diligence.models import SearchItem, make_item_id
 
 log = structlog.get_logger(__name__)
 
-# Domains we will Playwright-fetch. Key = domain fragment, Value = URL builder.
-# Currently empty — no domains reliably work without login.
-FETCHABLE_DOMAINS: dict[str, str] = {}
-
-# Dimensions that always get a synthetic fetch item injected (even if MiniMax Search did not surface it)
-ALWAYS_INJECT_DIMS: set[str] = {"basic_info"}
-
 # How many chars to keep from fetched full text (avoid bloating the prompt)
 MAX_FULL_TEXT_CHARS = 6000
 
@@ -99,16 +92,16 @@ async def _fetch_page_text(url: str, timeout_ms: int = 15000) -> str:
         await ctx.close()
 
 
-def _is_fetchable(url: str | None) -> bool:
+def _is_fetchable(url: str | None, fetchable_domains: dict[str, str]) -> bool:
     """Return True if this item's domain is whitelisted for fetching."""
     if not url:
         return False
-    return any(domain in url for domain in FETCHABLE_DOMAINS)
+    return any(domain in url for domain in fetchable_domains)
 
 
-def _synthetic_item(target: str, domain_key: str, dimension_id: str) -> SearchItem:
+def _synthetic_item(target: str, domain_key: str, url_template: str, dimension_id: str) -> SearchItem:
     """Create a synthetic SearchItem for a domain we always want to fetch."""
-    url = FETCHABLE_DOMAINS[domain_key].replace("{target}", quote(target))
+    url = url_template.replace("{target}", quote(target))
     return SearchItem(
         id=make_item_id(url=url, title=f"{domain_key} 直查", snippet=""),
         title=f"{target} - {domain_key}",
@@ -120,32 +113,45 @@ def _synthetic_item(target: str, domain_key: str, dimension_id: str) -> SearchIt
     )
 
 
-async def enrich_items(
+async def enrich_items(  # noqa: PLR0913 — keyword-only args keep call sites readable
     items: list[SearchItem],
     target: str,
     dimension_id: str,
+    fetchable_domains: dict[str, str],
+    *,
+    always_inject: bool = False,
     fetch_timeout: int = 25,
     concurrency: int = 2,
 ) -> list[SearchItem]:
-    """Playwright-fetch whitelisted items + inject synthetic items for always-fetch dims.
+    """Playwright-fetch whitelisted items + optionally inject synthetic items.
+
+    Args:
+        items: Existing search results to enrich.
+        target: Company name (used for synthetic item URL building).
+        dimension_id: Dimension tag for new SearchItems.
+        fetchable_domains: Mapping of domain fragment → URL template with {target}.
+        always_inject: If True, inject synthetic items for all fetchable_domains
+            even if they didn't appear in search results.
+        fetch_timeout: Per-page fetch timeout in seconds.
+        concurrency: Max concurrent Playwright page fetches.
 
     Returns enriched item list. Items without full_text keep their original snippet.
-    Currently a no-op since FETCHABLE_DOMAINS is empty — returns items unchanged.
+    No-op when fetchable_domains is empty.
     """
     # Build the work list: (item, url_to_fetch)
     work: list[tuple[SearchItem, str]] = []
 
-    # 1) Always-inject synthetics for key dimensions (when FETCHABLE_DOMAINS is non-empty).
-    if dimension_id in ALWAYS_INJECT_DIMS:
-        for domain_key in FETCHABLE_DOMAINS:
-            synthetic = _synthetic_item(target, domain_key, dimension_id)
+    # 1) Always-inject synthetics for all fetchable_domains when always_inject is True.
+    if always_inject and fetchable_domains:
+        for domain_key, url_template in fetchable_domains.items():
+            synthetic = _synthetic_item(target, domain_key, url_template, dimension_id)
             items = [synthetic, *items]
             work.append((synthetic, synthetic.url))  # type: ignore[arg-type]
 
     # 2) Also fetch any whitelisted detail/operation URLs that MiniMax Search returned.
     already_in_work = {url for _, url in work}
     for item in items:
-        if item.url and _is_fetchable(item.url) and item.url not in already_in_work:
+        if item.url and _is_fetchable(item.url, fetchable_domains) and item.url not in already_in_work:
             work.append((item, item.url))
             already_in_work.add(item.url)
 

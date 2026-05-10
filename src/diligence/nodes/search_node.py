@@ -111,6 +111,8 @@ async def _apply_playwright(
             items=items,
             target=target,
             dimension_id=dim.id,
+            fetchable_domains=config.fetchable_domains,
+            always_inject=dim.always_inject,
             fetch_timeout=config.playwright_fetch_timeout,
             concurrency=config.playwright_fetch_concurrency,
         )
