@@ -12,3 +12,4 @@ htmlcov/
 .coverage
 runs/
 batch_runs/
+.DS_Store

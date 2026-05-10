@@ -32,7 +32,7 @@ async def run_dry_run(
     only: list[str] | None,
     skip: list[str] | None,
 ) -> int:
-    """Print dry-run preview without calling mmx or AI."""
+    """Print dry-run preview without calling search APIs or AI."""
     dims = [d for d in config.dimensions if d.enabled]
     if only:
         dims = [d for d in dims if d.id in only]
@@ -48,7 +48,7 @@ async def run_dry_run(
     sys.stderr.write("--\n")
     for dim in sorted(dims, key=lambda d: d.order):
         sys.stderr.write(f"  [{dim.name}]\n")
-        for q in dim.search_queries:
+        for q in dim.minimax_queries:
             sys.stderr.write(f"    - {q.replace('{target}', target)}\n")
     sys.stderr.write("--\n")
     sys.stderr.write("dry-run complete, no external calls made\n")
