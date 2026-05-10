@@ -38,8 +38,8 @@ uv run main.py --batch companies.txt --resume --batch-dir batch_runs/20260510-..
 
 ```env
 # ── 搜索层（不可替换）──────────────────────────────────────────
-MINIMAX_API_KEY=your_minimax_api_key_here
-MINIMAX_BASE_URL=https://api.minimaxi.chat/v1
+MINIMAX_API_KEY=SM4:<加密后的密钥>
+MINIMAX_BASE_URL=https://api.minimax.io/v1
 
 # 秘塔 AI 搜索（可选，启用后补充精准问答）
 METASO_API_KEY=
@@ -48,11 +48,11 @@ METASO_ENABLED=false
 # ── 推理层（可替换为任意 OpenAI 兼容模型）──────────────────────
 # 不填 LLM_API_KEY 则自动复用 MINIMAX_API_KEY
 LLM_API_KEY=
-LLM_BASE_URL=https://api.minimaxi.chat/v1
+LLM_BASE_URL=https://api.minimax.io/v1
 LLM_MODEL=MiniMax-M2.7-Highspeed
 
 # 使用 DeepSeek 示例：
-# LLM_API_KEY=sk-xxx
+# LLM_API_KEY=SM4:<加密后的密钥>
 # LLM_BASE_URL=https://api.deepseek.com/v1
 # LLM_MODEL=deepseek-chat
 ```
@@ -71,7 +71,7 @@ LLM_MODEL=MiniMax-M2.7-Highspeed
 │  init_node                                                       │
 │    → 生成 run_id，过滤 enabled 维度，创建输出目录               │
 │    │                                                             │
-│    ▼  (Send API 扇出，最多 dimension_concurrency=5 并发)        │
+│    ▼  (Send API 扇出，最多 dimension_concurrency=8 并发)        │
 │  ┌──────────────────┐  ┌──────────────────┐  ┌───────────────┐  │
 │  │  search_node     │  │  search_node     │  │  ...×8        │  │
 │  │  (basic_info)    │  │  (tech_cert)     │  │               │  │
@@ -127,9 +127,10 @@ LLM_MODEL=MiniMax-M2.7-Highspeed
 ### 第三层：Playwright — 全文抓取增强（可选，默认关闭）
 
 **实现**：`src/diligence/utils/fetch.py`  
-**启用方式**：在 `config.yaml` 某个维度下设 `fetch_enabled: true`
+**启用方式**：在 `config.yaml` 某个维度下设 `fetch_enabled: true`，**且** `fetchable_domains` 列表中包含目标域名片段
 
-- 对该维度的搜索结果 URL 发起真实浏览器访问，提取完整正文（替换 100-200 字摘要）
+- 仅抓取 URL 中包含 `fetchable_domains` 白名单域名的页面，未匹配的 URL 跳过
+- 对匹配页面发起真实浏览器访问，提取完整正文（替换 100-200 字摘要）
 - 适合：工商注册详情页、CNIPA 专利页等结构化内容页面
 - 不适合：需要登录的平台（天眼查、招聘网站）
 
@@ -179,13 +180,12 @@ LLM_MODEL=MiniMax-M2.7-Highspeed
 schema_version: "1.0"
 
 # 并发控制
-dimension_concurrency: 5          # 最多同时处理几个维度（1-20）
-query_concurrency_per_dimension: 2 # 每个维度内最多并发几个搜索请求（1-5）
-search_timeout_seconds: 60        # 单次搜索超时（秒）
+dimension_concurrency: 8          # 最多同时处理几个维度（1-20）
+query_concurrency_per_dimension: 5 # 每个维度内最多并发几个搜索请求（1-10）
+search_timeout_seconds: 30        # 单次搜索超时（秒）
 max_results_per_query: 10         # 每条查询最多取多少结果
 
 # 输出
-output_language: "zh-CN"
 runs_dir: "runs"                  # 单企业产物目录根
 
 # AI 角色提示词（可按行业定制，不改代码）
@@ -195,6 +195,14 @@ merge_system_prompt: "你是一个中国制造业行业顶级专家..."
 # Playwright 参数（仅在维度开启 fetch_enabled: true 时生效）
 playwright_fetch_timeout: 25      # 单页抓取超时（秒，5-120）
 playwright_fetch_concurrency: 2   # 并发抓取数（1-5）
+
+# 可抓取域名白名单：URL 中包含任意一项即触发 Playwright 全文抓取
+# 留空则即使 fetch_enabled: true 也不会抓取任何页面
+fetchable_domains: []
+# 示例：
+#   fetchable_domains:
+#     - "example.com"
+#     - "anothersite.cn"
 
 # 报告选项
 report_options:
@@ -220,7 +228,7 @@ dimensions:
     order: 10             # 排序，越小越靠前
     enabled: true
     required: true        # 失败时触发 exit(2)
-    fetch_enabled: false  # 是否启用 Playwright 全文抓取
+    fetch_enabled: false  # 是否启用 Playwright 全文抓取（需配合 fetchable_domains）
     minimax_queries:      # MiniMax Search 查询词（{target} 自动替换）
       - "{target} 工商注册信息"
       - "{target} 统一社会信用代码"
@@ -283,6 +291,7 @@ src/diligence/
 ├── config.py               # AppConfig、Dimension、load_config()
 ├── models.py               # SearchItem、DimensionSummary、RunMeta、CostRecord 等
 ├── settings.py             # BaseSettings（MINIMAX_*、METASO_*、LLM_*）
+├── keys.py                 # 密钥加密工具（encode / check 子命令）
 ├── state.py                # DiligenceState TypedDict + reducers
 ├── graph.py                # LangGraph 组装 + run_company_graph()
 ├── batch.py                # 批量编排，复用 run_company_graph()
@@ -297,7 +306,7 @@ src/diligence/
 └── utils/
     ├── minimax_search.py   # MiniMax Search API 封装
     ├── metaso.py           # 秘塔 AI 搜索客户端
-    └── fetch.py            # Playwright 全文抓取（可选增强）
+    └── fetch.py            # Playwright 全文抓取（可选增强，受 fetchable_domains 控制）
 ```
 
 ---
