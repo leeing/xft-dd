@@ -152,17 +152,6 @@ def test_cmd_encode_output_has_prefix(capsys: pytest.CaptureFixture) -> None:
     assert out.startswith(_SM4_PREFIX)
 
 
-def test_cmd_decode_roundtrip(capsys: pytest.CaptureFixture) -> None:
-    """keys decode writes original plaintext to stdout."""
-    from diligence.keys import _cmd_decode
-
-    original = "roundtrip-key"
-    encrypted = _SM4_PREFIX + _sm4_encrypt(original)
-    _cmd_decode(encrypted)
-    out = capsys.readouterr().out.strip()
-    assert out == original
-
-
 def test_cmd_check_encrypted(tmp_path: pytest.TempPathFactory, capsys: pytest.CaptureFixture) -> None:
     """keys check reports 'encrypted' for SM4:-prefixed keys."""
     from diligence.keys import _cmd_check

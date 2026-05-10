@@ -8,7 +8,6 @@ Settings loads and decrypts it automatically at runtime.
 
 Commands:
     encode <plaintext>   Encrypt and print SM4:Base64 string
-    decode <SM4:...>     Decrypt and print plaintext (for verification)
     check                Show encryption status of all API_KEY entries in .env
 """
 
@@ -17,18 +16,12 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from diligence.settings import _SM4_PREFIX, _sm4_decrypt, _sm4_encrypt
+from diligence.settings import _SM4_PREFIX, _sm4_encrypt
 
 
 def _cmd_encode(plaintext: str) -> None:
     """Print SM4-encrypted form of *plaintext*."""
     sys.stdout.write(_SM4_PREFIX + _sm4_encrypt(plaintext) + "\n")
-
-
-def _cmd_decode(encrypted: str) -> None:
-    """Decrypt *encrypted* (with or without SM4: prefix) and print plaintext."""
-    ciphertext = encrypted.removeprefix(_SM4_PREFIX)
-    sys.stdout.write(_sm4_decrypt(ciphertext) + "\n")
 
 
 def _cmd_check() -> None:
@@ -64,15 +57,12 @@ def main() -> None:
     match args:
         case ["encode", key]:
             _cmd_encode(key)
-        case ["decode", enc]:
-            _cmd_decode(enc)
         case ["check"]:
             _cmd_check()
         case _:
             sys.stderr.write(
                 "Usage:\n"
                 "  python -m diligence.keys encode <plaintext_key>   # encrypt\n"
-                "  python -m diligence.keys decode <SM4:...>         # verify decrypt\n"
                 "  python -m diligence.keys check                    # .env status\n"
             )
             sys.exit(2)
