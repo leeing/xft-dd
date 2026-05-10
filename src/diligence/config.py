@@ -44,7 +44,9 @@ class Dimension(BaseModel):
     order: int
     enabled: bool = True
     required: bool = False
-    search_queries: list[str]
+    fetch_enabled: bool = False  # Enable Playwright page fetch to enrich search results
+    minimax_queries: list[str]
+    metaso_queries: list[str] = Field(default_factory=list)  # 秘塔AI自然语言查询
     summary_prompt: str
 
 
@@ -57,12 +59,25 @@ class AppConfig(BaseModel):
     query_concurrency_per_dimension: int = Field(default=2, ge=1, le=5)
     search_timeout_seconds: int = 30
     max_results_per_query: int = 10
-    model: str
     output_language: str = "zh-CN"
     runs_dir: str = "runs"
     source_policy: SourcePolicy = Field(default_factory=SourcePolicy)
     report_options: ReportOptions = Field(default_factory=ReportOptions)
     batch: BatchConfig = Field(default_factory=BatchConfig)
+
+    # AI system prompts — configurable to adapt to different industries/scenarios
+    summarize_system_prompt: str = (
+        "你是中国制造业企业尽调专家，擅长从网络搜索结果中提取和分析企业信息，"
+        "对信息的可信度和来源有严格的判断标准。你的输出必须是合法 JSON，不包含任何其他内容。"
+    )
+    merge_system_prompt: str = (
+        "你是一个中国制造业行业顶级专家，对制造业行业有深刻理解，善于综合多维度信息给出精准的企业尽调结论。"
+    )
+
+    # Playwright fetch parameters (used when fetch_enabled=true on a dimension)
+    playwright_fetch_timeout: int = Field(default=25, ge=5, le=120)
+    playwright_fetch_concurrency: int = Field(default=2, ge=1, le=5)
+
     merge_prompt: str
     dimensions: list[Dimension]
 

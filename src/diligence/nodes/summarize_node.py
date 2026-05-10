@@ -10,10 +10,11 @@ from typing import Literal
 
 import structlog
 from openai import OpenAI, OpenAIError
+from openai.types.chat import ChatCompletionMessageParam
 from pydantic import BaseModel, ValidationError
 
 from diligence.config import AppConfig, Dimension
-from diligence.models import DimensionSearchResult, DimensionSummary, RunError
+from diligence.models import CostRecord, DimensionSearchResult, DimensionSummary, RunError
 from diligence.settings import settings
 from diligence.state import DiligenceState
 
@@ -59,8 +60,12 @@ def _extract_json(raw: str) -> str:
 
 
 def get_ai_client() -> OpenAI:
-    """Return an OpenAI-compatible client pointed at MiniMax."""
-    return OpenAI(api_key=settings.minimax_api_key, base_url=settings.minimax_base_url)
+    """Return an OpenAI-compatible client for the reasoning/summarize layer.
+
+    Uses LLM_* env vars when set; falls back to MINIMAX_* for backward compatibility.
+    """
+    api_key = settings.llm_api_key or settings.minimax_api_key
+    return OpenAI(api_key=api_key, base_url=settings.llm_base_url)
 
 
 def _apply_confidence_floor(
@@ -129,17 +134,17 @@ async def summarize_node(state: DiligenceState) -> dict[str, object]:
     prompt = dim.summary_prompt.replace("{target}", target).replace("{results}", rendered) + JSON_FORMAT_INSTRUCTION
 
     errors: list[RunError] = []
+    llm_calls = 0
+    llm_tokens = 0
     try:
         client = get_ai_client()
-        system_msg = (
-            "你是中国制造业企业尽调专家，擅长从网络搜索结果中提取和分析企业信息，对信息的可信度和来源有严格的判断标准。"
-            "你的输出必须是合法 JSON，不包含任何其他内容。"
-        )
-        messages: list[dict[str, str]] = [
-            {"role": "system", "content": system_msg},
+        messages: list[ChatCompletionMessageParam] = [
+            {"role": "system", "content": config.summarize_system_prompt},
             {"role": "user", "content": prompt},
         ]
-        response = client.chat.completions.create(model=config.model, messages=messages)
+        response = client.chat.completions.create(model=settings.llm_model, messages=messages)
+        llm_calls += 1
+        llm_tokens += response.usage.total_tokens if response.usage else 0
         raw_content = response.choices[0].message.content or ""
 
         # Attempt 1: parse directly
@@ -153,7 +158,9 @@ async def summarize_node(state: DiligenceState) -> dict[str, object]:
                 {"role": "assistant", "content": raw_content},
                 {"role": "user", "content": _JSON_RETRY_PROMPT},
             ]
-            retry_response = client.chat.completions.create(model=config.model, messages=messages)
+            retry_response = client.chat.completions.create(model=settings.llm_model, messages=messages)
+            llm_calls += 1
+            llm_tokens += retry_response.usage.total_tokens if retry_response.usage else 0
             retry_content = retry_response.choices[0].message.content or ""
             parsed = _AISummaryOutput.model_validate_json(_extract_json(retry_content))
 
@@ -192,4 +199,5 @@ async def summarize_node(state: DiligenceState) -> dict[str, object]:
         log.warning("summarize_fallback", dimension=dim.id, error=str(exc))
         sys.stderr.write(f"  [{dim.name}] summary parse failed, using raw snippets\n")
 
-    return {"summaries_by_dimension": {dim.id: summary}, "errors": errors}
+    cost = CostRecord(llm_calls=llm_calls, llm_tokens_total=llm_tokens)
+    return {"summaries_by_dimension": {dim.id: summary}, "errors": errors, "cost": cost}
