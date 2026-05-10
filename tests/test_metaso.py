@@ -108,9 +108,7 @@ async def test_fetch_metaso_items_success() -> None:
     """Returns SearchItems and sums credits on success."""
     with patch("diligence.utils.metaso.query_metaso", new_callable=AsyncMock) as mock_q:
         mock_q.return_value = ("公司注册资本为人民币壹仟万元整，经营状态正常", 3)
-        items, credits = await fetch_metaso_items(
-            "basic_info", ["某公司的注册资本是多少？"], api_key="key"
-        )
+        items, credits = await fetch_metaso_items("basic_info", ["某公司的注册资本是多少？"], api_key="key")
     assert len(items) == 1
     assert credits == 3
     assert items[0].full_text == "公司注册资本为人民币壹仟万元整，经营状态正常"
@@ -150,9 +148,7 @@ async def test_fetch_metaso_items_multiple_queries_summed() -> None:
             ("公司成立于2010年，注册资本为人民币壹仟万元整，经营状态正常", 2),
             ("法定代表人为张三，经营范围包括家具制造与销售，注册地址广东省佛山市", 3),
         ]
-        items, credits = await fetch_metaso_items(
-            "basic_info", ["query1", "query2"], api_key="key"
-        )
+        items, credits = await fetch_metaso_items("basic_info", ["query1", "query2"], api_key="key")
     assert len(items) == 2
     assert credits == 5
 
@@ -209,8 +205,6 @@ async def test_enrich_with_metaso_no_key_returns_original() -> None:
         dimension_id="basic_info",
         fetched_at=datetime.now(UTC),
     )
-    enriched, credits = await enrich_with_metaso(
-        items=[existing], dimension_id="basic_info", queries=["q"], api_key=""
-    )
+    enriched, credits = await enrich_with_metaso(items=[existing], dimension_id="basic_info", queries=["q"], api_key="")
     assert enriched == [existing]
     assert credits == 0

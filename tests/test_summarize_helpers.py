@@ -65,7 +65,7 @@ def test_extract_json_bare_object() -> None:
 
 def test_extract_json_with_code_fence() -> None:
     """JSON wrapped in ```json ... ``` fences is extracted."""
-    raw = "```json\n{\"summary\": \"ok\", \"confidence\": \"高\"}\n```"
+    raw = '```json\n{"summary": "ok", "confidence": "高"}\n```'
     result = _extract_json(raw)
     parsed = json.loads(result)
     assert parsed["confidence"] == "高"
@@ -73,7 +73,7 @@ def test_extract_json_with_code_fence() -> None:
 
 def test_extract_json_with_think_tags() -> None:
     """<think>...</think> blocks are stripped before extraction."""
-    raw = "<think>内部推理过程</think>\n{\"summary\": \"摘要\", \"confidence\": \"低\"}"
+    raw = '<think>内部推理过程</think>\n{"summary": "摘要", "confidence": "低"}'
     result = _extract_json(raw)
     parsed = json.loads(result)
     assert parsed["confidence"] == "低"
@@ -81,7 +81,7 @@ def test_extract_json_with_think_tags() -> None:
 
 def test_extract_json_think_and_fence_combined() -> None:
     """Both <think> stripping and code fence extraction work together."""
-    raw = "<think>reasoning</think>\n```json\n{\"confidence\": \"待核实\"}\n```"
+    raw = '<think>reasoning</think>\n```json\n{"confidence": "待核实"}\n```'
     result = _extract_json(raw)
     parsed = json.loads(result)
     assert parsed["confidence"] == "待核实"
@@ -128,9 +128,7 @@ def test_apply_confidence_floor(
     status: str,
     expected: str,
 ) -> None:
-    result = _apply_confidence_floor(
-        confidence, items_count, all_urls_empty=all_urls_empty, status=status
-    )
+    result = _apply_confidence_floor(confidence, items_count, all_urls_empty=all_urls_empty, status=status)
     assert result == expected
 
 
@@ -181,9 +179,7 @@ def test_render_results_empty_items() -> None:
 
 def test_render_results_multiple_items_separated() -> None:
     """Multiple items are separated by '---' delimiters."""
-    items = [
-        _make_item(f"https://example.com/{i}", title=f"标题{i}") for i in range(3)
-    ]
+    items = [_make_item(f"https://example.com/{i}", title=f"标题{i}") for i in range(3)]
     dsr = DimensionSearchResult(
         dimension_id="basic_info",
         dimension_name="工商基本信息",
