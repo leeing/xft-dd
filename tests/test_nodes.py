@@ -70,6 +70,7 @@ def _base_state(cfg: AppConfig, tmp_path: Path) -> DiligenceState:
         target="某公司",
         config=cfg,
         run_id="test-run",
+        started_at=datetime.now(UTC),
         active_dimensions=[dim],
         output_dir=str(tmp_path),
         current_dimension=dim,

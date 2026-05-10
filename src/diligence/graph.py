@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -88,6 +89,7 @@ async def run_company_graph(
         "target": target,
         "config": config,
         "run_id": "",
+        "started_at": datetime.now(UTC),  # placeholder; init_node overwrites this
         "active_dimensions": [],
         "output_dir": output_dir,
         "current_dimension": None,

@@ -27,6 +27,7 @@ def init_node(state: DiligenceState) -> dict[str, object]:
     target: str = state["target"]
 
     run_id = make_run_id(target)
+    started_at = datetime.now(UTC)
     active_dimensions = [d for d in config.dimensions if d.enabled]
     output_dir = state.get("output_dir") or str(Path(config.runs_dir) / run_id)
     Path(output_dir).mkdir(parents=True, exist_ok=True)
@@ -35,6 +36,7 @@ def init_node(state: DiligenceState) -> dict[str, object]:
 
     return {
         "run_id": run_id,
+        "started_at": started_at,
         "active_dimensions": active_dimensions,
         "output_dir": output_dir,
         "search_results_by_dimension": {},

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import operator
+from datetime import datetime
 from typing import Annotated, Any
 
 from typing_extensions import TypedDict
@@ -39,6 +40,7 @@ class DiligenceState(TypedDict):
     target: str
     config: AppConfig
     run_id: str
+    started_at: datetime  # set by init_node; used by save_node for run_meta
     active_dimensions: list[Dimension]
     output_dir: str  # single: runs/{run_id}/ ; batch: batch_runs/{bid}/companies/{idx}-{hash}/
 
