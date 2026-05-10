@@ -2,12 +2,48 @@
 
 All environment variable access MUST go through this module.
 Direct env-var access via os module is forbidden by check-constraints.py.
+
+API keys are expected to be SM4-encrypted in .env (prefix SM4:).
+To encrypt a key:
+    python -m diligence.keys encode <plaintext_key>
+
+Plaintext keys are still accepted for backward compatibility.
 """
 
 from __future__ import annotations
 
-from pydantic import Field
+import base64
+
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# SM4 = 128-bit block cipher (国密标准); fixed 16-byte obfuscation key
+_SM4_KEY: bytes = b"xft" + b"\x00" * 13
+_SM4_PREFIX = "SM4:"
+_KEY_FIELDS = ("minimax_api_key", "metaso_api_key", "llm_api_key")
+
+
+def _sm4_encrypt(plaintext: str) -> str:
+    """PKCS7-pad, SM4-ECB encrypt, Base64-encode."""
+    data = plaintext.encode()
+    pad_len = 16 - (len(data) % 16)
+    data += bytes([pad_len] * pad_len)
+    enc = Cipher(algorithms.SM4(_SM4_KEY), modes.ECB()).encryptor()  # noqa: S305
+    return base64.b64encode(enc.update(data) + enc.finalize()).decode()
+
+
+def _sm4_decrypt(ciphertext_b64: str) -> str:
+    """Base64-decode, SM4-ECB decrypt, strip PKCS7 padding."""
+    ct = base64.b64decode(ciphertext_b64)
+    dec = Cipher(algorithms.SM4(_SM4_KEY), modes.ECB()).decryptor()  # noqa: S305
+    raw = dec.update(ct) + dec.finalize()
+    return raw[: -raw[-1]].decode()
+
+
+def _decode_key(v: str) -> str:
+    """Decrypt SM4-prefixed value; return plaintext as-is for backward compat."""
+    return _sm4_decrypt(v[len(_SM4_PREFIX) :]) if v.startswith(_SM4_PREFIX) else v
 
 
 class Settings(BaseSettings):
@@ -15,7 +51,7 @@ class Settings(BaseSettings):
 
     # MiniMax Search — 搜索层，不可替换
     minimax_api_key: str = Field(default="")
-    minimax_base_url: str = Field(default="https://api.minimaxi.chat/v1")
+    minimax_base_url: str = Field(default="https://api.minimax.io/v1")
 
     # 秘塔 AI 搜索 (metaso.cn) — 带联网搜索能力的 AI 问答
     metaso_api_key: str = Field(default="")
@@ -24,7 +60,7 @@ class Settings(BaseSettings):
     # 推理层（摘要 + 合并报告）— 支持任意 OpenAI 兼容接口
     # llm_api_key 为空时自动 fallback 到 minimax_api_key（向后兼容）
     llm_api_key: str = Field(default="")
-    llm_base_url: str = Field(default="https://api.minimaxi.chat/v1")
+    llm_base_url: str = Field(default="https://api.minimax.io/v1")
     llm_model: str = Field(default="MiniMax-M2.7-Highspeed")
 
     model_config = SettingsConfigDict(
@@ -32,6 +68,14 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=False,
     )
+
+    @model_validator(mode="after")
+    def _decode_keys(self) -> Settings:
+        """Auto-decrypt SM4-prefixed key fields after loading from .env."""
+        for field in _KEY_FIELDS:
+            if raw := getattr(self, field):
+                object.__setattr__(self, field, _decode_key(raw))
+        return self
 
 
 settings = Settings()
