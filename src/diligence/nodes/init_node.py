@@ -26,7 +26,7 @@ def init_node(state: DiligenceState) -> dict[str, object]:
     config: AppConfig = state["config"]
     target: str = state["target"]
 
-    run_id = make_run_id(target)
+    run_id = state.get("run_id") or make_run_id(target)
     started_at = datetime.now(UTC)
     active_dimensions = [d for d in config.dimensions if d.enabled]
     output_dir = state.get("output_dir") or str(Path(config.runs_dir) / run_id)

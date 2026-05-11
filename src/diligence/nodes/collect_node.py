@@ -36,15 +36,15 @@ def collect_node(state: DiligenceState) -> dict[str, object]:
     for dim in active:
         if dim.required:
             s: DimensionSummary | None = summaries.get(dim.id)
-            if s is None or s.status == "failed":
+            if s is None or s.status in ("failed", "partial"):
                 errors.append(
                     RunError(
                         dimension_id=dim.id,
                         stage=_COLLECT_STAGE,
-                        message=f"核心维度 [{dim.name}] failed, required dimension failure",
+                        message=f"核心维度 [{dim.name}] {s.status if s else 'missing'}, required dimension failure",
                         timestamp=datetime.now(UTC),
                     )
                 )
-                log.warning("required_dimension_failed", dimension=dim.id)
+                log.warning("required_dimension_failed", dimension=dim.id, status=s.status if s else "missing")
 
     return {"errors": errors}

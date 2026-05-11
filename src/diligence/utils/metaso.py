@@ -46,7 +46,7 @@ def _clean_answer(raw: str) -> str:
     return cleaned.strip()
 
 
-async def query_metaso(api_key: str, query: str, timeout: int = 30) -> tuple[str, int]:
+async def query_metaso(api_key: str, query: str, timeout: int = 30, *, verify_tls: bool = True) -> tuple[str, int]:
     """Query metaso AI search API. Returns (cleaned_answer, credits)."""
     url = f"https://{_METASO_HOST}{_METASO_PATH}"
     headers = {
@@ -60,7 +60,7 @@ async def query_metaso(api_key: str, query: str, timeout: int = 30) -> tuple[str
         "format": "simple",
         "conciseSnippet": True,
     }
-    async with httpx.AsyncClient(timeout=timeout, verify=False) as client:  # noqa: S501 — metaso.cn uses cert that fails in some environments
+    async with httpx.AsyncClient(timeout=timeout, verify=verify_tls) as client:
         response = await client.post(url, headers=headers, json=payload)
         response.raise_for_status()
         data = response.json()
@@ -87,15 +87,16 @@ def make_metaso_item(answer: str, query: str, dimension_id: str) -> SearchItem:
     )
 
 
-async def fetch_metaso_items(
+async def fetch_metaso_items(  # noqa: PLR0913
     dimension_id: str,
     queries: list[str],
     api_key: str,
     *,
     concurrency: int = 2,
     timeout: int = 30,
-) -> tuple[list[SearchItem], int]:
-    """Query metaso for each query string and return (metaso_items, total_credits).
+    verify_tls: bool = True,
+) -> tuple[list[SearchItem], int, int, int]:
+    """Query metaso for each query string and return (metaso_items, success, failed, total_credits).
 
     Args:
         dimension_id: Dimension ID for tagging SearchItems.
@@ -103,39 +104,42 @@ async def fetch_metaso_items(
         api_key: Metaso Bearer key (without "Bearer " prefix).
         concurrency: Max parallel metaso requests.
         timeout: Per-request timeout in seconds.
+        verify_tls: Whether to verify TLS certificates.
 
     Returns:
-        Tuple of (list of metaso SearchItems, total credits consumed).
+        Tuple of (list of metaso SearchItems, success_count, failed_count, total credits consumed).
     """
     if not api_key or not queries:
-        return [], 0
+        return [], 0, 0, 0
 
     semaphore = asyncio.Semaphore(concurrency)
 
-    async def fetch_one(query: str) -> tuple[SearchItem | None, int]:
+    async def fetch_one(query: str) -> tuple[SearchItem | None, int, bool]:
         async with semaphore:
             try:
                 answer, credits = await asyncio.wait_for(
-                    query_metaso(api_key, query, timeout),
+                    query_metaso(api_key, query, timeout, verify_tls=verify_tls),
                     timeout=timeout + 5,
                 )
                 if not answer or len(answer) < 20:  # noqa: PLR2004
                     log.warning("metaso_short_answer", query=query[:60], chars=len(answer))
-                    return None, credits
+                    return None, credits, False
                 log.debug("metaso_ok", query=query[:60], chars=len(answer))
-                return make_metaso_item(answer, query, dimension_id), credits
+                return make_metaso_item(answer, query, dimension_id), credits, True
             except (TimeoutError, OSError, httpx.HTTPError, ValueError) as exc:
                 log.warning("metaso_failed", query=query[:60], error=str(exc))
-                return None, 0
+                return None, 0, False
 
     raw_results = await asyncio.gather(*[fetch_one(q) for q in queries])
-    metaso_items = [item for item, _ in raw_results if item is not None]
-    total_credits = sum(c for _, c in raw_results)
+    metaso_items = [item for item, _, _ in raw_results if item is not None]
+    success_count = sum(1 for _, _, ok in raw_results if ok)
+    failed_count = sum(1 for _, _, ok in raw_results if not ok)
+    total_credits = sum(c for _, c, _ in raw_results)
 
     if metaso_items:
         log.info("metaso_enriched", dimension=dimension_id, count=len(metaso_items), credits=total_credits)
 
-    return metaso_items, total_credits
+    return metaso_items, success_count, failed_count, total_credits
 
 
 async def enrich_with_metaso(
@@ -143,7 +147,9 @@ async def enrich_with_metaso(
     dimension_id: str,
     queries: list[str],
     api_key: str,
-) -> tuple[list[SearchItem], int]:
+    *,
+    verify_tls: bool = True,
+) -> tuple[list[SearchItem], int, int, int]:
     """Fetch metaso items and prepend them to existing items list.
 
     Convenience wrapper around fetch_metaso_items() that handles the prepend.
@@ -151,7 +157,9 @@ async def enrich_with_metaso(
     Concurrency and timeout use fetch_metaso_items() defaults (2, 30).
 
     Returns:
-        Tuple of (enriched items list, total credits consumed).
+        Tuple of (enriched items list, success_count, failed_count, credits).
     """
-    metaso_items, credits = await fetch_metaso_items(dimension_id, queries, api_key)
-    return [*metaso_items, *items], credits
+    metaso_items, success, failed, credits = await fetch_metaso_items(
+        dimension_id, queries, api_key, verify_tls=verify_tls
+    )
+    return [*metaso_items, *items], success, failed, credits

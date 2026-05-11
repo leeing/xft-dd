@@ -24,6 +24,7 @@ def merge_cost(a: CostRecord, b: CostRecord) -> CostRecord:
         llm_calls=a.llm_calls + b.llm_calls,
         llm_tokens_total=a.llm_tokens_total + b.llm_tokens_total,
         metaso_calls=a.metaso_calls + b.metaso_calls,
+        metaso_failed_calls=a.metaso_failed_calls + b.metaso_failed_calls,
         metaso_credits_total=a.metaso_credits_total + b.metaso_credits_total,
     )
 
@@ -56,6 +57,9 @@ class DiligenceState(TypedDict):
 
     # Cost counters (accumulated across all parallel dimension branches)
     cost: Annotated[CostRecord, merge_cost]
+
+    # Config file path for audit trail
+    config_path: str
 
     # Outputs
     report: Annotated[str, keep_nonempty_str]

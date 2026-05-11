@@ -72,6 +72,7 @@ class AppConfig(BaseModel):
     # Playwright fetch parameters (used when fetch_enabled=true on a dimension)
     playwright_fetch_timeout: int = Field(default=25, ge=5, le=120)
     playwright_fetch_concurrency: int = Field(default=2, ge=1, le=5)
+    playwright_headless: bool = True  # headless for production, set false in config for debugging
 
     merge_prompt: str
     dimensions: list[Dimension]
@@ -81,6 +82,24 @@ class AppConfig(BaseModel):
     def sort_by_order(cls, v: list[Dimension]) -> list[Dimension]:
         """Sort dimensions by order field ascending."""
         return sorted(v, key=lambda d: d.order)
+
+
+def validate_dimension_ids(requested: list[str], available: list[Dimension], *, label: str = "") -> str | None:
+    """Validate requested dimension IDs exist in the config.
+
+    Args:
+        requested: Dimension IDs from --only or --skip.
+        available: All dimensions from the config (enabled + disabled).
+        label: Human-readable label for error messages (e.g. "--only", "--skip").
+
+    Returns:
+        Error message string if unknown IDs found, None otherwise.
+    """
+    known_ids = {d.id for d in available}
+    unknown = [rid for rid in requested if rid not in known_ids]
+    if unknown:
+        return f"error: unknown dimension id(s) in {label}: {', '.join(sorted(unknown))}"
+    return None
 
 
 def load_config(config_path: str) -> AppConfig:

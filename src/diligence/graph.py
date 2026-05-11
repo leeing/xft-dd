@@ -72,6 +72,8 @@ async def run_company_graph(
     target: str,
     config: AppConfig,
     output_dir: str,
+    run_id: str = "",
+    config_path: str = "",
 ) -> CompanyRunResult:
     """Execute the full single-company due diligence pipeline.
 
@@ -87,7 +89,7 @@ async def run_company_graph(
     initial: DiligenceState = {
         "target": target,
         "config": config,
-        "run_id": "",
+        "run_id": run_id,
         "started_at": None,
         "active_dimensions": [],
         "output_dir": output_dir,
@@ -99,6 +101,7 @@ async def run_company_graph(
         "report": "",
         "report_path": "",
         "artifacts_dir": "",
+        "config_path": config_path,
     }
     langgraph_cfg = {"max_concurrency": config.dimension_concurrency}
 

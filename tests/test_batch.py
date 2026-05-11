@@ -119,7 +119,7 @@ async def test_batch_company_failure_does_not_stop_others(tmp_path: Path) -> Non
 
     call_count = 0
 
-    async def fake_run(target, config, output_dir):
+    async def fake_run(target, config, output_dir, **kwargs):
         nonlocal call_count
         call_count += 1
         from diligence.models import CompanyRunResult
@@ -193,7 +193,7 @@ async def test_batch_resume_skips_completed(tmp_path: Path) -> None:
 
     call_targets: list[str] = []
 
-    async def fake_run(target, config, output_dir):
+    async def fake_run(target, config, output_dir, **kwargs):
         call_targets.append(target)
         from diligence.models import CompanyRunResult
 
@@ -268,7 +268,7 @@ async def test_batch_produces_summary_files(tmp_path: Path) -> None:
     f.write_text("公司A\n公司B\n", encoding="utf-8")
     cfg_path = str(_cfg_file(tmp_path, str(batch_runs)))
 
-    async def fake_run(target, config, output_dir):
+    async def fake_run(target, config, output_dir, **kwargs):
         from diligence.models import CompanyRunResult
 
         return CompanyRunResult(index=0, target=target, status="success", run_id="r")

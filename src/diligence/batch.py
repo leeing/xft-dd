@@ -18,7 +18,7 @@ from pathlib import Path
 
 import structlog
 
-from diligence.config import AppConfig, Dimension
+from diligence.config import AppConfig, Dimension, validate_dimension_ids
 from diligence.graph import run_company_graph
 from diligence.models import BatchRunMeta, CompanyRunResult, RunMeta
 
@@ -260,6 +260,7 @@ async def _process_one(  # noqa: PLR0913
     config: AppConfig,
     resume: bool,
     batch_dir: str | None,
+    config_path: str = "",
 ) -> CompanyRunResult:
     """Process a single company with resume support."""
     th = _target_hash(target)
@@ -287,6 +288,7 @@ async def _process_one(  # noqa: PLR0913
                 target=target,
                 config=config,
                 output_dir=str(company_dir),
+                config_path=config_path,
             )
             return result.model_copy(update={"index": idx})
         except (RuntimeError, ValueError, OSError) as exc:
@@ -296,7 +298,7 @@ async def _process_one(  # noqa: PLR0913
             return CompanyRunResult(index=idx, target=target, status="failed", error=str(exc))
 
 
-async def run_batch(  # noqa: PLR0913
+async def run_batch(  # noqa: PLR0913, PLR0911
     *,
     input_file: str,
     config: AppConfig,
@@ -313,9 +315,18 @@ async def run_batch(  # noqa: PLR0913
     """Run batch due diligence for a list of companies."""
     dims = [d for d in config.dimensions if d.enabled]
     if only:
+        if err := validate_dimension_ids(only, config.dimensions, label="--only"):
+            sys.stderr.write(f"{err}\n")
+            return 1
         dims = [d for d in dims if d.id in only]
     if skip:
+        if err := validate_dimension_ids(skip, config.dimensions, label="--skip"):
+            sys.stderr.write(f"{err}\n")
+            return 1
         dims = [d for d in dims if d.id not in skip]
+    if not dims:
+        sys.stderr.write("error: no active dimensions after filtering\n")
+        return 1
     config = config.model_copy(update={"dimensions": dims})
 
     targets = parse_input_file(input_file, name_column=name_column)
@@ -364,6 +375,7 @@ async def run_batch(  # noqa: PLR0913
                     config=config,
                     resume=resume,
                     batch_dir=batch_dir,
+                    config_path=config_path,
                 )
                 for i, t in enumerate(targets)
             ]

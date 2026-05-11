@@ -63,6 +63,7 @@ class CostRecord(BaseModel):
     llm_calls: int = 0  # LLM completions.create 调用次数（含 JSON retry）
     llm_tokens_total: int = 0  # LLM total_tokens 累计
     metaso_calls: int = 0  # Metaso 查询成功次数
+    metaso_failed_calls: int = 0  # Metaso 查询失败次数
     metaso_credits_total: int = 0  # Metaso credits 累计
 
 

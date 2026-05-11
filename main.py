@@ -19,7 +19,7 @@ from pathlib import Path
 import structlog
 from dotenv import load_dotenv
 
-from diligence.config import AppConfig, load_config
+from diligence.config import AppConfig, load_config, validate_dimension_ids
 from diligence.nodes.init_node import make_run_id
 
 load_dotenv()
@@ -35,9 +35,18 @@ async def run_dry_run(
     """Print dry-run preview without calling search APIs or AI."""
     dims = [d for d in config.dimensions if d.enabled]
     if only:
+        if err := validate_dimension_ids(only, config.dimensions, label="--only"):
+            sys.stderr.write(f"{err}\n")
+            return 1
         dims = [d for d in dims if d.id in only]
     if skip:
+        if err := validate_dimension_ids(skip, config.dimensions, label="--skip"):
+            sys.stderr.write(f"{err}\n")
+            return 1
         dims = [d for d in dims if d.id not in skip]
+    if not dims:
+        sys.stderr.write("error: no active dimensions after filtering\n")
+        return 1
 
     sys.stderr.write(f"target: {target}\n")
     sys.stderr.write(
@@ -65,9 +74,18 @@ async def run_single(
     config = load_config(config_path)
     dims = [d for d in config.dimensions if d.enabled]
     if only:
+        if err := validate_dimension_ids(only, config.dimensions, label="--only"):
+            sys.stderr.write(f"{err}\n")
+            return 1
         dims = [d for d in dims if d.id in only]
     if skip:
+        if err := validate_dimension_ids(skip, config.dimensions, label="--skip"):
+            sys.stderr.write(f"{err}\n")
+            return 1
         dims = [d for d in dims if d.id not in skip]
+    if not dims:
+        sys.stderr.write("error: no active dimensions after filtering\n")
+        return 1
     config = config.model_copy(update={"dimensions": dims})
 
     from diligence.graph import run_company_graph
@@ -84,7 +102,9 @@ async def run_single(
     )
     sys.stderr.write("--\n")
 
-    result = await run_company_graph(target=target, config=config, output_dir=output_dir)
+    result = await run_company_graph(
+        target=target, config=config, output_dir=output_dir, run_id=run_id, config_path=config_path
+    )
 
     if result.required_failed:
         return 2

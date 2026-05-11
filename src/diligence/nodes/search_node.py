@@ -13,7 +13,7 @@ from diligence.config import AppConfig, Dimension
 from diligence.models import CostRecord, DimensionSearchResult, SearchItem
 from diligence.settings import settings
 from diligence.state import DiligenceState
-from diligence.utils.fetch import enrich_items
+from diligence.utils.fetch import FetchSession, enrich_items
 from diligence.utils.metaso import enrich_with_metaso
 from diligence.utils.minimax_search import dedup_items, run_search
 
@@ -74,26 +74,27 @@ async def _apply_metaso(
     items: list[SearchItem],
     dim: Dimension,
     target: str,
-) -> tuple[list[SearchItem], int]:
-    """Enrich items with Metaso AI answers when enabled; returns (items, credits)."""
+) -> tuple[list[SearchItem], int, int, int]:
+    """Enrich items with Metaso AI answers when enabled; returns (items, success, failed, credits)."""
     if not (settings.metaso_enabled and settings.metaso_api_key and dim.metaso_queries):
-        return items, 0
+        return items, 0, 0, 0
     normalized = _normalize_target(target)
     metaso_qs = [q.replace("{target}", normalized) for q in dim.metaso_queries]
     sys.stderr.write(f"  [{dim.name}] 秘塔AI搜索 ({len(metaso_qs)} 条查询)...\n")
     try:
-        enriched, credits = await enrich_with_metaso(
+        enriched, success, failed, credits = await enrich_with_metaso(
             items=items,
             dimension_id=dim.id,
             queries=metaso_qs,
             api_key=settings.metaso_api_key,
+            verify_tls=settings.metaso_verify_tls,
         )
     except (OSError, ValueError) as exc:
         log.warning("metaso_enrich_failed", dimension=dim.id, error=str(exc))
         sys.stderr.write(f"  [{dim.name}] 秘塔AI搜索失败（降级到纯MiniMax Search结果）: {exc}\n")
-        return items, 0
+        return items, 0, len(dim.metaso_queries), 0
     else:
-        return enriched, credits
+        return enriched, success, failed, credits
 
 
 async def _apply_playwright(
@@ -106,12 +107,14 @@ async def _apply_playwright(
         return items
     sys.stderr.write(f"  [{dim.name}] Playwright enrichment...\n")
     try:
-        enriched = await enrich_items(
-            items=items,
-            fetchable_domains=config.fetchable_domains,
-            fetch_timeout=config.playwright_fetch_timeout,
-            concurrency=config.playwright_fetch_concurrency,
-        )
+        async with FetchSession(headless=config.playwright_headless) as session:
+            enriched = await enrich_items(
+                items=items,
+                fetchable_domains=config.fetchable_domains,
+                fetch_timeout=config.playwright_fetch_timeout,
+                concurrency=config.playwright_fetch_concurrency,
+                session=session,
+            )
     except (OSError, ValueError) as exc:
         log.warning("enrich_failed", dimension=dim.id, error=str(exc))
         sys.stderr.write(f"  [{dim.name}] enrichment failed (fallback to snippets): {exc}\n")
@@ -134,9 +137,7 @@ async def search_node(state: DiligenceState) -> dict[str, object]:
     )
 
     deduped = dedup_items(all_items)
-    deduped, metaso_credits = await _apply_metaso(deduped, dim, target)
-    metaso_active = settings.metaso_enabled and bool(settings.metaso_api_key) and bool(dim.metaso_queries)
-    metaso_calls = len(dim.metaso_queries) if metaso_active else 0
+    deduped, metaso_success, metaso_failed, metaso_credits = await _apply_metaso(deduped, dim, target)
     deduped = await _apply_playwright(deduped, dim, config)
 
     total_queries = len(dim.minimax_queries)
@@ -157,7 +158,8 @@ async def search_node(state: DiligenceState) -> dict[str, object]:
     )
     cost = CostRecord(
         minimax_search_calls=success_queries,
-        metaso_calls=metaso_calls,
+        metaso_calls=metaso_success,
+        metaso_failed_calls=metaso_failed,
         metaso_credits_total=metaso_credits,
     )
     log.info("search_complete", dimension=dim.id, items=len(deduped), status=dim_status)

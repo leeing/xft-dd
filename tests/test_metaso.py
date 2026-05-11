@@ -92,15 +92,19 @@ def test_make_metaso_item_long_query_truncated() -> None:
 
 async def test_fetch_metaso_items_returns_empty_when_no_api_key() -> None:
     """Empty api_key short-circuits immediately, no HTTP calls."""
-    items, credits = await fetch_metaso_items("basic_info", ["query"], api_key="")
+    items, success, failed, credits = await fetch_metaso_items("basic_info", ["query"], api_key="")
     assert items == []
+    assert success == 0
+    assert failed == 0
     assert credits == 0
 
 
 async def test_fetch_metaso_items_returns_empty_when_no_queries() -> None:
     """Empty query list short-circuits immediately."""
-    items, credits = await fetch_metaso_items("basic_info", [], api_key="key")
+    items, success, failed, credits = await fetch_metaso_items("basic_info", [], api_key="key")
     assert items == []
+    assert success == 0
+    assert failed == 0
     assert credits == 0
 
 
@@ -108,8 +112,12 @@ async def test_fetch_metaso_items_success() -> None:
     """Returns SearchItems and sums credits on success."""
     with patch("diligence.utils.metaso.query_metaso", new_callable=AsyncMock) as mock_q:
         mock_q.return_value = ("公司注册资本为人民币壹仟万元整，经营状态正常", 3)
-        items, credits = await fetch_metaso_items("basic_info", ["某公司的注册资本是多少？"], api_key="key")
+        items, success, failed, credits = await fetch_metaso_items(
+            "basic_info", ["某公司的注册资本是多少？"], api_key="key"
+        )
     assert len(items) == 1
+    assert success == 1
+    assert failed == 0
     assert credits == 3
     assert items[0].full_text == "公司注册资本为人民币壹仟万元整，经营状态正常"
 
@@ -118,8 +126,10 @@ async def test_fetch_metaso_items_skips_short_answer() -> None:
     """Answers shorter than 20 chars are discarded (likely a non-answer)."""
     with patch("diligence.utils.metaso.query_metaso", new_callable=AsyncMock) as mock_q:
         mock_q.return_value = ("无", 1)  # too short
-        items, credits = await fetch_metaso_items("basic_info", ["query"], api_key="key")
+        items, success, failed, credits = await fetch_metaso_items("basic_info", ["query"], api_key="key")
     assert items == []
+    assert success == 0
+    assert failed == 1
     assert credits == 1  # credits still counted even for short answers
 
 
@@ -127,8 +137,10 @@ async def test_fetch_metaso_items_handles_timeout_gracefully() -> None:
     """Timeout exception is caught; returns empty list, zero credits."""
     with patch("diligence.utils.metaso.query_metaso", new_callable=AsyncMock) as mock_q:
         mock_q.side_effect = TimeoutError("timeout")
-        items, credits = await fetch_metaso_items("basic_info", ["query"], api_key="key")
+        items, success, failed, credits = await fetch_metaso_items("basic_info", ["query"], api_key="key")
     assert items == []
+    assert success == 0
+    assert failed == 1
     assert credits == 0
 
 
@@ -136,8 +148,10 @@ async def test_fetch_metaso_items_handles_http_error_gracefully() -> None:
     """HTTP error is caught; returns empty list."""
     with patch("diligence.utils.metaso.query_metaso", new_callable=AsyncMock) as mock_q:
         mock_q.side_effect = httpx.HTTPStatusError("403", request=MagicMock(), response=MagicMock())
-        items, credits = await fetch_metaso_items("basic_info", ["query"], api_key="key")
+        items, success, failed, credits = await fetch_metaso_items("basic_info", ["query"], api_key="key")
     assert items == []
+    assert success == 0
+    assert failed == 1
     assert credits == 0
 
 
@@ -148,8 +162,10 @@ async def test_fetch_metaso_items_multiple_queries_summed() -> None:
             ("公司成立于2010年，注册资本为人民币壹仟万元整，经营状态正常", 2),
             ("法定代表人为张三，经营范围包括家具制造与销售，注册地址广东省佛山市", 3),
         ]
-        items, credits = await fetch_metaso_items("basic_info", ["query1", "query2"], api_key="key")
+        items, success, failed, credits = await fetch_metaso_items("basic_info", ["query1", "query2"], api_key="key")
     assert len(items) == 2
+    assert success == 2
+    assert failed == 0
     assert credits == 5
 
 
@@ -174,7 +190,7 @@ async def test_enrich_with_metaso_prepends_items() -> None:
 
     with patch("diligence.utils.metaso.query_metaso", new_callable=AsyncMock) as mock_q:
         mock_q.return_value = ("秘塔AI的答案内容，超过20个字符的有效答案", 2)
-        enriched, credits = await enrich_with_metaso(
+        enriched, success, failed, credits = await enrich_with_metaso(
             items=[existing],
             dimension_id="basic_info",
             queries=["某公司注册资本"],
@@ -182,6 +198,8 @@ async def test_enrich_with_metaso_prepends_items() -> None:
         )
 
     assert len(enriched) == 2
+    assert success == 1
+    assert failed == 0
     # Metaso item comes first (rank=0)
     assert enriched[0].rank == 0
     assert enriched[0].full_text != ""
@@ -205,6 +223,10 @@ async def test_enrich_with_metaso_no_key_returns_original() -> None:
         dimension_id="basic_info",
         fetched_at=datetime.now(UTC),
     )
-    enriched, credits = await enrich_with_metaso(items=[existing], dimension_id="basic_info", queries=["q"], api_key="")
+    enriched, success, failed, credits = await enrich_with_metaso(
+        items=[existing], dimension_id="basic_info", queries=["q"], api_key=""
+    )
     assert enriched == [existing]
+    assert success == 0
+    assert failed == 0
     assert credits == 0

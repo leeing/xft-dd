@@ -103,7 +103,7 @@ async def test_enrich_items_deduplicates_same_url() -> None:
 
     fetch_call_count = 0
 
-    async def fake_fetch(url: str, timeout_ms: int = 15000) -> str:
+    async def fake_fetch(url: str, browser: object, timeout_ms: int = 15000) -> str:
         nonlocal fetch_call_count
         fetch_call_count += 1
         return "full page content " * 50  # >500 chars to pass the short-response guard

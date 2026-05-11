@@ -13,3 +13,4 @@ htmlcov/
 runs/
 batch_runs/
 .DS_Store
+.codex/

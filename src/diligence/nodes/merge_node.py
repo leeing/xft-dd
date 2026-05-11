@@ -39,7 +39,9 @@ async def merge_node(state: DiligenceState) -> dict[str, object]:
     errors: list[RunError] = []
 
     required_failed = [
-        d for d in active_dims if d.required and (d.id not in summaries or summaries[d.id].status == "failed")
+        d
+        for d in active_dims
+        if d.required and (d.id not in summaries or summaries[d.id].status in ("failed", "partial"))
     ]
 
     formatted = _format_summaries(summaries, active_ids)

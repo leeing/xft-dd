@@ -18,7 +18,11 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# SM4 = 128-bit block cipher (国密标准); fixed 16-byte obfuscation key
+# SM4 = 128-bit block cipher (国密标准); fixed 16-byte obfuscation key.
+# SECURITY: This is local obfuscation only — prevents accidental plaintext exposure
+# in .env files (e.g. copy-paste, screen sharing). It does NOT protect against
+# local attackers with filesystem access. For production, use keyring or a system
+# keychain instead.
 _SM4_KEY: bytes = b"xft" + b"\x00" * 13
 _SM4_PREFIX = "SM4:"
 _KEY_FIELDS = ("minimax_api_key", "metaso_api_key", "llm_api_key")
@@ -56,6 +60,7 @@ class Settings(BaseSettings):
     # 秘塔 AI 搜索 (metaso.cn) — 带联网搜索能力的 AI 问答
     metaso_api_key: str = Field(default="")
     metaso_enabled: bool = Field(default=False)
+    metaso_verify_tls: bool = Field(default=True)
 
     # 推理层（摘要 + 合并报告）— 支持任意 OpenAI 兼容接口
     # llm_api_key 为空时自动 fallback 到 minimax_api_key（向后兼容）

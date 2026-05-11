@@ -167,15 +167,15 @@ def test_collect_node_missing_dimension_produces_error(tmp_path: Path) -> None:
     assert any("industry" in e.dimension_id for e in errors)
 
 
-def test_collect_node_partial_summary_not_flagged_as_required_fail(tmp_path: Path) -> None:
-    """A 'partial' status on a required dimension does NOT trigger required-fail error."""
+def test_collect_node_partial_on_required_dimension_is_flagged(tmp_path: Path) -> None:
+    """A 'partial' status on a required dimension IS treated as a required-fail error."""
     from diligence.nodes.collect_node import collect_node
 
     cfg = _make_cfg()
     partial_summary = DimensionSummary(
         dimension_id="basic_info",
         dimension_name="工商基本信息",
-        status="partial",  # partial, not failed
+        status="partial",  # partial on a required dim → flagged
         summary="部分信息",
         confidence="低",
         uncertain_facts=[],
@@ -185,9 +185,9 @@ def test_collect_node_partial_summary_not_flagged_as_required_fail(tmp_path: Pat
     state["summaries_by_dimension"] = {"basic_info": partial_summary}
     state["current_dimension"] = None
     result = collect_node(state)
-    # No required-dimension-failed errors
     required_errors = [e for e in result.get("errors", []) if "required" in e.message.lower() or "核心" in e.message]
-    assert required_errors == []
+    assert len(required_errors) == 1
+    assert "partial" in required_errors[0].message.lower()
 
 
 # ── save_node ─────────────────────────────────────────────────────────────────

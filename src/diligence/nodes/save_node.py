@@ -43,7 +43,7 @@ def save_node(state: DiligenceState) -> dict[str, object]:
         started_at_raw = datetime.now(UTC)
     started_at: datetime = started_at_raw
 
-    failed_dims = [s.dimension_id for s in summaries.values() if s.status == "failed"]
+    failed_dims = [s.dimension_id for s in summaries.values() if s.status in ("failed", "partial")]
     required_failed = any(d.required and d.id in failed_dims for d in active_dims)
     run_status: Literal["success", "partial", "failed"]
     run_status = "success" if not failed_dims and report else ("partial" if report else "failed")
@@ -72,7 +72,7 @@ def save_node(state: DiligenceState) -> dict[str, object]:
         status=run_status,
         required_failed=required_failed,
         failed_dimensions=failed_dims,
-        config_path=config.runs_dir,
+        config_path=state.get("config_path") or config.runs_dir,
         active_dimensions=[d.id for d in active_dims],
         cost=cost,
     )
@@ -85,7 +85,10 @@ def save_node(state: DiligenceState) -> dict[str, object]:
     sys.stderr.write("💰 本次调用成本：\n")
     sys.stderr.write(f"   MiniMax Search: {cost.minimax_search_calls} 次\n")
     sys.stderr.write(f"   LLM 推理: {cost.llm_calls} 次，tokens: {cost.llm_tokens_total:,}\n")
-    if cost.metaso_calls > 0:
-        sys.stderr.write(f"   Metaso: {cost.metaso_calls} 次，credits: {cost.metaso_credits_total}\n")
+    if cost.metaso_calls > 0 or cost.metaso_failed_calls > 0:
+        sys.stderr.write(
+            f"   Metaso: {cost.metaso_calls} 次成功，"
+            f"{cost.metaso_failed_calls} 次失败，credits: {cost.metaso_credits_total}\n"
+        )
 
     return {"report_path": str(report_path), "artifacts_dir": str(output_dir)}
