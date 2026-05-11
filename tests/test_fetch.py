@@ -93,7 +93,7 @@ async def test_enrich_items_preserves_order() -> None:
 
 async def test_enrich_items_deduplicates_same_url() -> None:
     """Two items sharing the same URL only trigger one fetch."""
-    from unittest.mock import AsyncMock, patch
+    from unittest.mock import AsyncMock, MagicMock, patch
 
     shared_url = "https://example.com/page"
     items = [
@@ -108,8 +108,12 @@ async def test_enrich_items_deduplicates_same_url() -> None:
         fetch_call_count += 1
         return "full page content " * 50  # >500 chars to pass the short-response guard
 
+    mock_browser = MagicMock()
+    mock_session = MagicMock()
+    mock_session.get_browser = AsyncMock(return_value=mock_browser)
+
     with patch("diligence.utils.fetch._fetch_page_text", new=AsyncMock(side_effect=fake_fetch)):
-        result = await enrich_items(items, fetchable_domains=["example.com"])
+        result = await enrich_items(items, fetchable_domains=["example.com"], session=mock_session)
 
     # Only one fetch despite two items sharing the URL
     assert fetch_call_count == 1
