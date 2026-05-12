@@ -47,6 +47,43 @@ uv run ruff check
 uv run ruff format
 ```
 
+### Docker 部署
+
+如果不想安装 Python 3.12+ 和 Playwright 浏览器，可以直接用 Docker 一键运行：
+
+```bash
+# 构建镜像
+docker build -t xft .
+
+# 单企业尽调
+docker run --rm --env-file .env -v $(pwd)/runs:/app/runs xft "佛山市固特家居制品有限公司"
+
+# 仅处理指定维度
+docker run --rm --env-file .env -v $(pwd)/runs:/app/runs \
+  xft "某公司" --only basic_info,tech_cert
+
+# 批量处理
+docker run --rm --env-file .env \
+  -v $(pwd)/runs:/app/runs \
+  -v $(pwd)/batch_runs:/app/batch_runs \
+  -v $(pwd)/companies.csv:/data/companies.csv:ro \
+  xft --batch /data/companies.csv
+
+# 使用 docker-compose
+docker compose run --rm xft "佛山市固特家居制品有限公司"
+```
+
+镜像内置 Playwright Chromium 和默认配置，通过 volume 挂载 `runs/` 和 `batch_runs/` 输出产物。如需自定义配置，可挂载 `config/` 目录：
+
+```bash
+docker run --rm --env-file .env \
+  -v $(pwd)/runs:/app/runs \
+  -v $(pwd)/my-config:/app/config:ro \
+  xft "某公司"
+```
+
+> 注意：`.env` 不进镜像，必须在运行时通过 `--env-file` 注入。建议 ≥2GB 内存。
+
 ---
 
 ## 环境变量
@@ -522,6 +559,8 @@ git diff config/prompts/merge.md
 
 ```text
 main.py                          CLI 入口
+Dockerfile                       多阶段 Docker 构建
+docker-compose.yml               一键运行服务定义
 config/                          默认目录化配置
 config.yaml                      兼容旧单文件配置
 src/diligence/
