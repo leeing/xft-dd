@@ -7,7 +7,7 @@ import httpx
 import pytest
 
 from diligence.models import SearchItem, make_item_id
-from diligence.utils.minimax_search import dedup_items, run_search
+from diligence.utils.minimax_search import dedup_items, normalize_url, run_search
 
 
 def _make_item(
@@ -122,4 +122,71 @@ def test_dedup_by_title_snippet_when_no_url() -> None:
     item_b = _make_item(url=None, title="企业A", snippet="注册资本100万")  # duplicate
     item_c = _make_item(url=None, title="企业A", snippet="注册资本200万")
     result = dedup_items([item_a, item_b, item_c])
+    assert len(result) == 2
+
+
+# -- normalize_url --
+
+
+def test_normalize_url_none() -> None:
+    assert normalize_url(None) is None
+
+
+def test_normalize_url_www_and_trailing_slash() -> None:
+    a = normalize_url("https://www.example.com/a/")
+    b = normalize_url("https://example.com/a")
+    assert a == b
+
+
+def test_normalize_url_strips_utm_params() -> None:
+    a = normalize_url("https://example.com/a?utm_source=x&id=1")
+    b = normalize_url("https://example.com/a?id=1")
+    assert a == b
+
+
+def test_normalize_url_strips_from_source_spm() -> None:
+    a = normalize_url("https://example.com/a?from=search&source=web&spm=123&id=1")
+    b = normalize_url("https://example.com/a?id=1")
+    assert a == b
+
+
+def test_normalize_url_preserves_business_query() -> None:
+    a = normalize_url("https://example.com/a?id=1")
+    b = normalize_url("https://example.com/a?id=2")
+    assert a != b
+
+
+def test_normalize_url_lowercases_scheme_host() -> None:
+    a = normalize_url("HTTPS://WWW.EXAMPLE.COM/Page")
+    b = normalize_url("https://example.com/Page")
+    assert a == b
+
+
+def test_normalize_url_sorts_query_params() -> None:
+    a = normalize_url("https://example.com/a?b=2&a=1")
+    b = normalize_url("https://example.com/a?a=1&b=2")
+    assert a == b
+
+
+# -- dedup with normalization --
+
+
+def test_dedup_normalized_www_and_slash() -> None:
+    item_a = _make_item(url="https://www.example.com/a/", title="A")
+    item_b = _make_item(url="https://example.com/a", title="B")
+    result = dedup_items([item_a, item_b])
+    assert len(result) == 1
+
+
+def test_dedup_normalized_utm() -> None:
+    item_a = _make_item(url="https://example.com/a?utm_source=x&id=1", title="A")
+    item_b = _make_item(url="https://example.com/a?id=1", title="B")
+    result = dedup_items([item_a, item_b])
+    assert len(result) == 1
+
+
+def test_dedup_normalized_different_ids_kept() -> None:
+    item_a = _make_item(url="https://example.com/a?id=1", title="A")
+    item_b = _make_item(url="https://example.com/a?id=2", title="B")
+    result = dedup_items([item_a, item_b])
     assert len(result) == 2

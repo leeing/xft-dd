@@ -7,6 +7,7 @@ Credentials are read exclusively through diligence.settings (pydantic-settings).
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import httpx
 import structlog
@@ -80,12 +81,58 @@ async def run_search(
     return items
 
 
+_TRACKING_QUERY_PREFIXES = ("utm_",)
+_TRACKING_QUERY_KEYS = {"from", "source", "spm"}
+
+
+def normalize_url(url: str | None) -> str | None:
+    """Normalize a URL for dedup comparison without mutating its semantics.
+
+    - lowercase scheme and host
+    - strip www. prefix
+    - strip trailing / from path
+    - strip tracking query params (utm_*, from, source, spm)
+    - sort query params for deterministic comparison
+    - preserve business query params (id, q, etc.)
+
+    Returns None when url is None. Unparseable URLs are returned as-is (stripped).
+    """
+    if not url:
+        return None
+    parsed = urlparse(url.strip())
+    if not parsed.netloc:
+        return url.strip()
+
+    scheme = parsed.scheme.lower() or "https"
+    netloc = parsed.netloc.lower().removeprefix("www.")
+    path = parsed.path.rstrip("/") or "/"
+
+    query_pairs: list[tuple[str, str]] = []
+    for key, value in parse_qsl(parsed.query, keep_blank_values=True):
+        key_lower = key.lower()
+        if key_lower in _TRACKING_QUERY_KEYS:
+            continue
+        if key_lower.startswith(_TRACKING_QUERY_PREFIXES):
+            continue
+        query_pairs.append((key, value))
+
+    query_pairs.sort()
+    query = urlencode(query_pairs, doseq=True)
+    return urlunparse((scheme, netloc, path, "", query, ""))
+
+
 def dedup_items(items: list[SearchItem]) -> list[SearchItem]:
-    """Deduplicate by URL (preferred) or title+snippet when URL is absent."""
+    """Deduplicate by normalized URL (preferred) or title+snippet when URL is absent.
+
+    Uses normalize_url() so that minor URL variations (www, trailing slash,
+    tracking params) are treated as the same item.  The first occurrence wins,
+    meaning Metaso source items (prepended before MiniMax items) take priority.
+    """
     seen: set[str] = set()
     result: list[SearchItem] = []
     for item in items:
-        key = item.url if item.url else (item.title + item.snippet)
+        norm = normalize_url(item.url)
+        key = f"url:{norm}" if norm else f"text:{item.title}{item.snippet}"
         if key not in seen:
             seen.add(key)
             result.append(item)

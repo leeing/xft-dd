@@ -40,6 +40,7 @@ class DiligenceState(TypedDict):
     # Inputs
     target: str
     config: AppConfig
+    all_dimension_names: dict[str, str]  # id→name of ALL config dims (before --only/--skip filtering)
     run_id: str
     started_at: datetime | None  # set by init_node; None until init completes
     active_dimensions: list[Dimension]

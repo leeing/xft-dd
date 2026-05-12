@@ -68,12 +68,13 @@ def _get_compiled() -> Any:
     return _cache["graph"]
 
 
-async def run_company_graph(
+async def run_company_graph(  # noqa: PLR0913
     target: str,
     config: AppConfig,
     output_dir: str,
     run_id: str = "",
     config_path: str = "",
+    all_dimension_names: dict[str, str] | None = None,
 ) -> CompanyRunResult:
     """Execute the full single-company due diligence pipeline.
 
@@ -102,6 +103,7 @@ async def run_company_graph(
         "report_path": "",
         "artifacts_dir": "",
         "config_path": config_path,
+        "all_dimension_names": all_dimension_names or {},
     }
     langgraph_cfg = {"max_concurrency": config.dimension_concurrency}
 

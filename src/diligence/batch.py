@@ -261,6 +261,7 @@ async def _process_one(  # noqa: PLR0913
     resume: bool,
     batch_dir: str | None,
     config_path: str = "",
+    all_dimension_names: dict[str, str] | None = None,
 ) -> CompanyRunResult:
     """Process a single company with resume support."""
     th = _target_hash(target)
@@ -289,6 +290,7 @@ async def _process_one(  # noqa: PLR0913
                 config=config,
                 output_dir=str(company_dir),
                 config_path=config_path,
+                all_dimension_names=all_dimension_names,
             )
             return result.model_copy(update={"index": idx})
         except (RuntimeError, ValueError, OSError) as exc:
@@ -313,6 +315,7 @@ async def run_batch(  # noqa: PLR0913, PLR0911
     name_column: str,
 ) -> int:
     """Run batch due diligence for a list of companies."""
+    all_dimension_names = {d.id: d.name for d in config.dimensions if d.enabled}
     dims = [d for d in config.dimensions if d.enabled]
     if only:
         if err := validate_dimension_ids(only, config.dimensions, label="--only"):
@@ -376,6 +379,7 @@ async def run_batch(  # noqa: PLR0913, PLR0911
                     resume=resume,
                     batch_dir=batch_dir,
                     config_path=config_path,
+                    all_dimension_names=all_dimension_names,
                 )
                 for i, t in enumerate(targets)
             ]

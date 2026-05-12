@@ -17,26 +17,53 @@ import structlog
 from crawl4ai import AsyncWebCrawler
 
 from diligence.models import SearchItem
+from diligence.utils.source_registry import classify_source
 
 log = structlog.get_logger(__name__)
 
 _METASO_SCHEME = "metaso://"
 
+_FETCH_BIAS_RANK: dict[str, int] = {"prefer": 0, "neutral": 1, "unknown": 2, "avoid": 3}
+_AUTHORITY_RANK: dict[str, int] = {"high": 0, "medium": 1, "low": 2, "unknown": 3}
 
-def _should_fetch(
+
+def _crawl_priority_key(item: SearchItem) -> tuple[int, int]:
+    """Sort key: lower is higher priority for crawl.
+
+    Priority order: should_fetch_bias (prefer > neutral > unknown > avoid),
+    then authority_level (high > medium > low > unknown).
+    The caller appends original_index as the final tiebreaker.
+    """
+    src = classify_source(item.url, item.title)
+    return (
+        _FETCH_BIAS_RANK.get(src.should_fetch_bias, 3),
+        _AUTHORITY_RANK.get(src.authority_level, 3),
+    )
+
+
+def _should_fetch(  # noqa: PLR0913
     url: str | None, title: str, snippet: str, target: str, blocked_domains: list[str],
+    full_text: str = "",
 ) -> bool:
     """Return True if this item should be fetched via crawl4ai.
 
     Always skip: None URLs, metaso:// URLs (already have full_text from API),
     items whose title AND snippet both lack the target company name.
-    Blacklist: URLs containing any blocked domain fragment are skipped.
-    When blocklist is empty: all eligible URLs are fetched.
+    Uses source_registry should_fetch_bias for domain-level strategy:
+    - "avoid" pages are skipped: not fetched, but the original item (snippet/metaso content) is preserved.
+    - "avoid" pages that already have full_text are not re-fetched.
     """
     if not url or url.startswith(_METASO_SCHEME):
         return False
     if target not in title and target not in snippet:
         return False
+
+    source = classify_source(url, title)
+    if source.should_fetch_bias == "avoid":
+        if full_text:
+            return False  # already have content, skip re-fetch
+        return False  # commercial registry etc. — skip
+
     if not blocked_domains:
         return True
     return not any(domain in url for domain in blocked_domains)
@@ -95,33 +122,44 @@ async def enrich_items(
     Returns enriched item list. Metaso URLs, blocked-domain URLs, and
     title-mismatched items keep their original snippet. All other URLs are fetched.
     """
-    work: list[tuple[SearchItem, str]] = []
+    work: list[tuple[int, SearchItem, str]] = []  # (original_index, item, url)
     seen: set[str] = set()
-    for item in items:
-        if _should_fetch(item.url, item.title, item.snippet, target, blocked_domains) and item.url not in seen:
-            work.append((item, item.url))
+    for i, item in enumerate(items):
+        ok = _should_fetch(item.url, item.title, item.snippet, target, blocked_domains, item.full_text)
+        if ok and item.url not in seen:
+            work.append((i, item, item.url))
             seen.add(item.url)
 
     if not work:
         return items
+
+    # Sort by crawl priority so high-value sources get crawl budget first
+    work.sort(key=lambda x: _crawl_priority_key(x[1]) + (x[0],))
 
     async def _run(crawler: AsyncWebCrawler) -> list[SearchItem]:
         semaphore = asyncio.Semaphore(concurrency)
 
         async def do_fetch(item: SearchItem, url: str) -> SearchItem:
             async with semaphore:
-                sys.stderr.write(f"  [fetch] {url[:80]}\n")
-                text = await _fetch_page_markdown(url, crawler, timeout_ms=fetch_timeout * 1000, max_chars=max_full_text_chars)
+                src = classify_source(item.url, item.title)
+                sys.stderr.write(
+                    f"  [fetch] {url[:80]} (bias={src.should_fetch_bias}, auth={src.authority_level})\n"
+                )
+                text = await _fetch_page_markdown(
+                    url, crawler,
+                    timeout_ms=fetch_timeout * 1000,
+                    max_chars=max_full_text_chars,
+                )
                 if text:
                     log.debug("fetch_enriched", url=url, chars=len(text))
                     return item.model_copy(update={"full_text": text, "snippet": text[:300]})
                 return item
 
         enriched_map: dict[str, SearchItem] = {}
-        fetch_tasks = [do_fetch(item, url) for item, url in work]
+        fetch_tasks = [do_fetch(item, url) for _, item, url in work]
         results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
 
-        for (item, _), result in zip(work, results, strict=False):
+        for (_, item, _), result in zip(work, results, strict=False):
             if isinstance(result, SearchItem):
                 enriched_map[item.id] = result
             else:

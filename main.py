@@ -72,6 +72,7 @@ async def run_single(
 ) -> int:
     """Execute single-company pipeline and return exit code."""
     config = load_config(config_path)
+    all_dimension_names = {d.id: d.name for d in config.dimensions if d.enabled}
     dims = [d for d in config.dimensions if d.enabled]
     if only:
         if err := validate_dimension_ids(only, config.dimensions, label="--only"):
@@ -103,7 +104,8 @@ async def run_single(
     sys.stderr.write("--\n")
 
     result = await run_company_graph(
-        target=target, config=config, output_dir=output_dir, run_id=run_id, config_path=config_path
+        target=target, config=config, output_dir=output_dir, run_id=run_id, config_path=config_path,
+        all_dimension_names=all_dimension_names,
     )
 
     if result.required_failed:

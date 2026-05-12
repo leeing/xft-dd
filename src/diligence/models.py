@@ -50,7 +50,7 @@ class DimensionSummary(BaseModel):
 
     dimension_id: str
     dimension_name: str
-    status: Literal["success", "partial", "failed"]
+    status: Literal["success", "partial", "failed", "not_run"]
     summary: str
     confidence: Literal["高", "中", "低", "待核实"]
     uncertain_facts: list[str]

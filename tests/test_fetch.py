@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from diligence.models import SearchItem, make_item_id
-from diligence.utils.fetch import _should_fetch, enrich_items
+from diligence.utils.fetch import _crawl_priority_key, _should_fetch, enrich_items
 
 
 def _make_item(
@@ -29,7 +29,10 @@ def _make_item(
 TARGET = "佛山市固特家居制品有限公司"
 
 
-def _sf(url: str | None, title: str, snippet: str = "s", target: str = TARGET, blocked: list[str] | None = None) -> bool:
+def _sf(
+    url: str | None, title: str, snippet: str = "s",
+    target: str = TARGET, blocked: list[str] | None = None,
+) -> bool:
     """Shortcut for _should_fetch with defaults."""
     if blocked is None:
         blocked = []
@@ -95,10 +98,14 @@ def test_should_fetch_partial_domain_substring_match() -> None:
 
 
 async def test_enrich_items_empty_blocklist_collects_all() -> None:
-    """When blocklist is empty and titles match, all non-metaso items are fetched."""
+    """When blocklist is empty and titles match, eligible items are fetched.
+
+    Commercial registry sites (qcc.com etc.) are skipped by source_registry
+    should_fetch_bias=avoid regardless of blocklist.
+    """
     items = [
-        _make_item("https://qcc.com/1", title="佛山市固特家居制品有限公司 - 企查查"),
-        _make_item("https://example.com/2", title="佛山市固特家居制品有限公司 - 天眼查"),
+        _make_item("https://example.com/1", title="佛山市固特家居制品有限公司 - 官网"),
+        _make_item("https://example.com/2", title="佛山市固特家居制品有限公司 - 招聘"),
     ]
 
     fetch_count = 0
@@ -204,3 +211,78 @@ async def test_enrich_items_deduplicates_same_url() -> None:
     assert fetch_call_count == 1
     for item in result:
         assert item.full_text != ""
+
+
+# ── crawl priority sorting ────────────────────────────────────────────────────
+
+
+def test_crawl_priority_key_prefer_before_neutral() -> None:
+    """prefer items sort before neutral items."""
+    prefer = _make_item("https://gsxt.gov.cn/1", title=TARGET)
+    neutral = _make_item("https://example.com/2", title=TARGET)
+    key_a = _crawl_priority_key(prefer)
+    key_b = _crawl_priority_key(neutral)
+    assert key_a < key_b
+
+
+def test_crawl_priority_key_authority_breaks_tie() -> None:
+    """Items with same fetch bias are ordered by authority_level."""
+    high = _make_item("https://gsxt.gov.cn/1", title=TARGET)
+    low = _make_item("https://zhipin.com/job/123", title=TARGET)
+    key_a = _crawl_priority_key(high)
+    key_b = _crawl_priority_key(low)
+    assert key_a < key_b
+
+
+def test_crawl_priority_key_same_priority_equal_keys() -> None:
+    """Items with identical bias and authority produce equal base keys."""
+    a = _make_item("https://example.com/a", title=TARGET)
+    b = _make_item("https://example.com/b", title=TARGET)
+    base_a = _crawl_priority_key(a)[:2]
+    base_b = _crawl_priority_key(b)[:2]
+    assert base_a == base_b
+
+
+async def test_enrich_items_returns_original_order_after_priority_crawl() -> None:
+    """Output order matches input order even when crawl order is re-prioritised."""
+    items = [
+        _make_item("https://example.com/2", title=TARGET + " Second"),  # unknown bias
+        _make_item("https://gsxt.gov.cn/1", title=TARGET + " First"),   # prefer bias
+        _make_item("https://neutral.com/3", title=TARGET + " Third"),   # unknown bias
+    ]
+    fetch_urls: list[str] = []
+
+    async def record_fetch(url: str, crawler: object, timeout_ms: int = 25000, max_chars: int = 6900) -> str:
+        fetch_urls.append(url)
+        return "content " * 50
+
+    with patch("diligence.utils.fetch._fetch_page_markdown", new=AsyncMock(side_effect=record_fetch)):
+        result = await enrich_items(items, blocked_domains=[], target=TARGET)
+
+    # Output order preserved
+    assert [i.title for i in result] == [TARGET + " Second", TARGET + " First", TARGET + " Third"]
+    # Crawl order: gsxt.gov.cn (prefer) fetched first
+    assert fetch_urls[0] == "https://gsxt.gov.cn/1"
+
+
+async def test_enrich_items_avoid_items_not_fetched_but_preserved() -> None:
+    """Avoid-bias items skip crawl but remain in the output for snippet fallback."""
+    items = [
+        _make_item("https://example.com/1", title=TARGET + " A"),       # neutral → fetched
+        _make_item("https://qcc.com/2", title=TARGET + " B"),           # avoid → skipped
+        _make_item("https://example.com/3", title=TARGET + " C"),       # neutral → fetched
+    ]
+    fetch_urls: list[str] = []
+
+    async def record_fetch(url: str, crawler: object, timeout_ms: int = 25000, max_chars: int = 6900) -> str:
+        fetch_urls.append(url)
+        return "content " * 50
+
+    with patch("diligence.utils.fetch._fetch_page_markdown", new=AsyncMock(side_effect=record_fetch)):
+        result = await enrich_items(items, blocked_domains=[], target=TARGET)
+
+    assert len(result) == 3  # all items preserved
+    assert result[1].full_text == ""  # qcc.com avoid: not fetched
+    assert result[0].full_text != ""  # fetched
+    assert result[2].full_text != ""  # fetched
+    assert "qcc.com" not in fetch_urls

@@ -158,6 +158,11 @@ async def search_node(state: DiligenceState) -> dict[str, object]:
 
     deduped = dedup_items(all_items)
     deduped, metaso_success, metaso_failed, metaso_credits = await _apply_metaso(deduped, dim, target)
+    before_cross_dedup = len(deduped)
+    deduped = dedup_items(deduped)
+    removed = before_cross_dedup - len(deduped)
+    if removed:
+        sys.stderr.write(f"  [{dim.name}] {removed} cross-provider duplicate(s) removed\n")
     deduped = await _apply_crawl(deduped, dim, config, target)
 
     total_queries = len(dim.minimax_queries)

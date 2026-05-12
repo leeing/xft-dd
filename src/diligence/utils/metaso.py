@@ -52,8 +52,8 @@ def _clean_answer(raw: str) -> str:
 # ── chat mode ─────────────────────────────────────────────────────────────────
 
 
-async def query_metaso(api_key: str, query: str, timeout: int = 30, *, verify_tls: bool = True) -> tuple[str, int]:
-    """Query metaso chat API. Returns (cleaned_answer, credits)."""
+async def query_metaso(api_key: str, query: str, timeout: int = 30, *, verify_tls: bool = True) -> tuple[str, list[dict], int]:
+    """Query metaso chat API. Returns (cleaned_answer, sources, credits)."""
     url = f"https://{_METASO_HOST}{_METASO_CHAT_PATH}"
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -72,9 +72,10 @@ async def query_metaso(api_key: str, query: str, timeout: int = 30, *, verify_tl
         data = response.json()
     if "answer" not in data:
         log.warning("metaso_no_answer", query=query[:60], keys=list(data.keys()))
-        return "", 0
+        return "", [], 0
     credits: int = data.get("credits", 0)
-    return _clean_answer(data["answer"]), credits
+    sources: list[dict] = data.get("sources", [])
+    return _clean_answer(data["answer"]), sources, credits
 
 
 def make_metaso_item(answer: str, query: str, dimension_id: str) -> SearchItem:
@@ -94,6 +95,40 @@ def make_metaso_item(answer: str, query: str, dimension_id: str) -> SearchItem:
     )
 
 
+def make_metaso_source_items(
+    sources: list[dict[str, Any]],
+    query: str,
+    dimension_id: str,
+) -> list[SearchItem]:
+    """Convert metaso chat sources to SearchItems with real URLs for crawl4ai enrichment.
+
+    Each source has: title, link (real URL), summary or snippet, date.
+    full_text is left empty — crawl4ai will populate it.
+    """
+    items: list[SearchItem] = []
+    for i, src in enumerate(sources):
+        link: str = src.get("link", "")
+        if not link:
+            continue
+        title: str = src.get("title", "")
+        summary: str = src.get("summary") or src.get("snippet", "")
+        items.append(
+            SearchItem(
+                id=make_item_id(url=link, title=title, snippet=summary[:200]),
+                title=title,
+                url=link,
+                snippet=summary[:300],
+                full_text="",
+                query=query,
+                dimension_id=dimension_id,
+                source="metaso_chat",
+                rank=i,
+                fetched_at=datetime.now(UTC),
+            )
+        )
+    return items
+
+
 async def fetch_metaso_items(  # noqa: PLR0913
     dimension_id: str,
     queries: list[str],
@@ -102,39 +137,46 @@ async def fetch_metaso_items(  # noqa: PLR0913
     concurrency: int = 2,
     timeout: int = 30,
     verify_tls: bool = True,
-) -> tuple[list[SearchItem], int, int, int]:
-    """Query metaso chat for each query string and return (metaso_items, success, failed, total_credits)."""
+) -> tuple[list[SearchItem], list[SearchItem], int, int, int]:
+    """Query metaso chat for each query string.
+
+    Returns (answer_items, source_items, success, failed, total_credits).
+    """
     if not api_key or not queries:
-        return [], 0, 0, 0
+        return [], [], 0, 0, 0
 
     semaphore = asyncio.Semaphore(concurrency)
 
-    async def fetch_one(query: str) -> tuple[SearchItem | None, int, bool]:
+    async def fetch_one(query: str) -> tuple[SearchItem | None, list[SearchItem], int, bool]:
         async with semaphore:
             try:
-                answer, credits = await asyncio.wait_for(
+                answer, sources, credits = await asyncio.wait_for(
                     query_metaso(api_key, query, timeout, verify_tls=verify_tls),
                     timeout=timeout + 5,
                 )
+                source_items = make_metaso_source_items(sources, query, dimension_id)
                 if not answer or len(answer) < 20:  # noqa: PLR2004
                     log.warning("metaso_short_answer", query=query[:60], chars=len(answer))
-                    return None, credits, False
+                    return None, source_items, credits, False
                 log.debug("metaso_ok", query=query[:60], chars=len(answer))
-                return make_metaso_item(answer, query, dimension_id), credits, True
+                return make_metaso_item(answer, query, dimension_id), source_items, credits, True
             except (TimeoutError, OSError, httpx.HTTPError, ValueError) as exc:
                 log.warning("metaso_failed", query=query[:60], error=str(exc))
-                return None, 0, False
+                return None, [], 0, False
 
     raw_results = await asyncio.gather(*[fetch_one(q) for q in queries])
-    metaso_items = [item for item, _, _ in raw_results if item is not None]
-    success_count = sum(1 for _, _, ok in raw_results if ok)
-    failed_count = sum(1 for _, _, ok in raw_results if not ok)
-    total_credits = sum(c for _, c, _ in raw_results)
+    answer_items = [item for item, _, _, _ in raw_results if item is not None]
+    source_items: list[SearchItem] = []
+    for _, srcs, _, _ in raw_results:
+        source_items.extend(srcs)
+    success_count = sum(1 for _, _, _, ok in raw_results if ok)
+    failed_count = sum(1 for _, _, _, ok in raw_results if not ok)
+    total_credits = sum(c for _, _, c, _ in raw_results)
 
-    if metaso_items:
-        log.info("metaso_enriched", dimension=dimension_id, count=len(metaso_items), credits=total_credits)
+    if answer_items:
+        log.info("metaso_enriched", dimension=dimension_id, count=len(answer_items), credits=total_credits)
 
-    return metaso_items, success_count, failed_count, total_credits
+    return answer_items, source_items, success_count, failed_count, total_credits
 
 
 async def enrich_with_metaso(
@@ -145,11 +187,11 @@ async def enrich_with_metaso(
     *,
     verify_tls: bool = True,
 ) -> tuple[list[SearchItem], int, int, int]:
-    """Fetch metaso chat items and prepend them to existing items list."""
-    metaso_items, success, failed, credits = await fetch_metaso_items(
+    """Fetch metaso chat items and prepend them (with source URLs) to existing items list."""
+    answer_items, source_items, success, failed, credits = await fetch_metaso_items(
         dimension_id, queries, api_key, verify_tls=verify_tls
     )
-    return [*metaso_items, *items], success, failed, credits
+    return [*source_items, *answer_items, *items], success, failed, credits
 
 
 # ── search mode ───────────────────────────────────────────────────────────────
