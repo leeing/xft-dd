@@ -15,6 +15,49 @@ def _write_config(tmp_path: Path, content: str) -> Path:
     return p
 
 
+def _write_config_dir(tmp_path: Path) -> Path:
+    root = tmp_path / "config"
+    (root / "dimensions").mkdir(parents=True)
+    (root / "prompts" / "dimensions").mkdir(parents=True)
+    (root / "app.yaml").write_text(
+        textwrap.dedent(
+            """
+            schema_version: "1.0"
+            dimension_concurrency: 3
+            """
+        ),
+        encoding="utf-8",
+    )
+    (root / "prompts" / "merge.md").write_text(
+        "请综合{summaries}生成{target}的报告",
+        encoding="utf-8",
+    )
+    (root / "prompts" / "summarize_system.md").write_text(
+        "目录化 summarize system",
+        encoding="utf-8",
+    )
+    (root / "prompts" / "dimensions" / "basic_info.md").write_text(
+        "目录化 summary prompt: {target}\\n{results}",
+        encoding="utf-8",
+    )
+    (root / "dimensions" / "10_basic_info.yaml").write_text(
+        textwrap.dedent(
+            """
+            id: basic_info
+            name: 工商基本信息
+            order: 10
+            enabled: true
+            required: true
+            minimax_queries:
+              - "{target} 工商注册信息"
+            summary_prompt_file: ../prompts/dimensions/basic_info.md
+            """
+        ),
+        encoding="utf-8",
+    )
+    return root
+
+
 MINIMAL_CONFIG = """
 schema_version: "1.0"
 merge_prompt: "请综合{summaries}生成{target}的报告"
@@ -36,6 +79,73 @@ def test_load_config_valid(tmp_path: Path) -> None:
     assert len(cfg.dimensions) == 1
     assert cfg.dimensions[0].id == "basic_info"
     assert cfg.dimensions[0].required is True
+
+
+def test_load_config_file_still_supported(tmp_path: Path) -> None:
+    p = _write_config(tmp_path, MINIMAL_CONFIG)
+    cfg = load_config(str(p))
+    assert cfg.merge_prompt.startswith("请综合")
+    assert cfg.dimensions[0].summary_prompt.startswith("请从以下结果")
+
+
+def test_load_config_dir_success(tmp_path: Path) -> None:
+    root = _write_config_dir(tmp_path)
+    cfg = load_config(str(root))
+    assert cfg.dimension_concurrency == 3
+    assert cfg.merge_prompt == "请综合{summaries}生成{target}的报告"
+    assert cfg.summarize_system_prompt == "目录化 summarize system"
+    assert cfg.dimensions[0].id == "basic_info"
+    assert cfg.dimensions[0].summary_prompt.startswith("目录化 summary prompt")
+
+
+def test_load_config_dir_missing_app_yaml(tmp_path: Path) -> None:
+    root = tmp_path / "config"
+    root.mkdir()
+    with pytest.raises(FileNotFoundError):
+        load_config(str(root))
+
+
+def test_load_config_dir_missing_merge_prompt(tmp_path: Path) -> None:
+    root = _write_config_dir(tmp_path)
+    (root / "prompts" / "merge.md").unlink()
+    with pytest.raises(FileNotFoundError):
+        load_config(str(root))
+
+
+def test_load_config_dir_empty_dimensions(tmp_path: Path) -> None:
+    root = _write_config_dir(tmp_path)
+    for path in (root / "dimensions").glob("*.yaml"):
+        path.unlink()
+    with pytest.raises(ValueError, match="no dimension"):
+        load_config(str(root))
+
+
+def test_load_config_dir_missing_dimension_prompt(tmp_path: Path) -> None:
+    root = _write_config_dir(tmp_path)
+    (root / "prompts" / "dimensions" / "basic_info.md").unlink()
+    with pytest.raises(FileNotFoundError):
+        load_config(str(root))
+
+
+def test_load_config_dir_duplicate_dimension_id(tmp_path: Path) -> None:
+    root = _write_config_dir(tmp_path)
+    (root / "dimensions" / "20_duplicate.yaml").write_text(
+        textwrap.dedent(
+            """
+            id: basic_info
+            name: 重复维度
+            order: 20
+            enabled: true
+            required: false
+            minimax_queries:
+              - "{target} 重复"
+            summary_prompt: "{target}\\n{results}"
+            """
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValidationError, match="duplicate dimension"):
+        load_config(str(root))
 
 
 def test_active_dimensions_excludes_disabled(tmp_path: Path) -> None:

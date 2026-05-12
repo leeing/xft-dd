@@ -33,6 +33,10 @@ uv run main.py --batch companies.csv --name-column company_name
 
 # 批量续跑（跳过已完成企业）
 uv run main.py --batch companies.txt --resume --batch-dir batch_runs/20260510-...
+
+# 显式指定配置目录或兼容旧单文件配置
+uv run main.py "某公司" --config config/
+uv run main.py "某公司" --config config.yaml
 ```
 
 常用开发命令：
@@ -118,7 +122,7 @@ flowchart TD
 
 - 每个维度配置多条 `minimax_queries`。
 - 维度内查询并发由 `query_concurrency_per_dimension` 控制。
-- 每条查询最多保留 `max_results_per_query` 条结果。
+- `max_results_per_query` 控制本地保留条数；设为 `0` 表示 MiniMax 返回几条就全部进入后续流程。
 - 返回 `SearchItem`：`title`、`url`、`snippet`、`source=minimax`、`rank`。
 - 搜索层只负责召回，通常没有网页全文。
 
@@ -310,7 +314,27 @@ merge 阶段会把每个维度的摘要和结构化提取表注入最终 prompt�
 
 ## 配置说明
 
-核心配置在 `config.yaml`。
+默认配置已经改为目录化结构，CLI 默认读取 `config/`。旧的 `config.yaml` 仍可通过 `--config config.yaml` 加载，用于兼容或对照。
+
+```text
+config/
+├── app.yaml
+├── prompts/
+│   ├── merge.md
+│   ├── merge_system.md
+│   ├── summarize_system.md
+│   ├── extract_system.md
+│   ├── extract_user_template.md
+│   └── dimensions/
+│       ├── basic_info.md
+│       └── ...
+└── dimensions/
+    ├── 10_basic_info.yaml
+    ├── 20_industry.yaml
+    └── ...
+```
+
+`config/app.yaml` 存放全局运行参数：
 
 ```yaml
 schema_version: "1.0"
@@ -318,7 +342,7 @@ schema_version: "1.0"
 dimension_concurrency: 8
 query_concurrency_per_dimension: 5
 search_timeout_seconds: 30
-max_results_per_query: 10
+max_results_per_query: 0
 runs_dir: "runs"
 
 crawl_fetch_timeout: 25
@@ -341,7 +365,7 @@ batch:
   batch_runs_dir: "batch_runs"
 ```
 
-维度配置示例：
+`config/dimensions/*.yaml` 存放维度元数据、查询词和字段 schema：
 
 ```yaml
 dimensions:
@@ -369,7 +393,21 @@ dimensions:
       {results}
 ```
 
-新增维度只需在 `dimensions:` 下添加新条目。`id` 全局唯一，`order` 控制输出顺序，`required=true` 表示该维度失败会影响进程退出码。
+实际目录配置里推荐把长 prompt 放到 `config/prompts/dimensions/{id}.md`，维度文件只引用：
+
+```yaml
+summary_prompt_file: ../prompts/dimensions/basic_info.md
+```
+
+`summary_prompt_file` 路径相对当前维度 YAML 文件解析。新增维度时，新增一个 `config/dimensions/{order}_{id}.yaml` 和对应 prompt 文件即可。`id` 全局唯一，`order` 控制输出顺序，`required=true` 表示该维度失败会影响进程退出码。
+
+日常 review 建议直接看拆分文件：
+
+```bash
+git diff config/dimensions/10_basic_info.yaml
+git diff config/prompts/dimensions/basic_info.md
+git diff config/prompts/merge.md
+```
 
 ---
 
@@ -484,7 +522,8 @@ dimensions:
 
 ```text
 main.py                          CLI 入口
-config.yaml                      维度、prompt、并发、抓取和批量配置
+config/                          默认目录化配置
+config.yaml                      兼容旧单文件配置
 src/diligence/
 ├── config.py                    Pydantic 配置模型
 ├── models.py                    SearchItem / DimensionSearchResult / RunMeta 等
@@ -527,7 +566,7 @@ tests/
 
 ### 配置驱动维度
 
-新增、删除、停用维度通常只改 `config.yaml`。代码不绑定固定 8 个维度；默认配置只是当前尽调模板。
+新增、删除、停用维度通常只改 `config/dimensions/*.yaml` 和对应 prompt 文件。代码不绑定固定 8 个维度；默认配置只是当前尽调模板。
 
 ### 来源信号代码化，事实裁决仍由 LLM 执行
 
@@ -577,4 +616,3 @@ P2 crawl priority ordering 已具备冻版测试条件。建议用真实样本�
 | uv | 依赖与虚拟环境 |
 | pytest | 测试 |
 | Ruff | lint / format |
-

@@ -1,9 +1,11 @@
+# Legacy single-file config kept for compatibility.
+# The default editable configuration is now the config/ directory.
 schema_version: "1.0"
 
 dimension_concurrency: 8
 query_concurrency_per_dimension: 5
 search_timeout_seconds: 30
-max_results_per_query: 10
+max_results_per_query: 0
 runs_dir: "runs"
 
 # AI 角色提示词 — 可按行业/场景定制（不改代码）

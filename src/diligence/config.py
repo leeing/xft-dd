@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 SUPPORTED_SCHEMA_VERSION = "1.0"
 
@@ -51,6 +51,7 @@ class Dimension(BaseModel):
     metaso_mode: Literal["chat", "search"] = "chat"  # chat=AI问答, search=网页搜索(真实URL+rawContent)
     metaso_search_size: int = Field(default=5, ge=1, le=10)  # search模式每次查询返回的网页数 (1-10), 每页消耗6 credits
     summary_prompt: str
+    summary_prompt_file: str | None = None
     extract_fields: list[ExtractField] | None = None
 
 
@@ -61,7 +62,7 @@ class AppConfig(BaseModel):
     dimension_concurrency: int = Field(default=5, ge=1, le=20)
     query_concurrency_per_dimension: int = Field(default=2, ge=1, le=5)
     search_timeout_seconds: int = 30
-    max_results_per_query: int = 10
+    max_results_per_query: int = 0
     runs_dir: str = "runs"
     report_options: ReportOptions = Field(default_factory=ReportOptions)
     batch: BatchConfig = Field(default_factory=BatchConfig)
@@ -83,7 +84,7 @@ class AppConfig(BaseModel):
 
     # crawl4ai fetch parameters (used when fetch_enabled=true on a dimension)
     crawl_fetch_timeout: int = Field(default=25, ge=5, le=120)
-    crawl_fetch_concurrency: int = Field(default=2, ge=1, le=5)
+    crawl_fetch_concurrency: int = Field(default=2, ge=1, le=10)
     max_full_text_chars: int = Field(default=6900, ge=100, le=100000)
 
     # structured field extraction (used when dimension has extract_fields)
@@ -116,6 +117,21 @@ class AppConfig(BaseModel):
         """Sort dimensions by order field ascending."""
         return sorted(v, key=lambda d: d.order)
 
+    @model_validator(mode="after")
+    def validate_unique_dimension_ids(self) -> AppConfig:
+        """Ensure dimension IDs are unique before the graph uses them as dict keys."""
+        seen: set[str] = set()
+        duplicates: set[str] = set()
+        for dim in self.dimensions:
+            if dim.id in seen:
+                duplicates.add(dim.id)
+            seen.add(dim.id)
+        if duplicates:
+            dupes = ", ".join(sorted(duplicates))
+            msg = f"duplicate dimension id(s): {dupes}"
+            raise ValueError(msg)
+        return self
+
 
 def validate_dimension_ids(requested: list[str], available: list[Dimension], *, label: str = "") -> str | None:
     """Validate requested dimension IDs exist in the config.
@@ -135,12 +151,89 @@ def validate_dimension_ids(requested: list[str], available: list[Dimension], *, 
     return None
 
 
-def load_config(config_path: str) -> AppConfig:
-    """Load and validate config.yaml. Warns to stderr on schema_version mismatch."""
-    raw: dict[str, Any] = yaml.safe_load(Path(config_path).read_text(encoding="utf-8"))
+def _read_yaml(path: Path) -> dict[str, Any]:
+    """Read a YAML mapping from *path*."""
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        msg = f"config file must be a YAML mapping: {path}"
+        raise TypeError(msg)
+    return data
+
+
+def _warn_schema_version(raw: dict[str, Any]) -> None:
     version = raw.get("schema_version", "")
     if version != SUPPORTED_SCHEMA_VERSION:
         sys.stderr.write(
             f"Warning: schema_version '{version}' != expected '{SUPPORTED_SCHEMA_VERSION}'. Proceeding anyway.\n"
         )
+
+
+def _load_prompt_if_exists(raw: dict[str, Any], key: str, path: Path) -> None:
+    if path.exists():
+        raw[key] = path.read_text(encoding="utf-8")
+
+
+def _resolve_relative(base_file: Path, relative_path: str) -> Path:
+    return (base_file.parent / relative_path).resolve()
+
+
+def _load_dimension_file(path: Path) -> dict[str, Any]:
+    raw = _read_yaml(path)
+    prompt_file = raw.get("summary_prompt_file")
+    if "summary_prompt" not in raw:
+        if not prompt_file:
+            msg = f"dimension config requires summary_prompt or summary_prompt_file: {path}"
+            raise ValueError(msg)
+        prompt_path = _resolve_relative(path, str(prompt_file))
+        if not prompt_path.exists():
+            msg = f"summary_prompt_file not found for {path.name}: {prompt_path}"
+            raise FileNotFoundError(msg)
+        raw["summary_prompt"] = prompt_path.read_text(encoding="utf-8")
+    return raw
+
+
+def _load_config_dir(root: Path) -> AppConfig:
+    app_path = root / "app.yaml"
+    if not app_path.exists():
+        msg = f"config directory missing app.yaml: {root}"
+        raise FileNotFoundError(msg)
+
+    raw = _read_yaml(app_path)
+    prompts_dir = root / "prompts"
+    merge_prompt_path = prompts_dir / "merge.md"
+    if not merge_prompt_path.exists():
+        msg = f"config directory missing required prompt: {merge_prompt_path}"
+        raise FileNotFoundError(msg)
+
+    raw["merge_prompt"] = merge_prompt_path.read_text(encoding="utf-8")
+    _load_prompt_if_exists(raw, "summarize_system_prompt", prompts_dir / "summarize_system.md")
+    _load_prompt_if_exists(raw, "extract_system_prompt", prompts_dir / "extract_system.md")
+    _load_prompt_if_exists(raw, "merge_system_prompt", prompts_dir / "merge_system.md")
+    _load_prompt_if_exists(raw, "extract_user_template", prompts_dir / "extract_user_template.md")
+
+    dimensions_dir = root / "dimensions"
+    dimension_files = sorted(dimensions_dir.glob("*.yaml"))
+    if not dimension_files:
+        msg = f"config directory has no dimension yaml files: {dimensions_dir}"
+        raise ValueError(msg)
+
+    raw["dimensions"] = [_load_dimension_file(path) for path in dimension_files]
+    _warn_schema_version(raw)
     return AppConfig.model_validate(raw)
+
+
+def _load_config_file(path: Path) -> AppConfig:
+    raw = _read_yaml(path)
+    _warn_schema_version(raw)
+    return AppConfig.model_validate(raw)
+
+
+def load_config(config_path: str) -> AppConfig:
+    """Load and validate config from a YAML file or a directory config bundle."""
+    path = Path(config_path)
+    if path.is_dir():
+        return _load_config_dir(path)
+    if not path.exists():
+        msg = f"config path not found: {path}"
+        raise FileNotFoundError(msg)
+    return _load_config_file(path)

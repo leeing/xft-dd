@@ -1,0 +1,16 @@
+id: scale
+name: 员工规模
+order: 30
+enabled: true
+required: false
+minimax_queries:
+  - '"{target}" 参保人数'
+  - '"{target}" 员工人数'
+  - '"{target}" 研发人员'
+  - '"{target}" 工程师 技术人员 招聘'
+metaso_mode: search
+metaso_search_size: 1
+metaso_queries:
+  - "{target}有多少员工？社保参保人数是多少？研发人员数量或占比是多少？"
+  - "{target}的研发投入占营收比例是多少？研发工程师有多少人？"
+summary_prompt_file: ../prompts/dimensions/scale.md

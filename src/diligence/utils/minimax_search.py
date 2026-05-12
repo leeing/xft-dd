@@ -35,9 +35,12 @@ async def run_search(
     query: str,
     dimension_id: str,
     timeout: int = 30,
-    max_results: int = 10,
+    max_results: int = 0,
 ) -> list[SearchItem]:
     """Call MiniMax /v1/coding_plan/search and return parsed SearchItems.
+
+    max_results > 0 applies a local cap.  max_results <= 0 keeps all results
+    returned by MiniMax.
 
     Raises:
         httpx.TimeoutException: if the request exceeds *timeout* seconds.
@@ -55,7 +58,9 @@ async def run_search(
         response.raise_for_status()
 
     data = response.json()
-    organic = data.get("organic", [])[:max_results]
+    organic = data.get("organic", [])
+    if max_results > 0:
+        organic = organic[:max_results]
     now = datetime.now(UTC)
 
     items: list[SearchItem] = []

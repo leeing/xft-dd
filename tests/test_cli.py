@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import yaml
+import pytest
 
 
 def _cfg_file(tmp_path: Path) -> Path:
@@ -21,6 +22,9 @@ def _cfg_file(tmp_path: Path) -> Path:
                 "enabled": True,
                 "required": True,
                 "minimax_queries": ["{target} 工商注册"],
+                "metaso_queries": ["{target} 统一社会信用代码"],
+                "metaso_mode": "search",
+                "metaso_search_size": 2,
                 "summary_prompt": "{target}\n{results}",
             }
         ],
@@ -50,6 +54,20 @@ def test_batch_and_positional_mutually_exclusive() -> None:
     assert result.returncode == 1
 
 
+def test_cli_default_config_is_directory() -> None:
+    import importlib
+    import sys as _sys
+
+    root = str(Path(__file__).parent.parent)
+    if root not in _sys.path:
+        _sys.path.insert(0, root)
+
+    main_module = importlib.import_module("main")
+    with patch.object(sys, "argv", ["main.py", "某公司"]):
+        args = main_module._parse_args()
+    assert args.config == "config"
+
+
 def test_dry_run_no_external_calls(tmp_path: Path) -> None:
     cfg = _cfg_file(tmp_path)
     with patch("asyncio.create_subprocess_exec") as mock_exec:
@@ -71,6 +89,29 @@ def test_dry_run_no_external_calls(tmp_path: Path) -> None:
     mock_exec.assert_not_called()
     mock_ai.assert_not_called()
     assert exit_code == 0
+
+
+def test_dry_run_includes_metaso_queries(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
+    cfg = _cfg_file(tmp_path)
+    import asyncio
+
+    import main as main_module
+    from diligence.config import load_config
+
+    config = load_config(str(cfg))
+    exit_code = asyncio.run(
+        main_module.run_dry_run(
+            target="某公司",
+            config=config,
+            only=None,
+            skip=None,
+        )
+    )
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "MiniMax Search" in captured.err
+    assert "Metaso (search mode, size=2)" in captured.err
+    assert "某公司 统一社会信用代码" in captured.err
 
 
 def test_only_filter_limits_dimensions() -> None:

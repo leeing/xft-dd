@@ -108,6 +108,22 @@ async def test_run_search_max_results_truncated() -> None:
     assert len(items) == 3
 
 
+async def test_run_search_max_results_zero_keeps_all() -> None:
+    """max_results=0 disables local truncation and keeps all returned organic items."""
+    organic = [
+        {"title": f"T{i}", "link": f"https://example.com/{i}", "snippet": f"s{i}", "date": ""} for i in range(10)
+    ]
+    mock_client = MagicMock()
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    mock_client.post = AsyncMock(return_value=_make_response(organic))
+
+    with patch("diligence.utils.minimax_search.httpx.AsyncClient", return_value=mock_client):
+        items = await run_search(query="q", dimension_id="basic_info", timeout=30, max_results=0)
+
+    assert len(items) == 10
+
+
 def test_dedup_by_url() -> None:
     item_a = _make_item(url="https://qcc.com/1", title="A", snippet="sa")
     item_b = _make_item(url="https://qcc.com/1", title="B", snippet="sb")

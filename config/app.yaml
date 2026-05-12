@@ -1,0 +1,25 @@
+schema_version: "1.0"
+dimension_concurrency: 8
+query_concurrency_per_dimension: 5
+search_timeout_seconds: 30
+max_results_per_query: 0
+runs_dir: runs
+crawl_fetch_timeout: 25
+crawl_fetch_concurrency: 10
+max_full_text_chars: 10000
+fetch_blocked_domains:
+  - qixin.com
+  - qcc.com
+  - gsxt.gov.cn
+  - aiqicha.baidu.com
+  - innocom.gov.cn
+  - pss-system.cponline.cnipa.gov.cn
+report_options:
+  include_sources: true
+  include_checklist: true
+  max_sources_per_dimension: 5
+batch:
+  company_concurrency: 1
+  continue_on_company_error: true
+  skip_existing: true
+  batch_runs_dir: batch_runs

@@ -227,6 +227,22 @@ def _exit_code(results: list[CompanyRunResult]) -> int:
     return 0
 
 
+def _normalize_metaso_target(target: str) -> str:
+    """Match Metaso query target normalisation used by search_node."""
+    return target.replace("(", "（").replace(")", "）")
+
+
+def _write_dimension_query_preview(dim: Dimension, target: str) -> None:
+    sys.stderr.write("    MiniMax Search:\n")
+    for q in dim.minimax_queries:
+        sys.stderr.write(f"      - {q.replace('{target}', target)}\n")
+    if dim.metaso_queries:
+        metaso_target = _normalize_metaso_target(target)
+        sys.stderr.write(f"    Metaso ({dim.metaso_mode} mode, size={dim.metaso_search_size}):\n")
+        for q in dim.metaso_queries:
+            sys.stderr.write(f"      - {q.replace('{target}', metaso_target)}\n")
+
+
 def _dry_run_preview(targets: list[str], dims: list[Dimension], config: AppConfig, *, verbose: bool) -> None:  # noqa: FBT001
     batch_cfg = config.batch
     est = batch_cfg.company_concurrency * config.dimension_concurrency * config.query_concurrency_per_dimension
@@ -245,8 +261,7 @@ def _dry_run_preview(targets: list[str], dims: list[Dimension], config: AppConfi
         sys.stderr.write(f"    {i}. {t}\n")
     if verbose and targets and dims:
         sys.stderr.write(f"\n  [sample] dimension '{dims[0].name}' queries for '{targets[0]}':\n")
-        for q in dims[0].minimax_queries:
-            sys.stderr.write(f"    - {q.replace('{target}', targets[0])}\n")
+        _write_dimension_query_preview(dims[0], targets[0])
     sys.stderr.write("--\n")
 
 
