@@ -14,7 +14,7 @@ import asyncio
 import sys
 
 import structlog
-from crawl4ai import AsyncWebCrawler
+from crawl4ai import AsyncWebCrawler  # type: ignore[import-untyped]
 
 from diligence.models import SearchItem
 from diligence.utils.source_registry import classify_source
@@ -88,7 +88,7 @@ async def _fetch_page_markdown(
             timeout=timeout_ms / 1000,
         )
         if result and result.success and result.markdown:
-            text = result.markdown
+            text: str = result.markdown
             if len(text) < _SHORT_CRAWL_THRESHOLD:
                 log.warning("crawl_short_response", url=url, chars=len(text))
                 return ""
@@ -106,7 +106,7 @@ async def _fetch_page_markdown(
         return ""
 
 
-async def enrich_items(  # noqa: PLR0913
+async def enrich_items(  # noqa: PLR0913, C901
     items: list[SearchItem],
     blocked_domains: list[str],
     *,
@@ -136,10 +136,13 @@ async def enrich_items(  # noqa: PLR0913
     work: list[tuple[int, SearchItem, str]] = []  # (original_index, item, url)
     seen: set[str] = set()
     for i, item in enumerate(items):
-        ok = _should_fetch(item.url, item.title, item.snippet, target, blocked_domains, item.full_text)
-        if ok and item.url not in seen:
-            work.append((i, item, item.url))
-            seen.add(item.url)
+        url = item.url
+        if not url:
+            continue
+        ok = _should_fetch(url, item.title, item.snippet, target, blocked_domains, item.full_text)
+        if ok and url not in seen:
+            work.append((i, item, url))
+            seen.add(url)
 
     if not work:
         return items

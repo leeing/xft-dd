@@ -54,7 +54,7 @@ def _clean_answer(raw: str) -> str:
 
 async def query_metaso(
     api_key: str, query: str, timeout: int = 30, *, verify_tls: bool = True
-) -> tuple[str, list[dict], int]:
+) -> tuple[str, list[dict[str, Any]], int]:
     """Query metaso chat API. Returns (cleaned_answer, sources, credits)."""
     url = f"https://{_METASO_HOST}{_METASO_CHAT_PATH}"
     headers = {
@@ -76,7 +76,7 @@ async def query_metaso(
         log.warning("metaso_no_answer", query=query[:60], keys=list(data.keys()))
         return "", [], 0
     credits: int = data.get("credits", 0)
-    sources: list[dict] = data.get("sources", [])
+    sources: list[dict[str, Any]] = data.get("sources", [])
     return _clean_answer(data["answer"]), sources, credits
 
 

@@ -42,7 +42,7 @@ class DimensionSearchResult(BaseModel):
     status: Literal["success", "partial", "failed"]
     items: list[SearchItem]
     error: str | None = None
-    extractions: dict | None = None  # structured field extraction results; None = not performed
+    extractions: dict[str, object] | None = None  # structured field extraction results; None = not performed
 
 
 class DimensionSummary(BaseModel):

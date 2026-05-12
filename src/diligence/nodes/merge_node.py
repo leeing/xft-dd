@@ -21,7 +21,7 @@ log = structlog.get_logger(__name__)
 _URL_TRUNCATE_LENGTH = 60
 
 
-def _format_extraction_table(extractions: dict | None) -> str | None:
+def _format_extraction_table(extractions: dict[str, object] | None) -> str | None:
     """Format structured extraction data as a markdown table for the merge prompt."""
     if not extractions:
         return None
@@ -55,7 +55,7 @@ def _format_summaries(
     summaries: dict[str, DimensionSummary],
     active_ids: list[str],
     search_results: dict[str, object] | None = None,
-    skipped_dims: list[dict] | None = None,
+    skipped_dims: list[dict[str, str]] | None = None,
     active_dim_names: dict[str, str] | None = None,
 ) -> str:
     lines: list[str] = []
