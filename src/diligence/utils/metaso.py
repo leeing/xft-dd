@@ -66,7 +66,7 @@ async def query_metaso(api_key: str, query: str, timeout: int = 30, *, verify_tl
         "format": "simple",
         "conciseSnippet": True,
     }
-    async with httpx.AsyncClient(timeout=timeout, verify=verify_tls) as client:
+    async with httpx.AsyncClient(timeout=timeout, verify=verify_tls, trust_env=False) as client:
         response = await client.post(url, headers=headers, json=payload)
         response.raise_for_status()
         data = response.json()
@@ -221,7 +221,7 @@ async def query_metaso_search(
         "includeRawContent": include_raw_content,
         "conciseSnippet": False,
     }
-    async with httpx.AsyncClient(timeout=timeout, verify=verify_tls) as client:
+    async with httpx.AsyncClient(timeout=timeout, verify=verify_tls, trust_env=False) as client:
         response = await client.post(url, headers=headers, json=payload)
         response.raise_for_status()
         data = response.json()

@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal
 
+import httpx
 import structlog
 from openai import AsyncOpenAI, OpenAIError
 from openai.types.chat import ChatCompletionMessageParam
@@ -83,7 +84,11 @@ def get_ai_client() -> AsyncOpenAI:
     global _ai_client  # noqa: PLW0603
     if _ai_client is None:
         api_key = settings.llm_api_key or settings.minimax_api_key
-        _ai_client = AsyncOpenAI(api_key=api_key, base_url=settings.llm_base_url)
+        _ai_client = AsyncOpenAI(
+            api_key=api_key,
+            base_url=settings.llm_base_url,
+            http_client=httpx.AsyncClient(trust_env=False),
+        )
     return _ai_client
 
 
