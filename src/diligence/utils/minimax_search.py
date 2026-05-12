@@ -70,6 +70,7 @@ async def run_search(
                 snippet=snippet,
                 query=query,
                 dimension_id=dimension_id,
+                source="minimax",
                 rank=rank,
                 fetched_at=now,
             )

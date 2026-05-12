@@ -9,8 +9,11 @@ import httpx
 from diligence.utils.metaso import (
     _clean_answer,
     enrich_with_metaso,
+    enrich_with_metaso_search,
     fetch_metaso_items,
+    fetch_metaso_search_items,
     make_metaso_item,
+    make_metaso_search_item,
 )
 
 
@@ -68,8 +71,9 @@ def test_make_metaso_item_fields() -> None:
     item = make_metaso_item("公司成立于2010年", "某公司的成立时间", "basic_info")
     assert item.dimension_id == "basic_info"
     assert item.full_text == "公司成立于2010年"
-    assert item.rank == 0  # always placed first
-    assert "某公司" in item.title
+    assert item.rank == 0
+    assert item.source == "metaso_chat"
+    assert item.title == "某公司的成立时间"  # query as title, no prefix
     assert item.url is not None and item.url.startswith("metaso://")
 
 
@@ -81,10 +85,10 @@ def test_make_metaso_item_snippet_truncated() -> None:
 
 
 def test_make_metaso_item_long_query_truncated() -> None:
-    """Query longer than 60 chars is truncated in the title."""
+    """Query longer than 80 chars is truncated in the title."""
     long_query = "这是一个非常非常非常非常非常非常非常非常非常非常非常非常非常非常长的查询词" * 3
     item = make_metaso_item("answer", long_query, "basic_info")
-    assert len(item.title) < len(long_query) + 10  # title is trimmed
+    assert len(item.title) <= 80
 
 
 # ── fetch_metaso_items ────────────────────────────────────────────────────────
@@ -229,4 +233,223 @@ async def test_enrich_with_metaso_no_key_returns_original() -> None:
     assert enriched == [existing]
     assert success == 0
     assert failed == 0
+    assert credits == 0
+
+
+# ── search mode: make_metaso_search_item ─────────────────────────────────────
+
+
+def test_make_metaso_search_item_uses_content_as_full_text() -> None:
+    """content field becomes full_text when available."""
+    wp = {
+        "title": "企查查 - 某公司",
+        "link": "https://www.qcc.com/company/123",
+        "summary": "AI摘要内容",
+        "content": "原始页面正文内容",
+    }
+    item = make_metaso_search_item(wp, "query", "ip", rank=3)
+    assert item.full_text == "原始页面正文内容"
+    assert item.url == "https://www.qcc.com/company/123"
+    assert item.rank == 3
+    assert item.source == "metaso_search"
+    assert item.title == "企查查 - 某公司"  # original title, no prefix
+
+
+def test_make_metaso_search_item_falls_back_to_summary() -> None:
+    """When content is empty, summary becomes full_text."""
+    wp = {
+        "title": "某页面",
+        "link": "https://example.com/page",
+        "summary": "AI生成的摘要",
+        "content": "",
+    }
+    item = make_metaso_search_item(wp, "query", "ip", rank=0)
+    assert item.full_text == "AI生成的摘要"
+
+
+def test_make_metaso_search_item_falls_back_to_snippet() -> None:
+    """When both content and summary are empty, snippet becomes full_text."""
+    wp = {
+        "title": "某页面",
+        "link": "https://example.com/page",
+        "summary": "",
+        "content": "",
+        "snippet": "搜索引擎摘要片段",
+    }
+    item = make_metaso_search_item(wp, "query", "ip", rank=0)
+    assert item.full_text == "搜索引擎摘要片段"
+
+
+def test_make_metaso_search_item_uses_summary_for_display_snippet() -> None:
+    """Display snippet prefers summary (AI-generated, most informative)."""
+    wp = {
+        "title": "某页面",
+        "link": "https://example.com/page",
+        "summary": "AI摘要文本",
+        "content": "正文内容很长..." * 50,
+        "snippet": "搜索片段",
+    }
+    item = make_metaso_search_item(wp, "query", "ip", rank=0)
+    assert item.snippet == "AI摘要文本"
+
+
+def test_make_metaso_search_item_real_url_preserved() -> None:
+    """Real http(s) URLs are preserved (unlike chat mode's metaso://)."""
+    wp = {"title": "t", "link": "https://www.tianyancha.com/company/abc", "summary": "s"}
+    item = make_metaso_search_item(wp, "query", "ip", rank=0)
+    assert item.url == "https://www.tianyancha.com/company/abc"
+    assert not item.url.startswith("metaso://")
+
+
+# ── search mode: fetch_metaso_search_items ───────────────────────────────────
+
+
+async def test_fetch_metaso_search_items_returns_empty_when_no_api_key() -> None:
+    items, success, failed, credits = await fetch_metaso_search_items("ip", ["query"], api_key="")
+    assert items == []
+    assert success == 0
+    assert failed == 0
+    assert credits == 0
+
+
+async def test_fetch_metaso_search_items_returns_empty_when_no_queries() -> None:
+    items, success, failed, credits = await fetch_metaso_search_items("ip", [], api_key="key")
+    assert items == []
+    assert success == 0
+    assert failed == 0
+    assert credits == 0
+
+
+async def test_fetch_metaso_search_items_success() -> None:
+    """Returns SearchItems with real URLs and sums credits."""
+    mock_webpages = [
+        {
+            "title": "结果1 - 天眼查",
+            "link": "https://www.tianyancha.com/company/1",
+            "summary": "摘要1",
+            "content": "正文内容1",
+        },
+        {
+            "title": "结果2 - 企查查",
+            "link": "https://www.qcc.com/company/2",
+            "summary": "摘要2",
+            "content": "",
+        },
+    ]
+    with patch("diligence.utils.metaso.query_metaso_search", new_callable=AsyncMock) as mock_q:
+        mock_q.return_value = (mock_webpages, 12)
+        items, success, failed, credits = await fetch_metaso_search_items(
+            "ip", ["某公司专利"], api_key="key", size=3
+        )
+    assert len(items) == 2
+    assert success == 1
+    assert failed == 0
+    assert credits == 12
+    assert items[0].url == "https://www.tianyancha.com/company/1"
+    assert items[0].full_text == "正文内容1"
+    assert items[1].full_text == "摘要2"  # fallback to summary
+
+
+async def test_fetch_metaso_search_items_empty_webpages_counts_as_failed() -> None:
+    """Empty webpages list from API counts as a failed query."""
+    with patch("diligence.utils.metaso.query_metaso_search", new_callable=AsyncMock) as mock_q:
+        mock_q.return_value = ([], 0)
+        items, success, failed, credits = await fetch_metaso_search_items("ip", ["query"], api_key="key")
+    assert items == []
+    assert success == 0
+    assert failed == 1
+    assert credits == 0
+
+
+async def test_fetch_metaso_search_items_handles_timeout() -> None:
+    with patch("diligence.utils.metaso.query_metaso_search", new_callable=AsyncMock) as mock_q:
+        mock_q.side_effect = TimeoutError("timeout")
+        items, success, failed, credits = await fetch_metaso_search_items("ip", ["query"], api_key="key")
+    assert items == []
+    assert success == 0
+    assert failed == 1
+    assert credits == 0
+
+
+async def test_fetch_metaso_search_items_interleaves_by_rank() -> None:
+    """Results from multiple queries are interleaved: all rank-0, then all rank-1, etc."""
+    q1_results = [
+        {"title": "Q1-R0", "link": "https://a.com/1", "summary": "a"},
+        {"title": "Q1-R1", "link": "https://a.com/2", "summary": "b"},
+    ]
+    q2_results = [
+        {"title": "Q2-R0", "link": "https://b.com/1", "summary": "c"},
+    ]
+    with patch("diligence.utils.metaso.query_metaso_search", new_callable=AsyncMock) as mock_q:
+        mock_q.side_effect = [(q1_results, 6), (q2_results, 6)]
+        items, success, failed, credits = await fetch_metaso_search_items(
+            "ip", ["q1", "q2"], api_key="key", size=3
+        )
+    # Q1-R0, Q2-R0, Q1-R1 (rank 0s first, then rank 1s)
+    assert [it.title for it in items] == ["Q1-R0", "Q2-R0", "Q1-R1"]
+    assert success == 2
+    assert credits == 12
+
+
+# ── search mode: enrich_with_metaso_search ────────────────────────────────────
+
+
+async def test_enrich_with_metaso_search_prepends_items() -> None:
+    """Metaso search items are prepended before existing items."""
+    from datetime import UTC, datetime
+
+    from diligence.models import SearchItem, make_item_id
+
+    existing = SearchItem(
+        id=make_item_id(url="https://qcc.com/1", title="企查查结果", snippet="s"),
+        title="企查查结果",
+        url="https://qcc.com/1",
+        snippet="s",
+        query="q",
+        dimension_id="ip",
+        fetched_at=datetime.now(UTC),
+    )
+
+    mock_webpages = [
+        {"title": "专利结果", "link": "https://patents.example.com/1", "summary": "专利摘要", "content": "专利正文"},
+    ]
+    with patch("diligence.utils.metaso.query_metaso_search", new_callable=AsyncMock) as mock_q:
+        mock_q.return_value = (mock_webpages, 12)
+        enriched, success, failed, credits = await enrich_with_metaso_search(
+            items=[existing], dimension_id="ip", queries=["某公司专利"], api_key="key"
+        )
+
+    assert len(enriched) == 2
+    assert success == 1
+    assert failed == 0
+    assert credits == 12
+    # Metaso search item comes first
+    assert enriched[0].url == "https://patents.example.com/1"
+    assert enriched[0].full_text == "专利正文"
+    # Original item preserved at the end
+    assert enriched[-1].id == existing.id
+
+
+async def test_enrich_with_metaso_search_no_key_returns_original() -> None:
+    """Empty API key → original items returned unchanged."""
+    from datetime import UTC, datetime
+
+    from diligence.models import SearchItem, make_item_id
+
+    existing = SearchItem(
+        id=make_item_id(url="https://qcc.com/1", title="t", snippet="s"),
+        title="t",
+        url="https://qcc.com/1",
+        snippet="s",
+        query="q",
+        dimension_id="ip",
+        fetched_at=datetime.now(UTC),
+    )
+    enriched, success, failed, credits = await enrich_with_metaso_search(
+        items=[existing], dimension_id="ip", queries=["q"], api_key=""
+    )
+    assert enriched == [existing]
+    assert success == 0
+    assert failed == 0
+    assert credits == 0
     assert credits == 0

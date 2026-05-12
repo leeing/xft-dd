@@ -7,10 +7,16 @@ from datetime import UTC, datetime
 
 import pytest
 
+from diligence.config import ExtractField
 from diligence.models import DimensionSearchResult, SearchItem, make_item_id
 from diligence.nodes.summarize_node import (
+    _FieldExtraction,
+    _ExtractionsResult,
     _apply_confidence_floor,
+    _build_field_descriptions,
+    _build_extraction_prompt,
     _extract_json,
+    _format_extraction_table,
     _render_results,
 )
 from diligence.nodes.search_node import _normalize_target
@@ -188,3 +194,136 @@ def test_render_results_multiple_items_separated() -> None:
     )
     rendered = _render_results(dsr)
     assert rendered.count("---") == 2  # 3 items → 2 separators
+
+
+# ── _build_field_descriptions ──────────────────────────────────────────────────
+
+
+def test_build_field_descriptions_basic() -> None:
+    fields = [
+        ExtractField(field_name="统一社会信用代码", description="18位字母数字组合"),
+        ExtractField(field_name="法定代表人", description="法定代表人姓名"),
+    ]
+    result = _build_field_descriptions(fields)
+    assert "1. 统一社会信用代码：18位字母数字组合" in result
+    assert "2. 法定代表人：法定代表人姓名" in result
+
+
+def test_build_field_descriptions_with_examples() -> None:
+    fields = [
+        ExtractField(field_name="统一社会信用代码", description="18位", examples="91440605682473330H"),
+    ]
+    result = _build_field_descriptions(fields)
+    assert "（示例：91440605682473330H）" in result
+
+
+def test_build_field_descriptions_empty() -> None:
+    assert _build_field_descriptions([]) == ""
+
+
+# ── _build_extraction_prompt ───────────────────────────────────────────────────
+
+
+def test_build_extraction_prompt_includes_target() -> None:
+    items = [_make_item("https://a.com", title="T", snippet="s")]
+    items[0] = items[0].model_copy(update={"full_text": "正文内容"})
+    fields = [ExtractField(field_name="代码", description="desc")]
+    template = "{target}\n{field_descriptions}\n{count}\n{item_contents}"
+    result = _build_extraction_prompt("测试公司", fields, items, template)
+    assert result.startswith("测试公司")
+    assert "正文内容" in result
+    assert "1" in result  # count
+
+
+def test_build_extraction_prompt_only_full_text_items() -> None:
+    """Only items with full_text are included (caller must pre-filter)."""
+    item_ft = _make_item("https://a.com", title="A", snippet="s")
+    item_ft = item_ft.model_copy(update={"full_text": "完整页面"})
+    item_no_ft = _make_item("https://b.com", title="B", snippet="摘要")
+    fields = [ExtractField(field_name="f", description="d")]
+    template = "{target}\n{field_descriptions}\n{count}\n{item_contents}"
+    # Caller pre-filters: only full_text items passed
+    ft_items = [it for it in [item_ft, item_no_ft] if it.full_text]
+    result = _build_extraction_prompt("目标", fields, ft_items, template)
+    assert "完整页面" in result
+    assert result.count("[来源") == 1  # only ft item included
+
+
+# ── _format_extraction_table ───────────────────────────────────────────────────
+
+
+def test_format_extraction_table_with_data() -> None:
+    extractions = _ExtractionsResult(
+        extractions={
+            "统一社会信用代码": [
+                _FieldExtraction(
+                    source_item_id="abc123", source_url="https://curtao.com/p",
+                    value="91440605682473330H", confidence="中",
+                ),
+            ],
+            "法定代表人": [
+                _FieldExtraction(
+                    source_item_id="abc123", source_url="https://curtao.com/p",
+                    value="欧泽超", confidence="中",
+                ),
+            ],
+        }
+    )
+    result = _format_extraction_table(extractions)
+    assert "结构化字段提取结果" in result
+    assert "91440605682473330H" in result
+    assert "欧泽超" in result
+    assert "abc123" in result
+
+
+def test_format_extraction_table_empty_field() -> None:
+    extractions = _ExtractionsResult(extractions={"某字段": []})
+    result = _format_extraction_table(extractions)
+    assert "*未找到*" in result
+
+
+def test_format_extraction_table_no_fields() -> None:
+    extractions = _ExtractionsResult(extractions={})
+    result = _format_extraction_table(extractions)
+    # Should produce table header with no data rows
+    assert "结构化字段提取结果" in result
+
+
+# ── _render_results with extraction_table ──────────────────────────────────────
+
+
+def test_render_results_with_extraction_table_truncates_full_text() -> None:
+    """When extraction_table is provided, full_text is truncated."""
+    long_text = "x" * 5000
+    item = _make_item("https://a.com", title="T", snippet="s")
+    item = item.model_copy(update={"full_text": long_text})
+    dsr = DimensionSearchResult(
+        dimension_id="d", dimension_name="n", status="success", items=[item],
+    )
+    rendered = _render_results(dsr, extraction_table="## 提取表\n|...|")
+    assert "已截断" in rendered
+    assert long_text not in rendered  # full text truncated
+
+
+def test_render_results_with_extraction_table_preserves_snippets() -> None:
+    """Snippet-only items are never truncated."""
+    item = _make_item("https://a.com", title="T", snippet="短摘要")
+    dsr = DimensionSearchResult(
+        dimension_id="d", dimension_name="n", status="success", items=[item],
+    )
+    rendered = _render_results(dsr, extraction_table="## 提取表\n|...|")
+    assert "短摘要" in rendered
+    assert "已截断" not in rendered  # snippet is not truncated
+
+
+def test_render_results_no_extraction_table_full_text_not_truncated() -> None:
+    """Without extraction_table, behavior is unchanged (no truncation)."""
+    long_text = "y" * 3000
+    item = _make_item("https://a.com", title="T", snippet="s")
+    item = item.model_copy(update={"full_text": long_text})
+    dsr = DimensionSearchResult(
+        dimension_id="d", dimension_name="n", status="success", items=[item],
+    )
+    rendered = _render_results(dsr)
+    assert long_text in rendered
+    assert "已截断" not in rendered

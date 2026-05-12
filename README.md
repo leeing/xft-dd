@@ -1,6 +1,6 @@
 # xft-dd · 企业尽调自动化工具
 
-基于三层检索增强与 AI 推理的企业尽职调查工具。输入企业名称，自动生成覆盖 8 个维度的结构化尽调报告。
+基于多源检索增强与 AI 推理的企业尽职调查工具。输入企业名称，自动生成覆盖 8 个维度的结构化尽调报告。
 
 ---
 
@@ -41,9 +41,10 @@ uv run main.py --batch companies.txt --resume --batch-dir batch_runs/20260510-..
 MINIMAX_API_KEY=SM4:<加密后的密钥>
 MINIMAX_BASE_URL=https://api.minimax.io/v1
 
-# ── 秘塔 AI 搜索（可选，启用后补充精准问答）─────────────────────
+# ── 秘塔 AI 搜索（可选）────────────────────────────────────────
 METASO_API_KEY=
 METASO_ENABLED=false
+METASO_VERIFY_TLS=true
 
 # ── 推理层（可替换为任意 OpenAI 兼容模型）───────────────────────
 # 若 LLM_API_KEY 为空则自动复用 MINIMAX_API_KEY
@@ -67,29 +68,28 @@ LLM_MODEL=MiniMax-M2.7-Highspeed
 输入: 企业名称
   │
   ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  LangGraph Pipeline                                              │
-│                                                                  │
-│  init_node                                                       │
-│    → 生成 run_id，过滤已启用维度，创建输出目录                  │
-│    │                                                             │
-│    ▼  (Send API 扇出，受 dimension_concurrency 限制)            │
-│  ┌──────────────────┐  ┌──────────────────┐  ┌───────────────┐  │
-│  │  search_node     │  │  search_node     │  │  ...×8        │  │
-│  │  (basic_info)    │  │  (tech_cert)     │  │               │  │
-│  └────────┬─────────┘  └────────┬─────────┘  └──────┬────────┘  │
-│           ▼                     ▼                    ▼            │
-│  summarize_node × 8（search 后立即 summarize，维度内串行）       │
-│    │                                                             │
-│    ▼  (扇入，自定义 reducer 归并结果)                            │
-│  collect_node  → 检查必要维度完整性                              │
-│    │                                                             │
-│    ▼                                                             │
-│  merge_node    → LLM 合并 8 个维度摘要，生成 Markdown 报告      │
-│    │                                                             │
-│    ▼                                                             │
-│  save_node     → 写入产物文件，打印成本摘要                      │
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│  LangGraph Pipeline                                                   │
+│                                                                       │
+│  init_node                                                            │
+│    → 生成 run_id，过滤已启用维度，创建输出目录                       │
+│    │                                                                  │
+│    ▼  (Send API 扇出，受 dimension_concurrency 限制)                 │
+│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐    │
+│  │ search_summarize │  │ search_summarize │  │ ...×N             │    │
+│  │ (basic_info)     │  │ (tech_cert)      │  │                   │    │
+│  └────────┬─────────┘  └────────┬─────────┘  └──────┬────────────┘    │
+│           │  ┌──────────────────┘                    │                │
+│           │  │  ┌───────────────────────────────────┘                │
+│           ▼  ▼  ▼                                                     │
+│  collect_node → 检查必要维度完整性                                   │
+│    │                                                                  │
+│    ▼                                                                  │
+│  merge_node → LLM 合并各维度摘要，生成 Markdown 报告                 │
+│    │                                                                  │
+│    ▼                                                                  │
+│  save_node → 写入产物文件，打印成本摘要                              │
+└──────────────────────────────────────────────────────────────────────┘
   │
   ▼
 输出: runs/{run_id}/
@@ -99,11 +99,60 @@ LLM_MODEL=MiniMax-M2.7-Highspeed
   └── run_meta.json              ← 含本次 API 调用成本
 ```
 
+### search_summarize_node 内部流程（每维度独立并行）
+
+```
+search_node                           summarize_node
+──────────                            ──────────────
+
+MiniMax Search API
+  │  dim.minimax_queries 并发查询
+  │  返回 SearchItem（snippet 有值，full_text=""）
+  ▼
+去重（按 URL 优先）
+  │
+  ▼
+Metaso 补充（可选）
+  │  chat 模式: AI 综合答案 → SearchItem（source="metaso_chat"，full_text=答案）
+  │  search 模式: 网页 URL + rawContent → SearchItem（source="metaso_search"）
+  │  → prepend 到 items 前面
+  ▼
+crawl4ai 全文抓取（可选）
+  │  对每个 item 检查 _should_fetch():
+  │    ✅ url 非空 & 非 metaso://
+  │    ✅ target in title OR target in snippet
+  │    ✅ url 不含 fetch_blocked_domains
+  │  → 成功: item.full_text = 页面 markdown[:max_full_text_chars]
+  │           item.snippet = full_text[:300]
+  │  → 失败/跳过: item 保持原样
+  ▼
+DimensionSearchResult            ──────────────────────────────────────►
+                                         │
+                                    [NEW] 结构化字段提取（可选）
+                                         │  if dim.extract_fields:
+                                         │    收集所有 full_text 非空 item
+                                         │    → 1 次 LLM 调用，逐源提取字段值
+                                         │    → _ExtractionsResult
+                                         │    → 写入 dsr.extractions
+                                         │    → _format_extraction_table()
+                                         ▼
+                                    主 summarize
+                                         │  _render_results(dsr, extraction_table)
+                                         │    - 有提取表: table + full_text[:2000]
+                                         │    - 无提取表: full_text 原样
+                                         │  → LLM 调用 → DimensionSummary
+                                         ▼
+                                    DimensionSummary
+                                    (summary, confidence,
+                                     uncertain_facts,
+                                     evidence_item_ids)
+```
+
 ---
 
-## 三层检索增强
+## 检索与增强层
 
-### 第一层：MiniMax Search — 宽覆盖网页检索（不可替换）
+### 第一层：MiniMax Search — 网页搜索召回
 
 **端点**：`POST /v1/coding_plan/search`  
 **实现**：`src/diligence/utils/minimax_search.py`
@@ -111,38 +160,60 @@ LLM_MODEL=MiniMax-M2.7-Highspeed
 - 对每个维度的 `minimax_queries` 并发发起搜索，受 `query_concurrency_per_dimension` 限流
 - 返回网页列表（title + link + snippet），每查询最多 `max_results_per_query` 条
 - 覆盖企查查、天眼查、招聘平台、新闻、政府公告等多类来源
-- 多条查询结果自动去重：URL 优先匹配，无 URL 时降级为 title+snippet 匹配
+- 多条查询结果自动去重（URL 优先匹配，无 URL 时降级为 title+snippet 匹配）
+- 仅返回搜索结果摘要，**不返回网页全文**
 
-### 第二层：Metaso 秘塔 AI — 精准事实问答（可选）
+### 第二层：Metaso 秘塔 AI — 精准问答与搜索（可选）
 
-**端点**：`POST https://metaso.cn/api/v1/chat/completions`  
+**端点**：
+- `POST https://metaso.cn/api/v1/chat/completions`（chat 模式）
+- `POST https://metaso.cn/api/v1/search`（search 模式）
+
 **实现**：`src/diligence/utils/metaso.py`  
 **启用方式**：`.env` 中设置 `METASO_ENABLED=true` 并填入 `METASO_API_KEY`
 
-- 对每个维度发起 1-3 条自然语言问答（例如「{target}的统一社会信用代码是什么？」）
-- 秘塔内部联网检索企查查、启信宝及工商数据库，返回 AI 合成的自然语言答案
-- 答案包装为带 `full_text` 的 SearchItem，插入对应维度结果列表最前端，确保 LLM 优先采信
-- 响应中的 `credits` 消耗自动累计，运行结束后统一展示
+两种模式由 `dim.metaso_mode` 控制：
 
-> 公司名含 ASCII 括号（如 `美世乐(广东)新能源科技有限公司`）时，自动转换为全角 `（）` 再发送至秘塔，避免查询解析歧义。MiniMax Search 不受影响（使用引号包裹查询词）。
+| 模式 | 返回内容 | credits 消耗 | 适用场景 |
+|------|---------|:---:|------|
+| `chat` | AI 综合答案 + 来源引用 | 6/查询 | 需要跨源判断的维度（background、tech_cert） |
+| `search` | 真实网页 URL + summary + rawContent | 6×size/查询 | 需要原始数据的维度（basic_info、ip、product） |
 
-### 第三层：Playwright — 全文抓取增强（可选，默认关闭）
+- chat 模式：答案包装为 `metaso://` 协议的 SearchItem（`source="metaso_chat"`），不参与后续 crawl4ai 抓取
+- search 模式：返回真实 HTTP URL 的 SearchItem（`source="metaso_search"`），可被 crawl4ai 再次抓取
+- 公司名含 ASCII 括号时自动转换为全角 `（）` 再发送，避免查询解析歧义
+
+### 第三层：crawl4ai — 全文抓取
 
 **实现**：`src/diligence/utils/fetch.py`  
-**启用方式**：在 `config.yaml` 的目标维度下设置 `fetch_enabled: true`，且 `fetchable_domains` 白名单中包含目标域名片段
+**启用方式**：维度设置 `fetch_enabled: true`
 
-- 仅抓取 URL 匹配 `fetchable_domains` 白名单的页面，未匹配则跳过
-- 通过真实浏览器访问目标页面，提取完整正文以替换 100-200 字的搜索摘要
-- 适合工商注册详情页、CNIPA 专利页等结构化内容页面
-- 不适合需要登录的平台（天眼查、招聘网站等）
+- 使用 `AsyncWebCrawler` 抓取页面并提取 Markdown 正文
+- 支持 JS 渲染页面，自动处理 bot 检测和内容提取
+- 抓取条件（`_should_fetch`）：
+  - URL 非空且非 `metaso://` 协议
+  - title 或 snippet 包含目标企业名称
+  - URL 不含 `fetch_blocked_domains` 中的域名片段
+- 正文截断到 `max_full_text_chars`（默认 6900）
+- 该页正文 < 100 字符视为拦截页面，自动丢弃
 
-### 推理层：LLM — 结构化摘要与报告生成（模型可替换）
+### 结构化字段提取（NEW）
 
-**端点**：任意 OpenAI 兼容 API  
+**实现**：`src/diligence/nodes/summarize_node.py` 中的 `_do_structured_extraction()`  
+**启用方式**：维度配置 `extract_fields` 列表
+
+- 在主 summarize 前，对每个有 `full_text` 的 item 做批量字段提取
+- 一次 LLM 调用处理所有 source，逐源提取指定字段值并标注可信度
+- 提取结果呈现为 Markdown 表格，同时序列化到 `raw_search_results.json` 的 `extractions` 字段
+- 多源交叉验证：同一字段在不同 source 的值并排列出，冲突不隐藏
+- 提取失败自动重试 1 次，仍失败则降级回原文直接 summarize
+
+### 推理层：LLM — 摘要与报告生成
+
 **实现**：`src/diligence/nodes/summarize_node.py`、`src/diligence/nodes/merge_node.py`
 
-- **summarize_node**：读取各维度检索结果，输出结构化 JSON，包含可信度评级、待核实项及证据 ID
-- **merge_node**：合并 8 个维度摘要，生成最终 Markdown 报告及人工核验清单
+- **summarize_node**：接收提取表 + 截断原文，输出结构化 JSON（summary、confidence、uncertain_facts、evidence_item_ids）
+- **merge_node**：合并各维度摘要，生成最终 Markdown 报告及人工核验清单
 - 通过 `.env` 中的 `LLM_*` 变量切换模型，无需修改代码
 
 ### 检索策略分工
@@ -150,10 +221,11 @@ LLM_MODEL=MiniMax-M2.7-Highspeed
 | 任务 | 使用层级 | 理由 |
 |------|---------|------|
 | 发现「企业出现在哪些网页」 | MiniMax Search | 覆盖面广，各类网站均可命中 |
-| 查询「统一社会信用代码」等精确事实 | Metaso 秘塔 | 直接检索工商数据库，答案精准 |
-| 获取详情页完整正文 | Playwright | 突破搜索摘要的字数限制 |
-| 裁决「2003 年还是 2008 年成立」等冲突信息 | LLM | 需要跨来源推理 |
-| 输出带可信度标注的结构化摘要 | LLM | 需要格式控制与语义理解 |
+| 查询「统一社会信用代码」等精确事实 | Metaso chat | 直接检索工商数据库，答案精准 |
+| 获取真实 URL + 原始网页内容 | Metaso search | 返回可被 crawl4ai 二次抓取的真实页面 |
+| 获取详情页完整正文 | crawl4ai | 突破搜索摘要的字数限制 |
+| 从正文中逐源提取关键字段 | 结构化提取 | 专注任务，多源交叉验证 |
+| 裁决冲突信息、输出结构化摘要 | LLM | 需要跨来源推理和格式控制 |
 
 ---
 
@@ -170,7 +242,7 @@ LLM_MODEL=MiniMax-M2.7-Highspeed
 | `product` | 产品与定位 | |
 | `listing` | 上市情况 | |
 
-`required=true` 的维度（当前仅 `basic_info`）失败时，`run_meta.json` 中 `required_failed` 标记为 `true`，进程退出码为 2。
+`required=true` 的维度失败时，`run_meta.json` 中 `required_failed` 标记为 `true`，进程退出码为 2。
 
 ---
 
@@ -194,22 +266,36 @@ runs_dir: "runs"                     # 单企业产物根目录
 summarize_system_prompt: "你是企业尽调专家..."
 merge_system_prompt: "你是行业顶级专家..."
 
-# ── Playwright 参数（仅在维度设置 fetch_enabled: true 时生效）──
-playwright_fetch_timeout: 25         # 单页抓取超时（秒，5-120）
-playwright_fetch_concurrency: 2      # 并行抓取数（1-5）
+# ── crawl4ai 抓取参数（全局默认值）────────────────────────────
+max_full_text_chars: 6900            # 抓取正文最大长度（100-100000）
+crawl_fetch_timeout: 25              # 单页抓取超时（秒，5-120）
+crawl_fetch_concurrency: 2           # 并行抓取数（1-5）
 
-# ── 可抓取域名白名单 ──────────────────────────────────────────
-# URL 中包含任意一项即触发 Playwright 全文抓取
-# 留空则即使 fetch_enabled: true 也不会抓取任何页面
-fetchable_domains: []
-# 示例：
-#   fetchable_domains:
-#     - "example.com"
-#     - "anothersite.cn"
+# ── 抓取域名黑名单 ────────────────────────────────────────────
+# URL 中包含任意一项即跳过 crawl4ai 全文抓取
+# 留空则 fetch_enabled: true 时抓取全部非 metaso 页面
+fetch_blocked_domains:
+  - "qixin.com"
+  - "qcc.com"
+
+# ── 结构化字段提取（全局默认值，可被维度覆盖）─────────────────
+extract_system_prompt: "你是专业的企业信息提取专家..."
+extract_user_template: |
+  目标企业：{target}
+
+  需要提取的字段：
+  {field_descriptions}
+
+  以下是从 {count} 个不同网页获取的正文内容：
+
+  {item_contents}
+
+  请从以上所有网页正文中提取上述字段的值。
 
 # ── 报告选项 ──────────────────────────────────────────────────
 report_options:
   include_sources: true
+  include_checklist: true
   max_sources_per_dimension: 5
 
 # ── 批量模式 ──────────────────────────────────────────────────
@@ -228,16 +314,25 @@ merge_prompt: |
 dimensions:
   - id: basic_info
     name: 工商基本信息
-    order: 10                         # 排序，数值越小越靠前
+    order: 10
     enabled: true
     required: true
-    fetch_enabled: false
-    minimax_queries:                  # MiniMax Search 查询词（{target} 自动替换）
-      - "{target} 工商注册信息"
-      - "{target} 统一社会信用代码"
-    metaso_queries:                   # 秘塔 AI 问答（{target} 自动替换）
-      - "{target}的统一社会信用代码、注册资本、成立时间、注册地址是什么？"
-    summary_prompt: |                 # 维度摘要提示词（{target} 和 {results} 自动替换）
+    fetch_enabled: true               # 启用 crawl4ai 全文抓取
+    minimax_queries:
+      - '"{target}" 官方网站'
+    metaso_queries:
+      - "{target} 企查查 site:qcc.com"
+    metaso_mode: search               # chat | search
+    metaso_search_size: 1             # search 模式每查询返回网页数（1-10）
+    extract_fields:                   # 结构化字段提取（不配则跳过）
+      - field_name: 统一社会信用代码
+        description: "18位字母数字组合"
+        examples: "91440605682473330H"
+      - field_name: 法定代表人
+        description: "法定代表人姓名"
+      - field_name: 注册资本
+        description: "金额+币种，如1000万元人民币"
+    summary_prompt: |
       请从以下搜索结果中提取"{target}"的工商基本信息...
       {results}
 ```
@@ -260,6 +355,16 @@ dimensions:
       {results}
 ```
 
+如需结构化提取，添加 `extract_fields` 即可：
+
+```yaml
+    extract_fields:
+      - field_name: 主要客户
+        description: "客户公司名称"
+      - field_name: 主要供应商
+        description: "供应商公司名称"
+```
+
 ---
 
 ## 产物文件
@@ -269,9 +374,31 @@ dimensions:
 | 文件 | 内容 |
 |------|------|
 | `final_report.md` | 最终尽调报告（Markdown） |
-| `dimension_summaries.json` | 8 个维度的结构化摘要（含可信度、待核实事项） |
-| `raw_search_results.json` | 全部原始搜索结果（含秘塔 SearchItem） |
+| `dimension_summaries.json` | 各维度的结构化摘要（含可信度、待核实事项） |
+| `raw_search_results.json` | 全部原始搜索结果（含 SearchItem 和 extractions） |
 | `run_meta.json` | 运行元数据（run_id、状态、失败维度、时间戳、API 成本） |
+
+`raw_search_results.json` 中每个维度包含 `extractions` 字段（若配置了 `extract_fields`）：
+
+```json
+{
+  "basic_info": {
+    "items": [...],
+    "extractions": {
+      "extractions": {
+        "统一社会信用代码": [
+          {
+            "source_item_id": "b71f82f6ae32",
+            "source_url": "https://m.liepin.com/company/12440155/",
+            "value": "91440605682473330H",
+            "confidence": "高"
+          }
+        ]
+      }
+    }
+  }
+}
+```
 
 批量运行额外生成 `batch_summary.md`、`batch_summary.csv`、`batch_meta.json`。
 
@@ -283,35 +410,41 @@ dimensions:
 
 ```
 本次调用成本：
-   MiniMax Search: 18 次
-   LLM 推理: 9 次，tokens: 42,300
-   Metaso: 12 次，credits: 36
+   MiniMax Search: 1 次
+   LLM 推理: 4 次，tokens: 42,284
+   Metaso: 1 次成功，0 次失败，credits: 6
 ```
 
-`run_meta.json` 中的 `cost` 字段（机器可读）：
-
-```json
-"cost": {
-  "minimax_search_calls": 18,
-  "llm_calls": 9,
-  "llm_tokens_total": 42300,
-  "metaso_calls": 12,
-  "metaso_credits_total": 36
-}
-```
+| API | 计费方式 |
+|-----|---------|
+| MiniMax Search | 按查询次数 |
+| Metaso chat | 6 credits / 查询 |
+| Metaso search | 6 × size credits / 查询 |
+| LLM 推理 | 按 token（输入+输出） |
 
 ---
 
 ## 可信度评级
 
-可信度由程序强制规则兜底，AI 不得自行提升等级：
+两级可信度保障：
+
+### 程序规则（硬性，LLM 不可突破）
 
 | 条件 | 最高可信度 |
 |------|:---:|
 | 搜索结果为 0，或维度状态为 `failed` | 待核实（强制） |
 | 仅 1 条搜索结果 | 低（上限） |
 | 所有结果均无 URL | 低（上限） |
-| 其他情况 | 由 AI 判定（高 / 中 / 低 / 待核实） |
+
+### 结构化提取可信度（字段级）
+
+| 等级 | 标准 |
+|:---:|------|
+| 高 | 政府网站（gov.cn）或工商企业信息网站（企查查/天眼查/启信宝）明确列出 |
+| 中 | 商业网站（招聘平台、行业网站、公司官网）明确列出 |
+| 低 | 侧面提及、关联信息推断、第三方引用 |
+
+最终报告中 AI 判定的可信度不得高于程序规则设定的上限。
 
 ---
 
@@ -321,8 +454,7 @@ dimensions:
 |:---:|------|
 | 0 | 成功 |
 | 1 | 管道整体失败或参数错误 |
-| 2 | 必要维度（basic_info）失败，报告不完整 |
-| 3 | 批量模式：至少一家企业失败 |
+| 2 | 必要维度失败，报告不完整 |
 
 ---
 
@@ -335,7 +467,7 @@ dimensions:
 | **Pydantic v2** | 数据模型与配置校验 |
 | **pydantic-settings** | 环境变量加载与 SM4 解密 |
 | **httpx** | 异步 HTTP 客户端 |
-| **Playwright** | 浏览器自动化全文抓取 |
+| **crawl4ai** | 浏览器自动化全文抓取（AsyncWebCrawler） |
 | **structlog** | 结构化日志 |
 | **OpenAI SDK** | LLM 推理（兼容任意 OpenAI 兼容 API） |
 | **PyYAML** | config.yaml 解析 |
@@ -344,15 +476,7 @@ dimensions:
 | **Mypy** | 严格模式类型检查 |
 | **pytest** | 测试框架 |
 
-## 代码规模
-
-| 类别 | 文件数 | 代码行数 |
-|------|:---:|:---:|
-| 核心源码 (`src/diligence/`) | 16 | ~2,000 |
-| CLI 入口 (`main.py`) | 1 | ~180 |
-| 配置 (`config.yaml`) | 1 | ~300 |
-| 测试 (`tests/`) | 14 | ~2,600 |
-| **测试/源码比** | | **1.17:1** |
+---
 
 ## 架构模式
 
@@ -366,16 +490,18 @@ dimensions:
 |------|----------|----------|
 | 维度间并行 | `dimension_concurrency` | LangGraph `max_concurrency` |
 | 维度内查询并行 | `query_concurrency_per_dimension` | `asyncio.Semaphore` |
-| 公司间并行（批处理） | `company_concurrency` | `asyncio.Semaphore`，硬上限 50 |
+| 公司间并行（批处理） | `company_concurrency` | `asyncio.Semaphore` |
 
-### 策略模式
+### 检索策略模式
 
-三层检索（MiniMax Search / Metaso / Playwright）各自独立封装，可任意组合启用或关闭，管道代码无需变更。
+三层检索（MiniMax / Metaso / crawl4ai）各自独立封装，可从配置任意组合启用或关闭：
 
-### 单例模式
-
-- LLM 客户端（`AsyncOpenAI`）：首次调用创建，全局复用
-- Playwright 浏览器实例：懒加载持久化 Chromium，避免反复启动开销
+| 维度配置 | 效果 |
+|---------|------|
+| 仅 `minimax_queries` | 纯搜索摘要 → LLM 提取 |
+| + `metaso_queries` | 搜索 + 秘塔 AI 增强 |
+| + `fetch_enabled: true` | 搜索 + crawl4ai 全文抓取 |
+| + `extract_fields` | 搜索 + 抓取 + 结构化字段提取 |
 
 ### 配置分层
 
@@ -394,10 +520,12 @@ dimensions:
 |----------|----------|
 | 单条搜索查询超时 | 标记维度 `status=partial`，继续处理 |
 | Metaso API 不可用 | 静默回退至 MiniMax-only 结果 |
-| LLM JSON 解析失败 | 自动重试（附带纠错提示词），仍失败则回退为原始摘要 |
+| crawl4ai 全文抓取失败 | item 保持原有 snippet，不影响后续流程 |
+| 结构化提取 LLM JSON 解析失败 | 自动重试 1 次，仍失败则回退为原文直接 summarize |
+| LLM summarize JSON 解析失败 | 自动重试 1 次（附带纠错提示词），仍失败回退为原始摘要拼接 |
+| LLM 引用不存在的搜索结果 ID | `summarize_node` 硬过滤，标记警告 |
 | 必要维度（basic_info）失败 | `required_failed=true`，退出码 2 |
 | 批处理中单个企业失败 | `continue_on_company_error=true` 时跳过继续 |
-| LLM 引用不存在的搜索结果 ID | `summarize_node` 硬过滤，标记为可疑项 |
 
 ---
 
@@ -409,42 +537,47 @@ GitHub Actions（`.github/workflows/ci.yml`），每次 push 或 PR 触发：
 2. Ruff 格式化检查 + Lint
 3. Mypy 严格模式类型检查
 4. pytest 全量测试 + 覆盖率报告
-5. HTML 覆盖率报告作为 artifact 上传
 
 ---
 
 ## 项目结构
 
 ```
-main.py                     # CLI 入口（argparse）
-config.yaml                 # 应用配置
+main.py                          # CLI 入口（argparse）
+config.yaml                      # 应用配置
 src/diligence/
-├── config.py               # AppConfig、Dimension、load_config()
-├── models.py               # SearchItem、DimensionSummary、RunMeta、CostRecord 等
-├── settings.py             # pydantic-settings（MINIMAX_*、METASO_*、LLM_*）
-├── keys.py                 # API 密钥 SM4 加密工具
-├── state.py                # DiligenceState TypedDict 及自定义 reducer
-├── graph.py                # LangGraph 管道组装及 run_company_graph()
-├── batch.py                # 批量编排，复用 run_company_graph()
+├── config.py                    # AppConfig、Dimension、ExtractField、load_config()
+├── models.py                    # SearchItem、DimensionSearchResult、DimensionSummary、CostRecord 等
+├── settings.py                  # pydantic-settings（MINIMAX_*、METASO_*、LLM_*）
+├── keys.py                      # API 密钥 SM4 加密工具
+├── state.py                     # DiligenceState TypedDict 及自定义 reducer
+├── graph.py                     # LangGraph 管道组装及 run_company_graph()
+├── batch.py                     # 批量编排，复用 run_company_graph()
 ├── nodes/
-│   ├── init_node.py        # 生成 run_id，初始化状态
-│   ├── route_node.py       # Send API 扇出
-│   ├── search_node.py      # MiniMax + 秘塔 + Playwright（可选）
-│   ├── summarize_node.py   # LLM 结构化摘要（含 JSON 重试）
-│   ├── collect_node.py     # 扇入完整性检查
-│   ├── merge_node.py       # LLM 合并最终报告
-│   └── save_node.py        # 产物写入及成本打印
+│   ├── init_node.py             # 生成 run_id，初始化状态
+│   ├── route_node.py            # Send API 扇出
+│   ├── search_node.py           # MiniMax + Metaso + crawl4ai
+│   ├── summarize_node.py        # 结构化提取 + LLM 摘要（含 JSON 重试）
+│   ├── collect_node.py          # 扇入完整性检查
+│   ├── merge_node.py            # LLM 合并最终报告
+│   └── save_node.py             # 产物写入及成本打印
 └── utils/
-    ├── minimax_search.py   # MiniMax Search API 封装
-    ├── metaso.py           # 秘塔 AI 搜索客户端
-    └── fetch.py            # Playwright 全文抓取
+    ├── minimax_search.py        # MiniMax Search API 封装
+    ├── metaso.py                # 秘塔 AI 搜索客户端（chat + search 模式）
+    └── fetch.py                 # crawl4ai 全文抓取
 tests/
-├── conftest.py             # 共享 fixtures
-├── test_graph.py           # 管道集成测试
-├── test_nodes.py           # 节点单元测试
-├── test_batch.py           # 批量编排测试
-├── test_cli.py             # CLI 参数解析测试
-└── ...                     # 其他模块测试
+├── conftest.py                  # 共享 fixtures
+├── test_fetch.py                # 抓取过滤与 enrich 逻辑
+├── test_metaso.py               # 秘塔客户端与数据转换
+├── test_minimax_search.py       # MiniMax 搜索与去重
+├── test_summarize_helpers.py    # 提取/格式化/渲染辅助函数
+├── test_nodes.py                # 节点集成测试
+├── test_graph.py                # 管道集成测试
+├── test_batch.py                # 批量编排测试
+├── test_cli.py                  # CLI 参数解析测试
+├── test_config.py               # 配置加载与校验
+├── test_settings.py             # 环境变量加密与解密
+└── ...
 ```
 
 ---
@@ -452,7 +585,7 @@ tests/
 ## 开发
 
 ```bash
-uv run pytest -q             # 运行测试
+uv run pytest -q             # 运行测试（181 个）
 uv run ruff check .          # Lint
 uv run ruff format .         # 格式化
 uv run mypy src/             # 类型检查

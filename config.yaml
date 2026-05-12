@@ -10,17 +10,19 @@ runs_dir: "runs"
 summarize_system_prompt: "你是中国制造业企业尽调专家，擅长从网络搜索结果中提取和分析企业信息，对信息的可信度和来源有严格的判断标准。你的输出必须是合法 JSON，不包含任何其他内容。"
 merge_system_prompt: "你是一个中国制造业行业顶级专家，对制造业行业有深刻理解，善于综合多维度信息给出精准的企业尽调结论。"
 
-# Playwright 全文抓取参数（仅在维度设置 fetch_enabled: true 时生效）
-playwright_fetch_timeout: 25
-playwright_fetch_concurrency: 2
+# crawl4ai 全文抓取参数（仅在维度设置 fetch_enabled: true 时生效）
+crawl_fetch_timeout: 25
+crawl_fetch_concurrency: 2
 
-# 可抓取域名白名单：URL 中包含任意一项即触发 Playwright 全文抓取
-# 留空则即使 fetch_enabled: true 也不会抓取任何页面。
-# 示例：
-#   fetchable_domains:
-#     - "example.com"
-#     - "anothersite.cn"
-fetchable_domains: []
+# 抓取域名黑名单：URL 中包含任意一项则跳过 crawl4ai 全文抓取
+# 留空则 fetch_enabled: true 时抓取全部非 metaso 页面。
+fetch_blocked_domains:
+  - "qixin.com"
+  - "qcc.com"
+  - "gsxt.gov.cn"
+  - "aiqicha.baidu.com"
+  - "innocom.gov.cn"
+  - "pss-system.cponline.cnipa.gov.cn"
 
 report_options:
   include_sources: true
@@ -40,7 +42,7 @@ merge_prompt: |
 
   请综合以上信息，输出一份精简的企业尽调报告，报告必须包含以下8项（无数据时明确写「未找到」，不得省略）：
 
-  1. **统一社会信用代码**：直接列出代码值
+  1. **工商基本信息**：包括统一社会信用代码、法定代表人姓名、成立日期、经营状态等等，要求全面而具体。
   2. **所属行业与细分行业**：国民经济分类 + 细分赛道
   3. **员工规模**：总人数（社保参保数优先）+ 研发人员数量或占比（有则列出，无则注明未找到）
   4. **企业背景**：民营/国有/外资/合资 + 是否上市；如有股东/实控人信息一并列出
@@ -63,17 +65,116 @@ dimensions:
     required: true
     fetch_enabled: true
     minimax_queries:
-      - '"{target}" 法定代表人'
-      - '"{target}" 注册资本'
-      - '"{target}" 成立日期'
-      - '"{target}" 注册地址'
-      - '"{target}" 经营范围'
-      - '"{target}" 参保人数'
-      - '"{target}" 经营状态'
+      - '"{target}"'
     metaso_queries:
-      - "{target}的统一社会信用代码是什么？"
-      - "{target}的法定代表人是谁？注册资本是多少？成立日期是哪一天？"
-      - "{target}的经营状态、注册地址和经营范围是什么？"
+      - '提取"{target}"的工商基础信息。优先搜索来源：天眼查、企查查、爱企查、启信宝、国家企业信用信息公示系统、公司官网、招聘网站、招投标网站、专利/商标公开网站、新闻网页等。请按字段清单逐项输出。需要提取的字段如下：企业名称、经营状态、统一社会信用代码、法定代表人、注册资本、实缴资本、成立日期、企业类型、营业期限'
+    metaso_search_size: 1
+    extract_fields:
+      - field_name: 企业名称
+        description: "工商登记注册的企业全称"
+
+      - field_name: 统一社会信用代码
+        description: "18位字母数字组合，企业唯一识别码"
+
+      - field_name: 经营状态
+        description: "存续/在业/开业/注销/吊销/迁出等"
+
+      - field_name: 法定代表人
+        description: "法定代表人姓名；分公司、个体户、合伙企业可能为负责人/经营者/执行事务合伙人"
+
+      - field_name: 注册资本
+        description: "金额+币种，如1000万元人民币"
+
+      - field_name: 实缴资本
+        description: "已实际缴纳的资本金额+币种，如500万元人民币；缺失则标记未找到"
+
+      - field_name: 成立日期
+        description: "企业成立日期，精确到年月日，如2008-12-12"
+
+      - field_name: 企业类型
+        description: "有限责任公司/股份有限公司/个人独资企业/合伙企业/个体工商户/分公司等"
+
+      - field_name: 营业期限
+        description: "营业期限起止日期或长期，如2008-12-12至长期"
+
+      - field_name: 登记机关
+        description: "负责登记的市场监督管理局或行政审批机关"
+
+      - field_name: 核准日期
+        description: "最近一次工商登记核准日期，精确到年月日"
+
+      - field_name: 工商注册号
+        description: "工商登记注册号；部分企业可能与统一社会信用代码不同或已不单独展示"
+
+      - field_name: 纳税人识别号
+        description: "税务识别号码，通常与统一社会信用代码一致"
+
+      - field_name: 组织机构代码
+        description: "组织机构代码，通常为统一社会信用代码中的第9至17位"
+
+      - field_name: 注册地址
+        description: "完整工商注册地址"
+
+      - field_name: 经营范围
+        description: "工商登记经营范围全文或摘要"
+
+      - field_name: 所属行业
+        description: "企业所属行业，如制造业/批发和零售业/软件和信息技术服务业等"
+
+      - field_name: 曾用名
+        description: "企业历史名称；没有则标记未找到"
+
+      - field_name: 英文名
+        description: "企业英文名称；没有则标记未找到"
+
+      - field_name: 官网
+        description: "企业官方网站URL；优先提取官网，其次提取权威来源中的网站字段"
+
+      - field_name: 联系电话
+        description: "公开披露的联系电话，可能来自年报、官网、招聘网站或商业数据库"
+
+      - field_name: 电子邮箱
+        description: "公开披露的企业邮箱，可能来自年报、官网、招聘网站或商业数据库"
+
+      - field_name: 参保人数
+        description: "社保参保人数或员工人数；优先使用年报参保人数"
+
+      - field_name: 人员规模
+        description: "招聘平台、官网或商业数据库披露的员工规模区间，如50-99人、100-499人"
+
+      - field_name: 股东信息
+        description: "股东/发起人名称、持股比例、认缴出资额、认缴日期等"
+
+      - field_name: 主要人员
+        description: "董事、监事、高级管理人员、经理等主要人员名单及职务"
+
+      - field_name: 分支机构
+        description: "企业下属分公司或分支机构名称、状态、地区等"
+
+      - field_name: 对外投资
+        description: "企业投资的其他企业名称、持股比例、投资金额、状态等"
+
+      - field_name: 变更记录
+        description: "工商变更事项、变更前内容、变更后内容、变更日期"
+
+      - field_name: 经营异常
+        description: "是否列入经营异常名录、列入原因、列入日期、移出日期等"
+
+      - field_name: 行政处罚
+        description: "行政处罚记录，包括处罚机关、处罚内容、处罚日期等"
+
+      - field_name: 严重违法失信
+        description: "是否存在严重违法失信记录及相关详情"
+
+      - field_name: 来源名称
+        description: "字段来源名称，如国家企业信用信息公示系统/天眼查/企查查/爱企查/启信宝/官网等"
+
+      - field_name: 来源URL
+        description: "字段对应的公开网页URL或搜索结果URL"
+
+      - field_name: 来源类型
+        description: "网页正文/搜索摘要/缓存页/商业数据库/政府公示/官网/招聘网站/新闻网页等"
+
     summary_prompt: |
       请从以下搜索结果中提取"{target}"的工商基本信息。
 
@@ -141,6 +242,8 @@ dimensions:
       - '"{target}" 员工规模'
       - '"{target}" 研发人员'
       - '"{target}" 工程师 技术人员 招聘'
+    metaso_mode: search
+    metaso_search_size: 1
     metaso_queries:
       - "{target}有多少员工？社保参保人数是多少？研发人员数量或占比是多少？"
       - "{target}的研发投入占营收比例是多少？研发工程师有多少人？"
@@ -161,15 +264,10 @@ dimensions:
     enabled: true
     required: false
     minimax_queries:
-      - '"{target}" 股东'
-      - '"{target}" 实际控制人'
-      - '"{target}" 持股比例 股权结构'
-      - '"{target}" 行政处罚'
-      - '"{target}" 失信'
-      - '"{target}" 被执行人'
+      - '"{target}" 官方网页'
     metaso_queries:
-      - "{target}的企业性质是民营还是国有？实际控制人和主要股东是谁？持股比例是多少？"
-      - "{target}是否有行政处罚、失信或被执行人记录？"
+      - "{target} 天眼查"
+      - "{target} 企查查"
     summary_prompt: |
       请从以下搜索结果中分析"{target}"的企业背景。
       重点提取：企业性质（民营/国有/外资/合资）、实际控制人、主要股东及持股比例、是否有行政处罚/失信记录。
@@ -224,6 +322,8 @@ dimensions:
       - '"{target}" 实用新型'
       - '"{target}" 发明专利 实用新型 外观设计 分类 数量'
       - '"{target}" 软件著作权 登记号'
+    metaso_mode: search
+    metaso_search_size: 1
     metaso_queries:
       - "{target}拥有多少专利？其中发明专利、实用新型专利、外观设计专利各有多少？"
       - "{target}拥有多少软件著作权？注册了哪些商标？"
@@ -258,6 +358,8 @@ dimensions:
       - '"{target}" 客户'
       - '"{target}" 供应商'
       - "{target} site:1688.com"
+    metaso_mode: search
+    metaso_search_size: 1
     metaso_queries:
       - "{target}的核心产品是什么？主要客户类型是哪些？面向C端还是B端市场？"
     summary_prompt: |
@@ -280,6 +382,8 @@ dimensions:
       - '"{target}" IPO'
       - '"{target}" 港股'
       - '"{target}" 纳斯达克'
+    metaso_mode: search
+    metaso_search_size: 1
     metaso_queries:
       - "{target}是否在A股、港股或美股上市？股票代码是什么？是否有IPO或拟上市计划？"
     summary_prompt: |

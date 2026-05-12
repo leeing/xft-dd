@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field, field_validator
@@ -18,6 +18,14 @@ class ReportOptions(BaseModel):
     include_sources: bool = True
     include_checklist: bool = True
     max_sources_per_dimension: int = 5
+
+
+class ExtractField(BaseModel):
+    """A field to extract from search result full_text during structured extraction."""
+
+    field_name: str
+    description: str = ""
+    examples: str | None = None
 
 
 class BatchConfig(BaseModel):
@@ -40,7 +48,10 @@ class Dimension(BaseModel):
     fetch_enabled: bool = False  # Enable Playwright page fetch to enrich search results
     minimax_queries: list[str]
     metaso_queries: list[str] = Field(default_factory=list)  # 秘塔AI自然语言查询
+    metaso_mode: Literal["chat", "search"] = "chat"  # chat=AI问答, search=网页搜索(真实URL+rawContent)
+    metaso_search_size: int = Field(default=5, ge=1, le=10)  # search模式每次查询返回的网页数 (1-10), 每页消耗6 credits
     summary_prompt: str
+    extract_fields: list[ExtractField] | None = None
 
 
 class AppConfig(BaseModel):
@@ -55,10 +66,11 @@ class AppConfig(BaseModel):
     report_options: ReportOptions = Field(default_factory=ReportOptions)
     batch: BatchConfig = Field(default_factory=BatchConfig)
 
-    # Playwright fetchable domains: list of domain fragments used for URL matching.
-    # Any search result whose URL contains one of these fragments will be fetched.
-    # Example: ["example.com", "anothersite.cn"]
-    fetchable_domains: list[str] = Field(default_factory=list)
+    # Playwright fetch blocklist: search result URLs containing any of these
+    # domain fragments will be skipped (e.g. known login-walled sites).
+    # When empty, ALL non-metaso URLs are eligible for fetching.
+    # Example: ["qixin.com", "tianyancha.com"]
+    fetch_blocked_domains: list[str] = Field(default_factory=list)
 
     # AI system prompts — configurable to adapt to different industries/scenarios
     summarize_system_prompt: str = (
@@ -69,10 +81,31 @@ class AppConfig(BaseModel):
         "你是一个中国制造业行业顶级专家，对制造业行业有深刻理解，善于综合多维度信息给出精准的企业尽调结论。"
     )
 
-    # Playwright fetch parameters (used when fetch_enabled=true on a dimension)
-    playwright_fetch_timeout: int = Field(default=25, ge=5, le=120)
-    playwright_fetch_concurrency: int = Field(default=2, ge=1, le=5)
-    playwright_headless: bool = True  # headless for production, set false in config for debugging
+    # crawl4ai fetch parameters (used when fetch_enabled=true on a dimension)
+    crawl_fetch_timeout: int = Field(default=25, ge=5, le=120)
+    crawl_fetch_concurrency: int = Field(default=2, ge=1, le=5)
+    max_full_text_chars: int = Field(default=6900, ge=100, le=100000)
+
+    # structured field extraction (used when dimension has extract_fields)
+    extract_system_prompt: str = (
+        "你是专业的企业信息提取专家。你的任务是严格从给定的网页正文中提取指定字段的值。"
+        "\n\n提取规则："
+        "\n1. 只提取原文中明确出现的信息，绝对不编造任何值"
+        "\n2. 同一字段在不同来源中出现不同值时，全部列出"
+        "\n3. 如果某个字段在某个来源中未找到，不要列出该来源"
+        "\n4. 对任一来源都未找到的字段，不要出现在输出中"
+        "\n\n可信度判断标准："
+        "\n- 高：政府网站(gov.cn)、工商登记/企业信息网站(企查查/天眼查/启信宝/爱企查)的公司主页明确列出"
+        "\n- 中：商业网站(招聘平台、行业网站、公司官网、制造业采购平台)明确列出"
+        "\n- 低：侧面提及、关联信息推断、第三方引用"
+    )
+    extract_user_template: str = (
+        "目标企业：{target}\n\n"
+        "需要提取的字段：\n{field_descriptions}\n\n"
+        "以下是从 {count} 个不同网页获取的正文内容：\n\n"
+        "{item_contents}\n\n"
+        "请从以上所有网页正文中提取上述字段的值。不要输出任何文本解释，只输出 JSON。"
+    )
 
     merge_prompt: str
     dimensions: list[Dimension]

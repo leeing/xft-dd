@@ -1,18 +1,20 @@
 """秘塔 AI 搜索 (metaso.cn) 客户端。
 
-秘塔是带联网搜索的 AI 问答引擎，能直接访问企查查、启信宝等企业数据库，
-返回经过 AI 综合的自然语言答案，而非原始搜索结果列表。
+两种模式：
+  1. chat 模式 (默认) — POST /api/v1/chat/completions
+     AI 综合答案，适合需要跨源判断的维度 (basic_info, background, tech_cert)
+  2. search 模式 — POST /api/v1/search
+     网页搜索结果，返回真实 URL + rawContent，适合需要原始数据的维度 (ip, product, scale)
 
-对接方式：
+chat 模式：
   POST https://metaso.cn/api/v1/chat/completions
   {"q": "查询词", "model": "fast_thinking", "format": "simple", "conciseSnippet": true}
   返回：{"answer": "...", "sources": [...], "credits": N}
 
-集成策略：
-  - 每个维度用一条精准的中文查询，直接问「{target}的{字段}是什么」
-  - 清理 fast_thinking 的内部思维链（> 开头的行）和引用编号（[[1]]）
-  - 把答案作为一个 full_text 已填充的 SearchItem 注入，可信度权重高于 MiniMax Search snippets
-  - 秘塔结果放在该维度 items 列表最前面，确保 summarize_node 优先使用
+search 模式：
+  POST https://metaso.cn/api/v1/search
+  {"q": "查询词", "scope": "webpage", "includeSummary": true, "includeRawContent": true, "size": "5"}
+  返回：{"webpages": [{"title":..., "link":..., "summary":..., "content":...}], "credits": N}
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import re
 from datetime import UTC, datetime
+from typing import Any
 
 import httpx
 import structlog
@@ -29,7 +32,8 @@ from diligence.models import SearchItem, make_item_id
 log = structlog.get_logger(__name__)
 
 _METASO_HOST = "metaso.cn"
-_METASO_PATH = "/api/v1/chat/completions"
+_METASO_CHAT_PATH = "/api/v1/chat/completions"
+_METASO_SEARCH_PATH = "/api/v1/search"
 _METASO_MODEL = "fast_thinking"
 
 # 去掉 fast_thinking 内部思维链（> 开头）和引用标号（[[1]]）
@@ -41,14 +45,16 @@ def _clean_answer(raw: str) -> str:
     """Remove thinking-chain lines and citation markers from metaso answer."""
     cleaned = _THINK_LINE_RE.sub("", raw)
     cleaned = _CITE_RE.sub("", cleaned)
-    # collapse multiple blank lines
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     return cleaned.strip()
 
 
+# ── chat mode ─────────────────────────────────────────────────────────────────
+
+
 async def query_metaso(api_key: str, query: str, timeout: int = 30, *, verify_tls: bool = True) -> tuple[str, int]:
-    """Query metaso AI search API. Returns (cleaned_answer, credits)."""
-    url = f"https://{_METASO_HOST}{_METASO_PATH}"
+    """Query metaso chat API. Returns (cleaned_answer, credits)."""
+    url = f"https://{_METASO_HOST}{_METASO_CHAT_PATH}"
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Accept": "application/json",
@@ -72,17 +78,18 @@ async def query_metaso(api_key: str, query: str, timeout: int = 30, *, verify_tl
 
 
 def make_metaso_item(answer: str, query: str, dimension_id: str) -> SearchItem:
-    """Wrap a metaso answer as a SearchItem with full_text populated."""
+    """Wrap a metaso chat answer as a SearchItem with full_text populated."""
     url = f"metaso://search?q={query[:80]}"
     return SearchItem(
         id=make_item_id(url=url, title=f"秘塔AI搜索: {query[:40]}", snippet=answer[:200]),
-        title=f"【秘塔AI】{query[:60]}",
+        title=query[:80],
         url=url,
         snippet=answer[:300],
         full_text=answer,
         query=query,
         dimension_id=dimension_id,
-        rank=0,  # rank 0 = placed first in list
+        source="metaso_chat",
+        rank=0,
         fetched_at=datetime.now(UTC),
     )
 
@@ -96,19 +103,7 @@ async def fetch_metaso_items(  # noqa: PLR0913
     timeout: int = 30,
     verify_tls: bool = True,
 ) -> tuple[list[SearchItem], int, int, int]:
-    """Query metaso for each query string and return (metaso_items, success, failed, total_credits).
-
-    Args:
-        dimension_id: Dimension ID for tagging SearchItems.
-        queries: List of query strings with {target} already substituted.
-        api_key: Metaso Bearer key (without "Bearer " prefix).
-        concurrency: Max parallel metaso requests.
-        timeout: Per-request timeout in seconds.
-        verify_tls: Whether to verify TLS certificates.
-
-    Returns:
-        Tuple of (list of metaso SearchItems, success_count, failed_count, total credits consumed).
-    """
+    """Query metaso chat for each query string and return (metaso_items, success, failed, total_credits)."""
     if not api_key or not queries:
         return [], 0, 0, 0
 
@@ -150,16 +145,155 @@ async def enrich_with_metaso(
     *,
     verify_tls: bool = True,
 ) -> tuple[list[SearchItem], int, int, int]:
-    """Fetch metaso items and prepend them to existing items list.
-
-    Convenience wrapper around fetch_metaso_items() that handles the prepend.
-    Kept at 4 positional args to stay within PLR0913 limit.
-    Concurrency and timeout use fetch_metaso_items() defaults (2, 30).
-
-    Returns:
-        Tuple of (enriched items list, success_count, failed_count, credits).
-    """
+    """Fetch metaso chat items and prepend them to existing items list."""
     metaso_items, success, failed, credits = await fetch_metaso_items(
         dimension_id, queries, api_key, verify_tls=verify_tls
+    )
+    return [*metaso_items, *items], success, failed, credits
+
+
+# ── search mode ───────────────────────────────────────────────────────────────
+
+
+async def query_metaso_search(
+    api_key: str,
+    query: str,
+    *,
+    size: int = 5,
+    include_raw_content: bool = True,
+    timeout: int = 30,
+    verify_tls: bool = True,
+) -> tuple[list[dict[str, Any]], int]:
+    """Query metaso /api/v1/search. Returns (webpage_dicts, credits)."""
+    url = f"https://{_METASO_HOST}{_METASO_SEARCH_PATH}"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    payload: dict[str, Any] = {
+        "q": query,
+        "scope": "webpage",
+        "includeSummary": True,
+        "size": str(size),
+        "includeRawContent": include_raw_content,
+        "conciseSnippet": False,
+    }
+    async with httpx.AsyncClient(timeout=timeout, verify=verify_tls) as client:
+        response = await client.post(url, headers=headers, json=payload)
+        response.raise_for_status()
+        data = response.json()
+    webpages: list[dict[str, Any]] = data.get("webpages", [])
+    credits: int = data.get("credits", 0)
+    return webpages, credits
+
+
+def make_metaso_search_item(wp: dict[str, Any], query: str, dimension_id: str, rank: int) -> SearchItem:
+    """Convert a metaso search webpage result to a SearchItem.
+
+    Uses raw content as full_text when available; falls back to summary or snippet.
+    The URL is a real http(s) link, eligible for crawl4ai enrichment.
+    """
+    link: str = wp.get("link", "")
+    title: str = wp.get("title", "")
+    summary: str = wp.get("summary", "")
+    content: str = wp.get("content", "")
+    snippet: str = wp.get("snippet", "")
+
+    # best available full text: raw content > summary > snippet
+    full_text = content or summary or snippet
+    # snippet for display: summary (AI-generated, most informative) > snippet > content[:300]
+    display_snippet = summary or snippet or content[:300]
+
+    return SearchItem(
+        id=make_item_id(url=link, title=title, snippet=display_snippet[:200]),
+        title=title,
+        url=link,
+        snippet=display_snippet[:300],
+        full_text=full_text,
+        query=query,
+        dimension_id=dimension_id,
+        source="metaso_search",
+        rank=rank,
+        fetched_at=datetime.now(UTC),
+    )
+
+
+async def fetch_metaso_search_items(
+    dimension_id: str,
+    queries: list[str],
+    api_key: str,
+    *,
+    size: int = 5,
+    include_raw_content: bool = True,
+    concurrency: int = 2,
+    timeout: int = 30,
+    verify_tls: bool = True,
+) -> tuple[list[SearchItem], int, int, int]:
+    """Query metaso search for each query; returns (items, success, failed, credits).
+
+    Each query produces up to `size` SearchItems with real URLs and raw content.
+    Items are interleaved by rank so results from different queries are mixed.
+    """
+    if not api_key or not queries:
+        return [], 0, 0, 0
+
+    semaphore = asyncio.Semaphore(concurrency)
+
+    async def fetch_one(query: str) -> tuple[list[SearchItem], int, bool]:
+        async with semaphore:
+            try:
+                webpages, credits = await asyncio.wait_for(
+                    query_metaso_search(
+                        api_key, query,
+                        size=size, include_raw_content=include_raw_content,
+                        timeout=timeout, verify_tls=verify_tls,
+                    ),
+                    timeout=timeout + 5,
+                )
+                if not webpages:
+                    log.warning("metaso_search_empty", query=query[:60])
+                    return [], credits, False
+                items = [
+                    make_metaso_search_item(wp, query, dimension_id, rank=i)
+                    for i, wp in enumerate(webpages)
+                ]
+                log.debug("metaso_search_ok", query=query[:60], results=len(items))
+                return items, credits, True
+            except (TimeoutError, OSError, httpx.HTTPError, ValueError) as exc:
+                log.warning("metaso_search_failed", query=query[:60], error=str(exc))
+                return [], 0, False
+
+    raw_results = await asyncio.gather(*[fetch_one(q) for q in queries])
+
+    # Interleave results by rank: all rank-0 items first, then rank-1, etc.
+    all_items: list[SearchItem] = []
+    for rank in range(size):
+        for items, _, _ in raw_results:
+            if rank < len(items):
+                all_items.append(items[rank])
+
+    success_count = sum(1 for _, _, ok in raw_results if ok)
+    failed_count = sum(1 for _, _, ok in raw_results if not ok)
+    total_credits = sum(c for _, c, _ in raw_results)
+
+    if all_items:
+        log.info("metaso_search_enriched", dimension=dimension_id, count=len(all_items), credits=total_credits)
+
+    return all_items, success_count, failed_count, total_credits
+
+
+async def enrich_with_metaso_search(
+    items: list[SearchItem],
+    dimension_id: str,
+    queries: list[str],
+    api_key: str,
+    *,
+    size: int = 5,
+    verify_tls: bool = True,
+) -> tuple[list[SearchItem], int, int, int]:
+    """Fetch metaso search items and prepend them to existing items list."""
+    metaso_items, success, failed, credits = await fetch_metaso_search_items(
+        dimension_id, queries, api_key, size=size, verify_tls=verify_tls
     )
     return [*metaso_items, *items], success, failed, credits
