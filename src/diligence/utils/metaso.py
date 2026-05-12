@@ -52,7 +52,9 @@ def _clean_answer(raw: str) -> str:
 # ── chat mode ─────────────────────────────────────────────────────────────────
 
 
-async def query_metaso(api_key: str, query: str, timeout: int = 30, *, verify_tls: bool = True) -> tuple[str, list[dict], int]:
+async def query_metaso(
+    api_key: str, query: str, timeout: int = 30, *, verify_tls: bool = True
+) -> tuple[str, list[dict], int]:
     """Query metaso chat API. Returns (cleaned_answer, sources, credits)."""
     url = f"https://{_METASO_HOST}{_METASO_CHAT_PATH}"
     headers = {
@@ -197,7 +199,7 @@ async def enrich_with_metaso(
 # ── search mode ───────────────────────────────────────────────────────────────
 
 
-async def query_metaso_search(
+async def query_metaso_search(  # noqa: PLR0913
     api_key: str,
     query: str,
     *,
@@ -261,7 +263,7 @@ def make_metaso_search_item(wp: dict[str, Any], query: str, dimension_id: str, r
     )
 
 
-async def fetch_metaso_search_items(
+async def fetch_metaso_search_items(  # noqa: PLR0913
     dimension_id: str,
     queries: list[str],
     api_key: str,
@@ -287,24 +289,25 @@ async def fetch_metaso_search_items(
             try:
                 webpages, credits = await asyncio.wait_for(
                     query_metaso_search(
-                        api_key, query,
-                        size=size, include_raw_content=include_raw_content,
-                        timeout=timeout, verify_tls=verify_tls,
+                        api_key,
+                        query,
+                        size=size,
+                        include_raw_content=include_raw_content,
+                        timeout=timeout,
+                        verify_tls=verify_tls,
                     ),
                     timeout=timeout + 5,
                 )
-                if not webpages:
-                    log.warning("metaso_search_empty", query=query[:60])
-                    return [], credits, False
-                items = [
-                    make_metaso_search_item(wp, query, dimension_id, rank=i)
-                    for i, wp in enumerate(webpages)
-                ]
-                log.debug("metaso_search_ok", query=query[:60], results=len(items))
-                return items, credits, True
             except (TimeoutError, OSError, httpx.HTTPError, ValueError) as exc:
                 log.warning("metaso_search_failed", query=query[:60], error=str(exc))
                 return [], 0, False
+            else:
+                if not webpages:
+                    log.warning("metaso_search_empty", query=query[:60])
+                    return [], credits, False
+                items = [make_metaso_search_item(wp, query, dimension_id, rank=i) for i, wp in enumerate(webpages)]
+                log.debug("metaso_search_ok", query=query[:60], results=len(items))
+                return items, credits, True
 
     raw_results = await asyncio.gather(*[fetch_one(q) for q in queries])
 
@@ -325,7 +328,7 @@ async def fetch_metaso_search_items(
     return all_items, success_count, failed_count, total_credits
 
 
-async def enrich_with_metaso_search(
+async def enrich_with_metaso_search(  # noqa: PLR0913
     items: list[SearchItem],
     dimension_id: str,
     queries: list[str],

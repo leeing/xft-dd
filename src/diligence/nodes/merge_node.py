@@ -45,8 +45,7 @@ def _format_extraction_table(extractions: dict | None) -> str | None:
             src = classify_source(c["source_url"])
             val = c["value"].replace("|", "\\|")
             lines.append(
-                f"| {field_name} | {val} | {src.display_name} | "
-                f"{src.source_type} | {url_short} | {c['confidence']} |"
+                f"| {field_name} | {val} | {src.display_name} | {src.source_type} | {url_short} | {c['confidence']} |"
             )
     lines.append("")
     return "\n".join(lines)
@@ -84,9 +83,7 @@ def _format_summaries(
     if skipped_dims:
         for dim in skipped_dims:
             lines.append(  # noqa: PERF401
-                f"## {dim['name']}\n"
-                f"**status: 未执行**\n"
-                f"本维度未在本次运行中检索，无法判断是否存在相关信息。"
+                f"## {dim['name']}\n**status: 未执行**\n本维度未在本次运行中检索，无法判断是否存在相关信息。"
             )
 
     return "\n\n".join(lines)
@@ -110,14 +107,11 @@ async def merge_node(state: DiligenceState) -> dict[str, object]:
     all_names: dict[str, str] = state.get("all_dimension_names", {})
     active_dim_names = {d.id: d.name for d in active_dims}
     active_ids_set = set(active_ids)
-    skipped_dims = [
-        {"id": dim_id, "name": name}
-        for dim_id, name in all_names.items()
-        if dim_id not in active_ids_set
-    ]
+    skipped_dims = [{"id": dim_id, "name": name} for dim_id, name in all_names.items() if dim_id not in active_ids_set]
 
     formatted = _format_summaries(
-        summaries, active_ids,
+        summaries,
+        active_ids,
         search_results=state.get("search_results_by_dimension"),
         skipped_dims=skipped_dims if skipped_dims else None,
         active_dim_names=active_dim_names,

@@ -499,7 +499,9 @@ def test_format_summaries_missing_from_summaries() -> None:
     active_dim_names = {"basic_info": "工商基本信息"}
 
     result = _format_summaries(
-        summaries, ["basic_info"], active_dim_names=active_dim_names,
+        summaries,
+        ["basic_info"],
+        active_dim_names=active_dim_names,
     )
 
     assert "执行失败" in result
@@ -593,12 +595,18 @@ async def test_search_node_cross_provider_dedup(tmp_path: Path) -> None:
 
     fake_answer = SearchItem(
         id=mii(url="metaso://search?q=x", title="a", snippet="a"),
-        title="a", url="metaso://search?q=x", snippet="a",
-        query="q", dimension_id="basic_info", source="metaso_chat",
+        title="a",
+        url="metaso://search?q=x",
+        snippet="a",
+        query="q",
+        dimension_id="basic_info",
+        source="metaso_chat",
         fetched_at=datetime.now(UTC),
     )
     fake_sources = make_metaso_source_items(
-        [{"title": "dup", "link": shared_url, "summary": "dup"}], "q", "basic_info",
+        [{"title": "dup", "link": shared_url, "summary": "dup"}],
+        "q",
+        "basic_info",
     )
 
     state = _base_state(cfg, tmp_path)
@@ -617,8 +625,6 @@ async def test_search_node_cross_provider_dedup(tmp_path: Path) -> None:
 
     dsr = result["search_results_by_dimension"]["basic_info"]
     urls = [item.url for item in dsr.items if item.url == shared_url]
-    assert len(urls) == 1, (
-        f"Expected 1 item with shared URL after dedup, got {len(urls)}"
-    )
+    assert len(urls) == 1, f"Expected 1 item with shared URL after dedup, got {len(urls)}"
     kept = next(item for item in dsr.items if item.url == shared_url)
     assert kept.source == "metaso_chat"

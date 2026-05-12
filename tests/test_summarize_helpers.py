@@ -269,14 +269,18 @@ def test_format_extraction_table_with_data() -> None:
         extractions={
             "统一社会信用代码": [
                 _FieldExtraction(
-                    source_item_id="abc123", source_url="https://curtao.com/p",
-                    value="91440605682473330H", confidence="中",
+                    source_item_id="abc123",
+                    source_url="https://curtao.com/p",
+                    value="91440605682473330H",
+                    confidence="中",
                 ),
             ],
             "法定代表人": [
                 _FieldExtraction(
-                    source_item_id="abc123", source_url="https://curtao.com/p",
-                    value="欧泽超", confidence="中",
+                    source_item_id="abc123",
+                    source_url="https://curtao.com/p",
+                    value="欧泽超",
+                    confidence="中",
                 ),
             ],
         }
@@ -310,7 +314,10 @@ def test_render_results_with_extraction_table_truncates_full_text() -> None:
     item = _make_item("https://a.com", title="T", snippet="s")
     item = item.model_copy(update={"full_text": long_text})
     dsr = DimensionSearchResult(
-        dimension_id="d", dimension_name="n", status="success", items=[item],
+        dimension_id="d",
+        dimension_name="n",
+        status="success",
+        items=[item],
     )
     rendered = _render_results(dsr, extraction_table="## 提取表\n|...|")
     assert "已截断" in rendered
@@ -321,7 +328,10 @@ def test_render_results_with_extraction_table_preserves_snippets() -> None:
     """Snippet-only items are never truncated."""
     item = _make_item("https://a.com", title="T", snippet="短摘要")
     dsr = DimensionSearchResult(
-        dimension_id="d", dimension_name="n", status="success", items=[item],
+        dimension_id="d",
+        dimension_name="n",
+        status="success",
+        items=[item],
     )
     rendered = _render_results(dsr, extraction_table="## 提取表\n|...|")
     assert "短摘要" in rendered
@@ -334,7 +344,10 @@ def test_render_results_no_extraction_table_full_text_not_truncated() -> None:
     item = _make_item("https://a.com", title="T", snippet="s")
     item = item.model_copy(update={"full_text": long_text})
     dsr = DimensionSearchResult(
-        dimension_id="d", dimension_name="n", status="success", items=[item],
+        dimension_id="d",
+        dimension_name="n",
+        status="success",
+        items=[item],
     )
     rendered = _render_results(dsr)
     assert long_text in rendered
@@ -410,9 +423,14 @@ def test_select_extraction_sources_snippet_only() -> None:
 def test_build_extraction_prompt_marks_snippet_low_weight() -> None:
     """Snippet sources are annotated with evidence_weight=low and a warning."""
     item = _make_item("https://b.com", title="B", snippet="足够长的摘要内容需要超过20字")
-    sources = [_ExtractionSource(
-        item=item, content=item.snippet, content_type="snippet", evidence_weight="low",
-    )]
+    sources = [
+        _ExtractionSource(
+            item=item,
+            content=item.snippet,
+            content_type="snippet",
+            evidence_weight="low",
+        )
+    ]
     fields = [ExtractField(field_name="f", description="d")]
     template = "{target}\n{field_descriptions}\n{count}\n{item_contents}"
     result = _build_extraction_prompt("目标", fields, sources, template)
@@ -425,9 +443,14 @@ def test_build_extraction_prompt_full_text_high_weight() -> None:
     """Full-text sources are annotated with evidence_weight=high, no snippet warning."""
     item = _make_item("https://a.com", title="A", snippet="s")
     item = item.model_copy(update={"full_text": "正文"})
-    sources = [_ExtractionSource(
-        item=item, content=item.full_text, content_type="full_text", evidence_weight="high",
-    )]
+    sources = [
+        _ExtractionSource(
+            item=item,
+            content=item.full_text,
+            content_type="full_text",
+            evidence_weight="high",
+        )
+    ]
     fields = [ExtractField(field_name="f", description="d")]
     template = "{target}\n{field_descriptions}\n{count}\n{item_contents}"
     result = _build_extraction_prompt("目标", fields, sources, template)
@@ -447,12 +470,14 @@ def test_apply_snippet_confidence_cap_downgrades_snippet_only_field() -> None:
         _ExtractionSource(item=item_a, content=item_a.snippet, content_type="snippet", evidence_weight="low"),
         _ExtractionSource(item=item_b, content=item_b.snippet, content_type="snippet", evidence_weight="low"),
     ]
-    extractions = _ExtractionsResult(extractions={
-        "法定代表人": [
-            _FieldExtraction(source_item_id=item_a.id, source_url="https://a.com", value="张三", confidence="高"),
-            _FieldExtraction(source_item_id=item_b.id, source_url="https://b.com", value="张三", confidence="中"),
-        ],
-    })
+    extractions = _ExtractionsResult(
+        extractions={
+            "法定代表人": [
+                _FieldExtraction(source_item_id=item_a.id, source_url="https://a.com", value="张三", confidence="高"),
+                _FieldExtraction(source_item_id=item_b.id, source_url="https://b.com", value="张三", confidence="中"),
+            ],
+        }
+    )
     _apply_snippet_confidence_cap(extractions, sources)
     assert extractions.extractions["法定代表人"][0].confidence == "低"  # 高→低
     assert extractions.extractions["法定代表人"][1].confidence == "中"  # 中 unchanged
@@ -467,16 +492,24 @@ def test_apply_snippet_confidence_cap_preserves_full_text_field() -> None:
         _ExtractionSource(item=item_ft, content=item_ft.full_text, content_type="full_text", evidence_weight="high"),
         _ExtractionSource(item=item_snip, content=item_snip.snippet, content_type="snippet", evidence_weight="low"),
     ]
-    extractions = _ExtractionsResult(extractions={
-        "统一社会信用代码": [
-            _FieldExtraction(
-                source_item_id=item_ft.id, source_url="https://a.com", value="91440605", confidence="高",
-            ),
-            _FieldExtraction(
-                source_item_id=item_snip.id, source_url="https://b.com", value="91440605", confidence="中",
-            ),
-        ],
-    })
+    extractions = _ExtractionsResult(
+        extractions={
+            "统一社会信用代码": [
+                _FieldExtraction(
+                    source_item_id=item_ft.id,
+                    source_url="https://a.com",
+                    value="91440605",
+                    confidence="高",
+                ),
+                _FieldExtraction(
+                    source_item_id=item_snip.id,
+                    source_url="https://b.com",
+                    value="91440605",
+                    confidence="中",
+                ),
+            ],
+        }
+    )
     _apply_snippet_confidence_cap(extractions, sources)
     # Neither downgraded because ft source is among candidates
     assert extractions.extractions["统一社会信用代码"][0].confidence == "高"
@@ -495,11 +528,13 @@ def test_apply_snippet_confidence_cap_all_snippets_no_full_text() -> None:
     """When no full_text sources exist at all, snippet-only fields are still capped."""
     item_a = _make_item("https://a.com", title="A", snippet="足够长的摘要内容需要超过20字")
     sources = [_ExtractionSource(item=item_a, content=item_a.snippet, content_type="snippet", evidence_weight="low")]
-    extractions = _ExtractionsResult(extractions={
-        "法定代表人": [
-            _FieldExtraction(source_item_id=item_a.id, source_url="https://a.com", value="李四", confidence="高"),
-        ],
-    })
+    extractions = _ExtractionsResult(
+        extractions={
+            "法定代表人": [
+                _FieldExtraction(source_item_id=item_a.id, source_url="https://a.com", value="李四", confidence="高"),
+            ],
+        }
+    )
     _apply_snippet_confidence_cap(extractions, sources)
     assert extractions.extractions["法定代表人"][0].confidence == "低"
 
@@ -513,25 +548,29 @@ def test_snippet_cap_after_validation_full_text_candidate_removed() -> None:
     """
     item_ft = _make_item("https://a.com", title="A", snippet="s")
     item_ft = item_ft.model_copy(update={"full_text": "完整页面内容但信用代码是无效值"})
-    item_snip = _make_item(
-        "https://b.com", title="B", snippet="足够长的摘要内容超过20字包含信用代码"
-    )
+    item_snip = _make_item("https://b.com", title="B", snippet="足够长的摘要内容超过20字包含信用代码")
     sources = [
         _ExtractionSource(item=item_ft, content=item_ft.full_text, content_type="full_text", evidence_weight="high"),
         _ExtractionSource(item=item_snip, content=item_snip.snippet, content_type="snippet", evidence_weight="low"),
     ]
-    extractions = _ExtractionsResult(extractions={
-        "统一社会信用代码": [
-            _FieldExtraction(
-                source_item_id=item_ft.id, source_url="https://a.com",
-                value="无信用代码信息", confidence="高",
-            ),
-            _FieldExtraction(
-                source_item_id=item_snip.id, source_url="https://b.com",
-                value="91440605682473330H", confidence="高",
-            ),
-        ],
-    })
+    extractions = _ExtractionsResult(
+        extractions={
+            "统一社会信用代码": [
+                _FieldExtraction(
+                    source_item_id=item_ft.id,
+                    source_url="https://a.com",
+                    value="无信用代码信息",
+                    confidence="高",
+                ),
+                _FieldExtraction(
+                    source_item_id=item_snip.id,
+                    source_url="https://b.com",
+                    value="91440605682473330H",
+                    confidence="高",
+                ),
+            ],
+        }
+    )
     # Correct order: validate first (deletes full_text candidate), then cap
     _validate_extractions(extractions)
     _apply_snippet_confidence_cap(extractions, sources)
@@ -616,8 +655,10 @@ def test_downgrade_confidence_leaves_低_unchanged() -> None:
 
 def test_validate_credit_code_extracts_18_chars() -> None:
     c = _FieldExtraction(
-        source_item_id="a", source_url="x",
-        value="统一社会信用代码：91440605682473330H", confidence="高",
+        source_item_id="a",
+        source_url="x",
+        value="统一社会信用代码：91440605682473330H",
+        confidence="高",
     )
     assert _validate_credit_code(c) is True
     assert c.value == "91440605682473330H"
@@ -625,8 +666,10 @@ def test_validate_credit_code_extracts_18_chars() -> None:
 
 def test_validate_credit_code_lowercased_input() -> None:
     c = _FieldExtraction(
-        source_item_id="a", source_url="x",
-        value="91440605682473330h", confidence="高",
+        source_item_id="a",
+        source_url="x",
+        value="91440605682473330h",
+        confidence="高",
     )
     assert _validate_credit_code(c) is True
     assert c.value == "91440605682473330H"
@@ -634,8 +677,10 @@ def test_validate_credit_code_lowercased_input() -> None:
 
 def test_validate_credit_code_removes_invalid() -> None:
     c = _FieldExtraction(
-        source_item_id="a", source_url="x",
-        value="暂无统一社会信用代码信息", confidence="中",
+        source_item_id="a",
+        source_url="x",
+        value="暂无统一社会信用代码信息",
+        confidence="中",
     )
     assert _validate_credit_code(c) is False
 
@@ -645,8 +690,10 @@ def test_validate_credit_code_removes_invalid() -> None:
 
 def test_validate_email_extracts_addresses() -> None:
     c = _FieldExtraction(
-        source_item_id="a", source_url="x",
-        value="联系邮箱：hr@example.com", confidence="高",
+        source_item_id="a",
+        source_url="x",
+        value="联系邮箱：hr@example.com",
+        confidence="高",
     )
     assert _validate_email(c) is True
     assert "hr@example.com" in c.value
@@ -654,8 +701,10 @@ def test_validate_email_extracts_addresses() -> None:
 
 def test_validate_email_multiple_addresses() -> None:
     c = _FieldExtraction(
-        source_item_id="a", source_url="x",
-        value="邮箱1: a@x.com 邮箱2: b@y.cn", confidence="高",
+        source_item_id="a",
+        source_url="x",
+        value="邮箱1: a@x.com 邮箱2: b@y.cn",
+        confidence="高",
     )
     assert _validate_email(c) is True
     assert "a@x.com" in c.value
@@ -664,8 +713,10 @@ def test_validate_email_multiple_addresses() -> None:
 
 def test_validate_email_removes_invalid() -> None:
     c = _FieldExtraction(
-        source_item_id="a", source_url="x",
-        value="未找到邮箱信息", confidence="中",
+        source_item_id="a",
+        source_url="x",
+        value="未找到邮箱信息",
+        confidence="中",
     )
     assert _validate_email(c) is False
 
@@ -695,8 +746,10 @@ def test_looks_like_phone_invalid() -> None:
 def test_validate_url_extracts_and_normalizes_http() -> None:
     """Full URL is extracted from prefix text and confidence stays 高."""
     c = _FieldExtraction(
-        source_item_id="a", source_url="x",
-        value="官网：https://www.example.com", confidence="高",
+        source_item_id="a",
+        source_url="x",
+        value="官网：https://www.example.com",
+        confidence="高",
     )
     assert _validate_url(c, strict=False) is True
     assert c.value == "https://www.example.com"
@@ -705,8 +758,10 @@ def test_validate_url_extracts_and_normalizes_http() -> None:
 
 def test_validate_url_strict_deletes_non_url() -> None:
     c = _FieldExtraction(
-        source_item_id="a", source_url="x",
-        value="未找到官网信息", confidence="中",
+        source_item_id="a",
+        source_url="x",
+        value="未找到官网信息",
+        confidence="中",
     )
     assert _validate_url(c, strict=True) is False
 
@@ -714,8 +769,10 @@ def test_validate_url_strict_deletes_non_url() -> None:
 def test_validate_url_non_strict_bare_www_domain_downgraded() -> None:
     """Bare www. domain without scheme is kept but downgraded to 低."""
     c = _FieldExtraction(
-        source_item_id="a", source_url="x",
-        value="www.example.com", confidence="高",
+        source_item_id="a",
+        source_url="x",
+        value="www.example.com",
+        confidence="高",
     )
     assert _validate_url(c, strict=False) is True
     assert c.confidence == "低"
@@ -725,10 +782,18 @@ def test_validate_url_non_strict_bare_www_domain_downgraded() -> None:
 # ── _looks_like_date ───────────────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("value", [
-    "2013-01-18", "2013年1月18日", "2013/01/18", "2013.01.18",
-    "2013年", "长期", "2013-01-18至长期",
-])
+@pytest.mark.parametrize(
+    "value",
+    [
+        "2013-01-18",
+        "2013年1月18日",
+        "2013/01/18",
+        "2013.01.18",
+        "2013年",
+        "长期",
+        "2013-01-18至长期",
+    ],
+)
 def test_looks_like_date_valid(value: str) -> None:
     assert _looks_like_date(value) is True
 
@@ -740,9 +805,16 @@ def test_looks_like_date_invalid() -> None:
 # ── _looks_like_capital ────────────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("value", [
-    "100万", "5000万元", "1.5亿元", "200万人民币", "1000万美元",
-])
+@pytest.mark.parametrize(
+    "value",
+    [
+        "100万",
+        "5000万元",
+        "1.5亿元",
+        "200万人民币",
+        "1000万美元",
+    ],
+)
 def test_looks_like_capital_valid(value: str) -> None:
     assert _looks_like_capital(value) is True
 
@@ -755,23 +827,27 @@ def test_looks_like_capital_invalid() -> None:
 
 
 def test_validate_extractions_removes_placeholder_values() -> None:
-    extractions = _ExtractionsResult(extractions={
-        "法定代表人": [
-            _FieldExtraction(source_item_id="a", source_url="x", value="未找到", confidence="中"),
-            _FieldExtraction(source_item_id="a", source_url="x", value="暂无", confidence="低"),
-        ],
-    })
+    extractions = _ExtractionsResult(
+        extractions={
+            "法定代表人": [
+                _FieldExtraction(source_item_id="a", source_url="x", value="未找到", confidence="中"),
+                _FieldExtraction(source_item_id="a", source_url="x", value="暂无", confidence="低"),
+            ],
+        }
+    )
     _validate_extractions(extractions)
     assert "法定代表人" not in extractions.extractions  # all removed
 
 
 def test_validate_extractions_unknown_field_passthrough() -> None:
     """Fields with kind='unknown' are not validated, kept as-is."""
-    extractions = _ExtractionsResult(extractions={
-        "经营范围": [
-            _FieldExtraction(source_item_id="a", source_url="x", value="制造销售电子产品", confidence="高"),
-        ],
-    })
+    extractions = _ExtractionsResult(
+        extractions={
+            "经营范围": [
+                _FieldExtraction(source_item_id="a", source_url="x", value="制造销售电子产品", confidence="高"),
+            ],
+        }
+    )
     _validate_extractions(extractions)
     assert "经营范围" in extractions.extractions
     assert extractions.extractions["经营范围"][0].value == "制造销售电子产品"
@@ -780,18 +856,24 @@ def test_validate_extractions_unknown_field_passthrough() -> None:
 
 def test_validate_extractions_credit_code_flow() -> None:
     """Integration: valid code extracted, invalid one removed."""
-    extractions = _ExtractionsResult(extractions={
-        "统一社会信用代码": [
-            _FieldExtraction(
-                source_item_id="a", source_url="x",
-                value="代码：91440605682473330H", confidence="高",
-            ),
-            _FieldExtraction(
-                source_item_id="b", source_url="y",
-                value="未找到相关信息", confidence="中",
-            ),
-        ],
-    })
+    extractions = _ExtractionsResult(
+        extractions={
+            "统一社会信用代码": [
+                _FieldExtraction(
+                    source_item_id="a",
+                    source_url="x",
+                    value="代码：91440605682473330H",
+                    confidence="高",
+                ),
+                _FieldExtraction(
+                    source_item_id="b",
+                    source_url="y",
+                    value="未找到相关信息",
+                    confidence="中",
+                ),
+            ],
+        }
+    )
     _validate_extractions(extractions)
     codes = extractions.extractions["统一社会信用代码"]
     assert len(codes) == 1
@@ -799,12 +881,14 @@ def test_validate_extractions_credit_code_flow() -> None:
 
 
 def test_validate_extractions_phone_downgrades_invalid() -> None:
-    extractions = _ExtractionsResult(extractions={
-        "联系电话": [
-            _FieldExtraction(source_item_id="a", source_url="x", value="0757-89992385", confidence="高"),
-            _FieldExtraction(source_item_id="b", source_url="y", value="暂未获取到电话", confidence="中"),
-        ],
-    })
+    extractions = _ExtractionsResult(
+        extractions={
+            "联系电话": [
+                _FieldExtraction(source_item_id="a", source_url="x", value="0757-89992385", confidence="高"),
+                _FieldExtraction(source_item_id="b", source_url="y", value="暂未获取到电话", confidence="中"),
+            ],
+        }
+    )
     _validate_extractions(extractions)
     phones = extractions.extractions["联系电话"]
     assert len(phones) == 2  # both kept (invalid is downgraded, not deleted)
@@ -813,12 +897,14 @@ def test_validate_extractions_phone_downgrades_invalid() -> None:
 
 
 def test_validate_extractions_date_downgrades_invalid() -> None:
-    extractions = _ExtractionsResult(extractions={
-        "成立日期": [
-            _FieldExtraction(source_item_id="a", source_url="x", value="2013-01-18", confidence="高"),
-            _FieldExtraction(source_item_id="b", source_url="y", value="未知日期", confidence="中"),
-        ],
-    })
+    extractions = _ExtractionsResult(
+        extractions={
+            "成立日期": [
+                _FieldExtraction(source_item_id="a", source_url="x", value="2013-01-18", confidence="高"),
+                _FieldExtraction(source_item_id="b", source_url="y", value="未知日期", confidence="中"),
+            ],
+        }
+    )
     _validate_extractions(extractions)
     dates = extractions.extractions["成立日期"]
     assert len(dates) == 2
@@ -827,12 +913,14 @@ def test_validate_extractions_date_downgrades_invalid() -> None:
 
 
 def test_validate_extractions_capital_downgrades_non_numeric() -> None:
-    extractions = _ExtractionsResult(extractions={
-        "注册资本": [
-            _FieldExtraction(source_item_id="a", source_url="x", value="500万元人民币", confidence="高"),
-            _FieldExtraction(source_item_id="b", source_url="y", value="不详", confidence="中"),
-        ],
-    })
+    extractions = _ExtractionsResult(
+        extractions={
+            "注册资本": [
+                _FieldExtraction(source_item_id="a", source_url="x", value="500万元人民币", confidence="高"),
+                _FieldExtraction(source_item_id="b", source_url="y", value="不详", confidence="中"),
+            ],
+        }
+    )
     _validate_extractions(extractions)
     capital = extractions.extractions["注册资本"]
     assert len(capital) == 1  # placeholder deleted
@@ -841,12 +929,14 @@ def test_validate_extractions_capital_downgrades_non_numeric() -> None:
 
 
 def test_validate_extractions_url_strict_removes_non_url() -> None:
-    extractions = _ExtractionsResult(extractions={
-        "来源URL": [
-            _FieldExtraction(source_item_id="a", source_url="x", value="https://qcc.com/p/1", confidence="高"),
-            _FieldExtraction(source_item_id="b", source_url="y", value="信息缺失", confidence="中"),
-        ],
-    })
+    extractions = _ExtractionsResult(
+        extractions={
+            "来源URL": [
+                _FieldExtraction(source_item_id="a", source_url="x", value="https://qcc.com/p/1", confidence="高"),
+                _FieldExtraction(source_item_id="b", source_url="y", value="信息缺失", confidence="中"),
+            ],
+        }
+    )
     _validate_extractions(extractions)
     urls = extractions.extractions["来源URL"]
     assert len(urls) == 1
@@ -857,13 +947,15 @@ def test_validate_extractions_url_strict_removes_non_url() -> None:
 
 
 def test_validation_stats_placeholder_removed() -> None:
-    extractions = _ExtractionsResult(extractions={
-        "法定代表人": [
-            _FieldExtraction(source_item_id="a", source_url="x", value="未找到", confidence="中"),
-            _FieldExtraction(source_item_id="a", source_url="x", value="暂无", confidence="低"),
-            _FieldExtraction(source_item_id="a", source_url="x", value="欧泽超", confidence="高"),
-        ],
-    })
+    extractions = _ExtractionsResult(
+        extractions={
+            "法定代表人": [
+                _FieldExtraction(source_item_id="a", source_url="x", value="未找到", confidence="中"),
+                _FieldExtraction(source_item_id="a", source_url="x", value="暂无", confidence="低"),
+                _FieldExtraction(source_item_id="a", source_url="x", value="欧泽超", confidence="高"),
+            ],
+        }
+    )
     stats = _validate_extractions(extractions)
     assert stats.removed == 2
     assert stats.downgraded == 0
@@ -871,14 +963,18 @@ def test_validation_stats_placeholder_removed() -> None:
 
 
 def test_validation_stats_credit_code_normalized() -> None:
-    extractions = _ExtractionsResult(extractions={
-        "统一社会信用代码": [
-            _FieldExtraction(
-                source_item_id="a", source_url="x",
-                value="代码：91440605682473330H", confidence="高",
-            ),
-        ],
-    })
+    extractions = _ExtractionsResult(
+        extractions={
+            "统一社会信用代码": [
+                _FieldExtraction(
+                    source_item_id="a",
+                    source_url="x",
+                    value="代码：91440605682473330H",
+                    confidence="高",
+                ),
+            ],
+        }
+    )
     stats = _validate_extractions(extractions)
     assert stats.removed == 0
     assert stats.normalized == 1
@@ -886,38 +982,46 @@ def test_validation_stats_credit_code_normalized() -> None:
 
 
 def test_validation_stats_email_normalized() -> None:
-    extractions = _ExtractionsResult(extractions={
-        "电子邮箱": [
-            _FieldExtraction(
-                source_item_id="a", source_url="x",
-                value="联系邮箱：hr@example.com", confidence="高",
-            ),
-        ],
-    })
+    extractions = _ExtractionsResult(
+        extractions={
+            "电子邮箱": [
+                _FieldExtraction(
+                    source_item_id="a",
+                    source_url="x",
+                    value="联系邮箱：hr@example.com",
+                    confidence="高",
+                ),
+            ],
+        }
+    )
     stats = _validate_extractions(extractions)
     assert stats.normalized == 1
     assert "hr@example.com" in extractions.extractions["电子邮箱"][0].value
 
 
 def test_validation_stats_phone_downgraded() -> None:
-    extractions = _ExtractionsResult(extractions={
-        "联系电话": [
-            _FieldExtraction(source_item_id="a", source_url="x", value="0757-89992385", confidence="高"),
-            _FieldExtraction(source_item_id="b", source_url="y", value="暂未获取到电话", confidence="中"),
-        ],
-    })
+    extractions = _ExtractionsResult(
+        extractions={
+            "联系电话": [
+                _FieldExtraction(source_item_id="a", source_url="x", value="0757-89992385", confidence="高"),
+                _FieldExtraction(source_item_id="b", source_url="y", value="暂未获取到电话", confidence="中"),
+            ],
+        }
+    )
     stats = _validate_extractions(extractions)
     assert stats.downgraded == 1
     assert stats.removed == 0
 
 
 def test_validation_stats_strict_url_removed() -> None:
-    extractions = _ExtractionsResult(extractions={
-        "来源URL": [
-            _FieldExtraction(source_item_id="a", source_url="x", value="https://qcc.com/p/1", confidence="高"),
-            _FieldExtraction(source_item_id="b", source_url="y", value="信息缺失", confidence="中"),
-        ],
-    })
+    extractions = _ExtractionsResult(
+        extractions={
+            "来源URL": [
+                _FieldExtraction(source_item_id="a", source_url="x", value="https://qcc.com/p/1", confidence="高"),
+                _FieldExtraction(source_item_id="b", source_url="y", value="信息缺失", confidence="中"),
+            ],
+        }
+    )
     stats = _validate_extractions(extractions)
     assert stats.removed == 1  # invalid URL deleted
     assert stats.downgraded == 0
@@ -925,25 +1029,31 @@ def test_validation_stats_strict_url_removed() -> None:
 
 def test_validation_stats_mixed_fields() -> None:
     """Stats aggregate correctly across multiple field kinds."""
-    extractions = _ExtractionsResult(extractions={
-        "统一社会信用代码": [
-            _FieldExtraction(
-                source_item_id="a", source_url="x",
-                value="信用代码：91440605682473330H", confidence="高",
-            ),
-            _FieldExtraction(
-                source_item_id="b", source_url="y",
-                value="无信用代码信息", confidence="中",
-            ),
-        ],
-        "联系电话": [
-            _FieldExtraction(source_item_id="a", source_url="x", value="0757-89992385", confidence="高"),
-            _FieldExtraction(source_item_id="b", source_url="y", value="暂未获取", confidence="中"),
-        ],
-        "法定代表人": [
-            _FieldExtraction(source_item_id="a", source_url="x", value="未找到", confidence="低"),
-        ],
-    })
+    extractions = _ExtractionsResult(
+        extractions={
+            "统一社会信用代码": [
+                _FieldExtraction(
+                    source_item_id="a",
+                    source_url="x",
+                    value="信用代码：91440605682473330H",
+                    confidence="高",
+                ),
+                _FieldExtraction(
+                    source_item_id="b",
+                    source_url="y",
+                    value="无信用代码信息",
+                    confidence="中",
+                ),
+            ],
+            "联系电话": [
+                _FieldExtraction(source_item_id="a", source_url="x", value="0757-89992385", confidence="高"),
+                _FieldExtraction(source_item_id="b", source_url="y", value="暂未获取", confidence="中"),
+            ],
+            "法定代表人": [
+                _FieldExtraction(source_item_id="a", source_url="x", value="未找到", confidence="低"),
+            ],
+        }
+    )
     stats = _validate_extractions(extractions)
     # removed: 1 invalid credit_code + 1 placeholder
     assert stats.removed == 2

@@ -30,8 +30,11 @@ TARGET = "佛山市固特家居制品有限公司"
 
 
 def _sf(
-    url: str | None, title: str, snippet: str = "s",
-    target: str = TARGET, blocked: list[str] | None = None,
+    url: str | None,
+    title: str,
+    snippet: str = "s",
+    target: str = TARGET,
+    blocked: list[str] | None = None,
 ) -> bool:
     """Shortcut for _should_fetch with defaults."""
     if blocked is None:
@@ -73,10 +76,13 @@ def test_should_fetch_both_mismatch_skipped() -> None:
 
 
 def test_should_fetch_title_contains_target_allowed() -> None:
-    assert _sf(
-        "https://example.com/page",
-        "佛山市固特家居制品有限公司-公司地址-企业联系方式",
-    ) is True
+    assert (
+        _sf(
+            "https://example.com/page",
+            "佛山市固特家居制品有限公司-公司地址-企业联系方式",
+        )
+        is True
+    )
 
 
 def test_should_fetch_empty_target_disables_filter() -> None:
@@ -247,8 +253,8 @@ async def test_enrich_items_returns_original_order_after_priority_crawl() -> Non
     """Output order matches input order even when crawl order is re-prioritised."""
     items = [
         _make_item("https://example.com/2", title=TARGET + " Second"),  # unknown bias
-        _make_item("https://gsxt.gov.cn/1", title=TARGET + " First"),   # prefer bias
-        _make_item("https://neutral.com/3", title=TARGET + " Third"),   # unknown bias
+        _make_item("https://gsxt.gov.cn/1", title=TARGET + " First"),  # prefer bias
+        _make_item("https://neutral.com/3", title=TARGET + " Third"),  # unknown bias
     ]
     fetch_urls: list[str] = []
 
@@ -268,9 +274,9 @@ async def test_enrich_items_returns_original_order_after_priority_crawl() -> Non
 async def test_enrich_items_avoid_items_not_fetched_but_preserved() -> None:
     """Avoid-bias items skip crawl but remain in the output for snippet fallback."""
     items = [
-        _make_item("https://example.com/1", title=TARGET + " A"),       # neutral → fetched
-        _make_item("https://qcc.com/2", title=TARGET + " B"),           # avoid → skipped
-        _make_item("https://example.com/3", title=TARGET + " C"),       # neutral → fetched
+        _make_item("https://example.com/1", title=TARGET + " A"),  # neutral → fetched
+        _make_item("https://qcc.com/2", title=TARGET + " B"),  # avoid → skipped
+        _make_item("https://example.com/3", title=TARGET + " C"),  # neutral → fetched
     ]
     fetch_urls: list[str] = []
 

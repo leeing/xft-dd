@@ -170,7 +170,9 @@ async def test_fetch_metaso_items_multiple_queries_summed() -> None:
             ("公司成立于2010年，注册资本为人民币壹仟万元整，经营状态正常", [], 2),
             ("法定代表人为张三，经营范围包括家具制造与销售，注册地址广东省佛山市", [], 3),
         ]
-        items, source_items, success, failed, credits = await fetch_metaso_items("basic_info", ["query1", "query2"], api_key="key")
+        items, source_items, success, failed, credits = await fetch_metaso_items(
+            "basic_info", ["query1", "query2"], api_key="key"
+        )
     assert len(items) == 2
     assert success == 2
     assert failed == 0
@@ -474,9 +476,7 @@ async def test_fetch_metaso_search_items_success() -> None:
     ]
     with patch("diligence.utils.metaso.query_metaso_search", new_callable=AsyncMock) as mock_q:
         mock_q.return_value = (mock_webpages, 12)
-        items, success, failed, credits = await fetch_metaso_search_items(
-            "ip", ["某公司专利"], api_key="key", size=3
-        )
+        items, success, failed, credits = await fetch_metaso_search_items("ip", ["某公司专利"], api_key="key", size=3)
     assert len(items) == 2
     assert success == 1
     assert failed == 0
@@ -518,9 +518,7 @@ async def test_fetch_metaso_search_items_interleaves_by_rank() -> None:
     ]
     with patch("diligence.utils.metaso.query_metaso_search", new_callable=AsyncMock) as mock_q:
         mock_q.side_effect = [(q1_results, 6), (q2_results, 6)]
-        items, success, failed, credits = await fetch_metaso_search_items(
-            "ip", ["q1", "q2"], api_key="key", size=3
-        )
+        items, success, failed, credits = await fetch_metaso_search_items("ip", ["q1", "q2"], api_key="key", size=3)
     # Q1-R0, Q2-R0, Q1-R1 (rank 0s first, then rank 1s)
     assert [it.title for it in items] == ["Q1-R0", "Q2-R0", "Q1-R1"]
     assert success == 2

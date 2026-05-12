@@ -22,6 +22,7 @@ from diligence.utils.source_registry import classify_source
 log = structlog.get_logger(__name__)
 
 _METASO_SCHEME = "metaso://"
+_SHORT_CRAWL_THRESHOLD = 100
 
 _FETCH_BIAS_RANK: dict[str, int] = {"prefer": 0, "neutral": 1, "unknown": 2, "avoid": 3}
 _AUTHORITY_RANK: dict[str, int] = {"high": 0, "medium": 1, "low": 2, "unknown": 3}
@@ -42,7 +43,11 @@ def _crawl_priority_key(item: SearchItem) -> tuple[int, int]:
 
 
 def _should_fetch(  # noqa: PLR0913
-    url: str | None, title: str, snippet: str, target: str, blocked_domains: list[str],
+    url: str | None,
+    title: str,
+    snippet: str,
+    target: str,
+    blocked_domains: list[str],
     full_text: str = "",
 ) -> bool:
     """Return True if this item should be fetched via crawl4ai.
@@ -70,7 +75,11 @@ def _should_fetch(  # noqa: PLR0913
 
 
 async def _fetch_page_markdown(
-    url: str, crawler: AsyncWebCrawler, *, timeout_ms: int = 25000, max_chars: int = 6900,
+    url: str,
+    crawler: AsyncWebCrawler,
+    *,
+    timeout_ms: int = 25000,
+    max_chars: int = 6900,
 ) -> str:
     """Fetch URL via crawl4ai and return extracted markdown content."""
     try:
@@ -80,14 +89,16 @@ async def _fetch_page_markdown(
         )
         if result and result.success and result.markdown:
             text = result.markdown
-            if len(text) < 100:  # suspiciously short — likely a blocker page
+            if len(text) < _SHORT_CRAWL_THRESHOLD:
                 log.warning("crawl_short_response", url=url, chars=len(text))
                 return ""
             return text[:max_chars]
         if result and not result.success:
             log.warning("crawl_failed", url=url, error=result.error_message)
-        return ""
-    except (TimeoutError, asyncio.TimeoutError):
+            return ""
+        else:
+            return ""
+    except TimeoutError:
         log.warning("crawl_timeout", url=url)
         return ""
     except (OSError, ValueError) as exc:
@@ -95,7 +106,7 @@ async def _fetch_page_markdown(
         return ""
 
 
-async def enrich_items(
+async def enrich_items(  # noqa: PLR0913
     items: list[SearchItem],
     blocked_domains: list[str],
     *,
@@ -142,11 +153,10 @@ async def enrich_items(
         async def do_fetch(item: SearchItem, url: str) -> SearchItem:
             async with semaphore:
                 src = classify_source(item.url, item.title)
-                sys.stderr.write(
-                    f"  [fetch] {url[:80]} (bias={src.should_fetch_bias}, auth={src.authority_level})\n"
-                )
+                sys.stderr.write(f"  [fetch] {url[:80]} (bias={src.should_fetch_bias}, auth={src.authority_level})\n")
                 text = await _fetch_page_markdown(
-                    url, crawler,
+                    url,
+                    crawler,
                     timeout_ms=fetch_timeout * 1000,
                     max_chars=max_full_text_chars,
                 )

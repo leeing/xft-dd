@@ -119,7 +119,11 @@ async def run_single(
     sys.stderr.write("--\n")
 
     result = await run_company_graph(
-        target=target, config=config, output_dir=output_dir, run_id=run_id, config_path=config_path,
+        target=target,
+        config=config,
+        output_dir=output_dir,
+        run_id=run_id,
+        config_path=config_path,
         all_dimension_names=all_dimension_names,
     )
 

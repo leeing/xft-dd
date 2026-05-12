@@ -138,10 +138,23 @@ _MAX_SNIPPET_FALLBACK_ITEMS = 8
 _SNIPPET_MIN_LENGTH = 20
 
 # ── field validation ─────────────────────────────────────────────────────────
-_VALIDATION_DELETE_VALUES: frozenset[str] = frozenset({
-    "", "未找到", "无", "暂无", "不详", "未知", "-", "null", "None",
-    "未披露", "不祥", "暂无数据", "暂无信息",
-})
+_VALIDATION_DELETE_VALUES: frozenset[str] = frozenset(
+    {
+        "",
+        "未找到",
+        "无",
+        "暂无",
+        "不详",
+        "未知",
+        "-",
+        "null",
+        "None",
+        "未披露",
+        "不祥",
+        "暂无数据",
+        "暂无信息",
+    }
+)
 
 _CREDIT_CODE_RE = re.compile(r"\b[0-9A-Z]{18}\b")
 _DATE_RE = re.compile(
@@ -160,10 +173,12 @@ _CAPITAL_RE = re.compile(
 @dataclass(frozen=True)
 class _ExtractionSource:
     """Internal structure pairing a SearchItem with its extraction metadata."""
+
     item: SearchItem
     content: str
     content_type: Literal["full_text", "snippet"]
     evidence_weight: Literal["high", "low"]
+
 
 _EXTRACTION_RETRY_PROMPT = (
     "你上一次的输出不是合法 JSON。请重新输出，只输出 JSON 对象，不要任何其他内容：\n"
@@ -184,10 +199,14 @@ def _select_extraction_sources(items: list[SearchItem]) -> list[_ExtractionSourc
     for item in items:
         if item.full_text:
             key = item.url or item.id
-            sources.append(_ExtractionSource(
-                item=item, content=item.full_text,
-                content_type="full_text", evidence_weight="high",
-            ))
+            sources.append(
+                _ExtractionSource(
+                    item=item,
+                    content=item.full_text,
+                    content_type="full_text",
+                    evidence_weight="high",
+                )
+            )
             seen_keys.add(key)
 
     snippet_count = 0
@@ -199,10 +218,14 @@ def _select_extraction_sources(items: list[SearchItem]) -> list[_ExtractionSourc
         key = item.url or item.id
         if key in seen_keys:
             continue
-        sources.append(_ExtractionSource(
-            item=item, content=item.snippet,
-            content_type="snippet", evidence_weight="low",
-        ))
+        sources.append(
+            _ExtractionSource(
+                item=item,
+                content=item.snippet,
+                content_type="snippet",
+                evidence_weight="low",
+            )
+        )
         seen_keys.add(key)
         snippet_count += 1
 
@@ -244,10 +267,7 @@ def _build_extraction_prompt(
             f"内容类型: {es.content_type} | 证据权重: {es.evidence_weight}"
         )
         if es.content_type == "snippet":
-            source_header += (
-                "\n注意: 本来源仅为搜索摘要，字段值可作为候选，但应标低置信度，"
-                "除非有其他来源佐证。"
-            )
+            source_header += "\n注意: 本来源仅为搜索摘要，字段值可作为候选，但应标低置信度，除非有其他来源佐证。"
         item_parts.append(f"{source_header}\n{text}")
     item_contents = "\n\n---\n".join(item_parts)
     return user_template.format(
@@ -272,14 +292,13 @@ def _format_extraction_table(extractions: _ExtractionsResult) -> str:
                 url_short = c.source_url[:_URL_TRUNCATE_LENGTH] + "..."
             else:
                 url_short = c.source_url
-            lines.append(
-                f"| {field_name} | {c.value} | {url_short} | {c.source_item_id} | {c.confidence} |"
-            )
+            lines.append(f"| {field_name} | {c.value} | {url_short} | {c.source_item_id} | {c.confidence} |")
     return "\n".join(lines)
 
 
 def _render_results(
-    dsr: DimensionSearchResult, extraction_table: str | None = None,
+    dsr: DimensionSearchResult,
+    extraction_table: str | None = None,
 ) -> str:
     """Render items for the AI prompt. When extraction_table is provided, full_text is truncated."""
     parts: list[str] = []
@@ -498,7 +517,10 @@ async def _do_structured_extraction(  # noqa: PLR0913
         return None, cost
 
     prompt = _build_extraction_prompt(
-        target, extract_fields, sources, config.extract_user_template,
+        target,
+        extract_fields,
+        sources,
+        config.extract_user_template,
     )
     messages: list[ChatCompletionMessageParam] = [
         {"role": "system", "content": config.extract_system_prompt},
@@ -507,7 +529,8 @@ async def _do_structured_extraction(  # noqa: PLR0913
 
     try:
         response = await client.chat.completions.create(
-            model=settings.llm_model, messages=messages,
+            model=settings.llm_model,
+            messages=messages,
         )
         cost.llm_calls += 1
         cost.llm_tokens_total += response.usage.total_tokens if response.usage else 0
@@ -519,12 +542,15 @@ async def _do_structured_extraction(  # noqa: PLR0913
         except (json.JSONDecodeError, ValidationError):
             # Attempt 2: retry
             log.warning("extraction_json_parse_retry", dimension=dim_name)
-            messages.extend([
-                {"role": "assistant", "content": raw_content},
-                {"role": "user", "content": _EXTRACTION_RETRY_PROMPT},
-            ])
+            messages.extend(
+                [
+                    {"role": "assistant", "content": raw_content},
+                    {"role": "user", "content": _EXTRACTION_RETRY_PROMPT},
+                ]
+            )
             retry_response = await client.chat.completions.create(
-                model=settings.llm_model, messages=messages,
+                model=settings.llm_model,
+                messages=messages,
             )
             cost.llm_calls += 1
             cost.llm_tokens_total += retry_response.usage.total_tokens if retry_response.usage else 0
@@ -543,10 +569,16 @@ async def _do_structured_extraction(  # noqa: PLR0913
         stats = _validate_extractions(parsed)
         snippet_downgraded = _apply_snippet_confidence_cap(parsed, sources)
 
-        log.info("extraction_complete", dimension=dim_name,
-                 fields_found=len(parsed.extractions), fields_configured=len(extract_fields),
-                 removed=stats.removed, format_downgraded=stats.downgraded,
-                 snippet_downgraded=snippet_downgraded, normalized=stats.normalized)
+        log.info(
+            "extraction_complete",
+            dimension=dim_name,
+            fields_found=len(parsed.extractions),
+            fields_configured=len(extract_fields),
+            removed=stats.removed,
+            format_downgraded=stats.downgraded,
+            snippet_downgraded=snippet_downgraded,
+            normalized=stats.normalized,
+        )
         sys.stderr.write(
             f"  [{dim_name}] structured extraction: {len(parsed.extractions)}/{len(extract_fields)}"
             f" fields found (removed={stats.removed}, fmt↓={stats.downgraded},"
