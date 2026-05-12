@@ -43,7 +43,11 @@ def save_node(state: DiligenceState) -> dict[str, object]:
         started_at_raw = datetime.now(UTC)
     started_at: datetime = started_at_raw
 
+    active_dim_ids = {d.id for d in active_dims}
     failed_dims = [s.dimension_id for s in summaries.values() if s.status in ("failed", "partial")]
+    # Active dimensions missing from summaries also count as failed
+    missing_active = active_dim_ids - set(summaries.keys())
+    failed_dims = sorted(set(failed_dims) | missing_active)
     required_failed = any(d.required and d.id in failed_dims for d in active_dims)
     run_status: Literal["success", "partial", "failed"]
     run_status = "success" if not failed_dims and report else ("partial" if report else "failed")

@@ -80,6 +80,7 @@ def _base_state(cfg: AppConfig, tmp_path: Path) -> DiligenceState:
         report="",
         report_path="",
         artifacts_dir="",
+        all_dimension_names={},
     )
 
 
@@ -460,3 +461,170 @@ def test_save_node_started_at_none_uses_fallback(tmp_path: Path) -> None:
     meta = json.loads((tmp_path / "run_meta.json").read_text())
     assert meta["started_at"] is not None  # fallback datetime was used
     assert meta["finished_at"] is not None
+
+
+# -- _format_summaries --
+
+
+def test_format_summaries_skipped_dims() -> None:
+    """Skipped dimensions appear as 未执行 sections."""
+    from diligence.nodes.merge_node import _format_summaries
+
+    summaries: dict[str, DimensionSummary] = {
+        "basic_info": DimensionSummary(
+            dimension_id="basic_info",
+            dimension_name="工商基本信息",
+            status="success",
+            summary="测试摘要",
+            confidence="高",
+            uncertain_facts=[],
+            evidence_item_ids=[],
+        ),
+    }
+    skipped = [{"id": "ip", "name": "知识产权"}, {"id": "listing", "name": "上市情况"}]
+
+    result = _format_summaries(summaries, ["basic_info"], skipped_dims=skipped)
+
+    assert "未执行" in result
+    assert "知识产权" in result
+    assert "上市情况" in result
+    assert "本维度未在本次运行中检索" in result
+
+
+def test_format_summaries_missing_from_summaries() -> None:
+    """Active dimension missing from summaries shows 执行失败."""
+    from diligence.nodes.merge_node import _format_summaries
+
+    summaries: dict[str, DimensionSummary] = {}
+    active_dim_names = {"basic_info": "工商基本信息"}
+
+    result = _format_summaries(
+        summaries,
+        ["basic_info"],
+        active_dim_names=active_dim_names,
+    )
+
+    assert "执行失败" in result
+    assert "工商基本信息" in result
+    assert "搜索或抓取过程异常" in result
+
+
+def test_format_summaries_all_active_no_skipped() -> None:
+    """Normal case: all active dims have summaries, no skipped dims."""
+    from diligence.nodes.merge_node import _format_summaries
+
+    summaries: dict[str, DimensionSummary] = {
+        "basic_info": DimensionSummary(
+            dimension_id="basic_info",
+            dimension_name="工商基本信息",
+            status="success",
+            summary="正常摘要",
+            confidence="中",
+            uncertain_facts=["待核实项"],
+            evidence_item_ids=["id1"],
+        ),
+    }
+
+    result = _format_summaries(summaries, ["basic_info"])
+
+    assert "正常摘要" in result
+    assert "待核实项" in result
+    assert "未执行" not in result
+    assert "执行失败" not in result
+
+
+# -- save_node edge cases --
+
+
+def test_save_node_missing_active_dimension_counts_as_failed(tmp_path: Path) -> None:
+    """Active dimension absent from summaries is tracked as failed in run_meta."""
+    from diligence.models import CostRecord
+    from diligence.nodes.save_node import save_node
+
+    cfg = _make_cfg()
+    state = _base_state(cfg, tmp_path)
+    state["run_id"] = "test-run"
+    state["report"] = "partial report"
+    state["search_results_by_dimension"] = {}
+    state["summaries_by_dimension"] = {}  # basic_info is active but missing
+    state["cost"] = CostRecord()
+
+    save_node(state)
+    meta = json.loads((tmp_path / "run_meta.json").read_text())
+
+    assert meta["status"] == "partial"
+    assert meta["required_failed"] is True
+    assert "basic_info" in meta["failed_dimensions"]
+
+
+async def test_search_node_cross_provider_dedup(tmp_path: Path) -> None:
+    """MiniMax + Metaso source items with same URL -> dedup keeps only Metaso."""
+    from diligence.nodes.search_node import search_node
+
+    cfg = AppConfig(
+        merge_prompt="x",
+        dimensions=[
+            Dimension(
+                id="basic_info",
+                name="工商基本信息",
+                order=10,
+                enabled=True,
+                required=True,
+                minimax_queries=["{target} 工商"],
+                metaso_queries=["{target}"],
+                metaso_mode="chat",
+                summary_prompt="请分析{target}。\n{results}",
+            )
+        ],
+    )
+
+    shared_url = "https://example.com/company/shared"
+    minimax_organic = [
+        {"title": "MiniMax标题", "link": shared_url, "snippet": "s", "date": ""},
+    ]
+    mm_mock = MagicMock()
+    mm_mock.__aenter__ = AsyncMock(return_value=mm_mock)
+    mm_mock.__aexit__ = AsyncMock(return_value=False)
+    mm_resp = MagicMock(spec=httpx.Response)
+    mm_resp.json.return_value = {"organic": minimax_organic}
+    mm_resp.raise_for_status = MagicMock()
+    mm_mock.post = AsyncMock(return_value=mm_resp)
+
+    from diligence.models import make_item_id as mii
+    from diligence.utils.metaso import make_metaso_source_items
+
+    fake_answer = SearchItem(
+        id=mii(url="metaso://search?q=x", title="a", snippet="a"),
+        title="a",
+        url="metaso://search?q=x",
+        snippet="a",
+        query="q",
+        dimension_id="basic_info",
+        source="metaso_chat",
+        fetched_at=datetime.now(UTC),
+    )
+    fake_sources = make_metaso_source_items(
+        [{"title": "dup", "link": shared_url, "summary": "dup"}],
+        "q",
+        "basic_info",
+    )
+
+    state = _base_state(cfg, tmp_path)
+    state["current_dimension"] = cfg.dimensions[0]
+
+    with (
+        patch("diligence.utils.minimax_search.httpx.AsyncClient", return_value=mm_mock),
+        patch("diligence.nodes.search_node.enrich_with_metaso") as mock_metaso,
+        patch("diligence.nodes.search_node.settings") as mock_settings,
+    ):
+        mock_settings.metaso_enabled = True
+        mock_settings.metaso_api_key = True
+        mock_settings.metaso_verify_tls = True
+        mock_metaso.return_value = ([*fake_sources, fake_answer], 1, 0, 6)
+        result = await search_node(state)
+
+    dsr = result["search_results_by_dimension"]["basic_info"]
+    urls = [item.url for item in dsr.items if item.url == shared_url]
+    assert len(urls) == 1, f"Expected 1 item with shared URL after dedup, got {len(urls)}"
+    kept = next(item for item in dsr.items if item.url == shared_url)
+    assert kept.source == "metaso_chat"

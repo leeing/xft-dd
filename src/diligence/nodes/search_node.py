@@ -13,8 +13,8 @@ from diligence.config import AppConfig, Dimension
 from diligence.models import CostRecord, DimensionSearchResult, SearchItem
 from diligence.settings import settings
 from diligence.state import DiligenceState
-from diligence.utils.fetch import FetchSession, enrich_items
-from diligence.utils.metaso import enrich_with_metaso
+from diligence.utils.fetch import enrich_items
+from diligence.utils.metaso import enrich_with_metaso, enrich_with_metaso_search
 from diligence.utils.minimax_search import dedup_items, run_search
 
 log = structlog.get_logger(__name__)
@@ -75,12 +75,31 @@ async def _apply_metaso(
     dim: Dimension,
     target: str,
 ) -> tuple[list[SearchItem], int, int, int]:
-    """Enrich items with Metaso AI answers when enabled; returns (items, success, failed, credits)."""
+    """Enrich items with Metaso (chat or search mode); returns (items, success, failed, credits)."""
     if not (settings.metaso_enabled and settings.metaso_api_key and dim.metaso_queries):
         return items, 0, 0, 0
     normalized = _normalize_target(target)
     metaso_qs = [q.replace("{target}", normalized) for q in dim.metaso_queries]
-    sys.stderr.write(f"  [{dim.name}] 秘塔AI搜索 ({len(metaso_qs)} 条查询)...\n")
+
+    if dim.metaso_mode == "search":
+        sys.stderr.write(f"  [{dim.name}] 秘塔搜索 ({len(metaso_qs)} 条查询, search模式)...\n")
+        try:
+            enriched, success, failed, credits = await enrich_with_metaso_search(
+                items=items,
+                dimension_id=dim.id,
+                queries=metaso_qs,
+                api_key=settings.metaso_api_key,
+                size=dim.metaso_search_size,
+                verify_tls=settings.metaso_verify_tls,
+            )
+        except (OSError, ValueError) as exc:
+            log.warning("metaso_search_enrich_failed", dimension=dim.id, error=str(exc))
+            sys.stderr.write(f"  [{dim.name}] 秘塔搜索失败（降级到纯MiniMax Search结果）: {exc}\n")
+            return items, 0, len(dim.metaso_queries), 0
+        else:
+            return enriched, success, failed, credits
+
+    sys.stderr.write(f"  [{dim.name}] 秘塔AI搜索 ({len(metaso_qs)} 条查询, chat模式)...\n")
     try:
         enriched, success, failed, credits = await enrich_with_metaso(
             items=items,
@@ -97,24 +116,25 @@ async def _apply_metaso(
         return enriched, success, failed, credits
 
 
-async def _apply_playwright(
+async def _apply_crawl(
     items: list[SearchItem],
     dim: Dimension,
     config: AppConfig,
+    target: str,
 ) -> list[SearchItem]:
-    """Enrich items with full page text via Playwright when fetch_enabled; returns original on failure."""
+    """Enrich items with full page text via crawl4ai when fetch_enabled; returns original on failure."""
     if not dim.fetch_enabled:
         return items
-    sys.stderr.write(f"  [{dim.name}] Playwright enrichment...\n")
+    sys.stderr.write(f"  [{dim.name}] crawl4ai enrichment...\n")
     try:
-        async with FetchSession(headless=config.playwright_headless) as session:
-            enriched = await enrich_items(
-                items=items,
-                fetchable_domains=config.fetchable_domains,
-                fetch_timeout=config.playwright_fetch_timeout,
-                concurrency=config.playwright_fetch_concurrency,
-                session=session,
-            )
+        enriched = await enrich_items(
+            items=items,
+            blocked_domains=config.fetch_blocked_domains,
+            target=target,
+            fetch_timeout=config.crawl_fetch_timeout,
+            concurrency=config.crawl_fetch_concurrency,
+            max_full_text_chars=config.max_full_text_chars,
+        )
     except (OSError, ValueError) as exc:
         log.warning("enrich_failed", dimension=dim.id, error=str(exc))
         sys.stderr.write(f"  [{dim.name}] enrichment failed (fallback to snippets): {exc}\n")
@@ -138,7 +158,12 @@ async def search_node(state: DiligenceState) -> dict[str, object]:
 
     deduped = dedup_items(all_items)
     deduped, metaso_success, metaso_failed, metaso_credits = await _apply_metaso(deduped, dim, target)
-    deduped = await _apply_playwright(deduped, dim, config)
+    before_cross_dedup = len(deduped)
+    deduped = dedup_items(deduped)
+    removed = before_cross_dedup - len(deduped)
+    if removed:
+        sys.stderr.write(f"  [{dim.name}] {removed} cross-provider duplicate(s) removed\n")
+    deduped = await _apply_crawl(deduped, dim, config, target)
 
     total_queries = len(dim.minimax_queries)
     dim_status: Literal["success", "partial", "failed"]

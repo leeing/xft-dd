@@ -26,6 +26,22 @@ load_dotenv()
 log = structlog.get_logger(__name__)
 
 
+def _normalize_metaso_target(target: str) -> str:
+    """Match Metaso query target normalisation used by search_node."""
+    return target.replace("(", "（").replace(")", "）")
+
+
+def _write_dimension_query_preview(dim, target: str) -> None:
+    sys.stderr.write("    MiniMax Search:\n")
+    for q in dim.minimax_queries:
+        sys.stderr.write(f"      - {q.replace('{target}', target)}\n")
+    if dim.metaso_queries:
+        metaso_target = _normalize_metaso_target(target)
+        sys.stderr.write(f"    Metaso ({dim.metaso_mode} mode, size={dim.metaso_search_size}):\n")
+        for q in dim.metaso_queries:
+            sys.stderr.write(f"      - {q.replace('{target}', metaso_target)}\n")
+
+
 async def run_dry_run(
     target: str,
     config: AppConfig,
@@ -57,8 +73,7 @@ async def run_dry_run(
     sys.stderr.write("--\n")
     for dim in sorted(dims, key=lambda d: d.order):
         sys.stderr.write(f"  [{dim.name}]\n")
-        for q in dim.minimax_queries:
-            sys.stderr.write(f"    - {q.replace('{target}', target)}\n")
+        _write_dimension_query_preview(dim, target)
     sys.stderr.write("--\n")
     sys.stderr.write("dry-run complete, no external calls made\n")
     return 0
@@ -72,6 +87,7 @@ async def run_single(
 ) -> int:
     """Execute single-company pipeline and return exit code."""
     config = load_config(config_path)
+    all_dimension_names = {d.id: d.name for d in config.dimensions if d.enabled}
     dims = [d for d in config.dimensions if d.enabled]
     if only:
         if err := validate_dimension_ids(only, config.dimensions, label="--only"):
@@ -103,7 +119,12 @@ async def run_single(
     sys.stderr.write("--\n")
 
     result = await run_company_graph(
-        target=target, config=config, output_dir=output_dir, run_id=run_id, config_path=config_path
+        target=target,
+        config=config,
+        output_dir=output_dir,
+        run_id=run_id,
+        config_path=config_path,
+        all_dimension_names=all_dimension_names,
     )
 
     if result.required_failed:
@@ -116,7 +137,7 @@ async def run_single(
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="enterprise due diligence tool")
     parser.add_argument("target", nargs="?", default=None, help="target company name")
-    parser.add_argument("--config", default="config.yaml")
+    parser.add_argument("--config", default="config")
     parser.add_argument("--only", help="run only these dimensions (comma-separated)")
     parser.add_argument("--skip", help="skip these dimensions (comma-separated)")
     parser.add_argument("--dry-run", action="store_true")

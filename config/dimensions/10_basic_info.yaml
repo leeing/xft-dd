@@ -1,0 +1,72 @@
+id: basic_info
+name: 工商基本信息
+order: 10
+enabled: true
+required: true
+fetch_enabled: true
+minimax_queries:
+  - '"{target}"'
+metaso_queries:
+  - "{target} 工商注册信息 统一社会信用代码 法定代表人 注册资本"
+  - "{target} 成立日期 经营状态 企业类型 注册地址 经营范围"
+metaso_search_size: 1
+extract_fields:
+  - field_name: 企业名称
+    description: 工商登记注册的企业全称
+  - field_name: 统一社会信用代码
+    description: 18位字母数字组合，企业唯一识别码
+  - field_name: 经营状态
+    description: 存续/在业/开业/注销/吊销/迁出等
+  - field_name: 法定代表人
+    description: 法定代表人姓名；分公司、个体户、合伙企业可能为负责人/经营者/执行事务合伙人
+  - field_name: 注册资本
+    description: 金额+币种，如1000万元人民币
+  - field_name: 实缴资本
+    description: 已实际缴纳的资本金额+币种，如500万元人民币；缺失则标记未找到
+  - field_name: 成立日期
+    description: 企业成立日期，精确到年月日，如2008-12-12
+  - field_name: 企业类型
+    description: 有限责任公司/股份有限公司/个人独资企业/合伙企业/个体工商户/分公司等
+  - field_name: 营业期限
+    description: 营业期限起止日期或长期，如2008-12-12至长期
+  - field_name: 登记机关
+    description: 负责登记的市场监督管理局或行政审批机关
+  - field_name: 核准日期
+    description: 最近一次工商登记核准日期，精确到年月日
+  - field_name: 工商注册号
+    description: 工商登记注册号；部分企业可能与统一社会信用代码不同或已不单独展示
+  - field_name: 纳税人识别号
+    description: 税务识别号码，通常与统一社会信用代码一致
+  - field_name: 组织机构代码
+    description: 组织机构代码，通常为统一社会信用代码中的第9至17位
+  - field_name: 注册地址
+    description: 完整工商注册地址
+  - field_name: 经营范围
+    description: 工商登记经营范围全文或摘要
+  - field_name: 所属行业
+    description: 企业所属行业，如制造业/批发和零售业/软件和信息技术服务业等
+  - field_name: 官网
+    description: 企业官方网站URL；优先提取官网，其次提取权威来源中的网站字段
+  - field_name: 参保人数
+    description: 社保参保人数或员工人数；优先使用年报参保人数
+  - field_name: 人员规模
+    description: 招聘平台、官网或商业数据库披露的员工规模区间，如50-99人、100-499人
+  - field_name: 股东信息
+    description: 股东/发起人名称、持股比例、认缴出资额、认缴日期等
+  - field_name: 主要人员
+    description: 董事、监事、高级管理人员、经理等主要人员名单及职务
+  - field_name: 分支机构
+    description: 企业下属分公司或分支机构名称、状态、地区等
+  - field_name: 对外投资
+    description: 企业投资的其他企业名称、持股比例、投资金额、状态等
+  - field_name: 变更记录
+    description: 工商变更事项、变更前内容、变更后内容、变更日期
+  - field_name: 经营异常
+    description: 是否列入经营异常名录、列入原因、列入日期、移出日期等
+  - field_name: 行政处罚
+    description: 行政处罚记录，包括处罚机关、处罚内容、处罚日期等
+  - field_name: 严重违法失信
+    description: 是否存在严重违法失信记录及相关详情
+  - field_name: 来源名称
+    description: 字段来源名称，如国家企业信用信息公示系统/天眼查/企查查/爱企查/启信宝/官网等
+summary_prompt_file: ../prompts/dimensions/basic_info.md

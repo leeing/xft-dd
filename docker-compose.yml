@@ -1,0 +1,11 @@
+services:
+  xft:
+    build: .
+    image: xft:latest
+    env_file:
+      - .env
+    volumes:
+      - ./runs:/app/runs
+      - ./batch_runs:/app/batch_runs
+      # Uncomment to override the built-in config:
+      # - ./config:/app/config:ro

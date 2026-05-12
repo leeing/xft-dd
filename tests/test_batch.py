@@ -7,7 +7,7 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-from diligence.batch import _check_concurrency_limit, parse_input_file
+from diligence.batch import _check_concurrency_limit, _dry_run_preview, parse_input_file
 from diligence.config import AppConfig, BatchConfig, Dimension
 
 
@@ -22,6 +22,8 @@ def _make_cfg(batch_runs_dir: str = "batch_runs") -> AppConfig:
                 enabled=True,
                 required=True,
                 minimax_queries=["{target} 工商注册"],
+                metaso_queries=["{target} 法定代表人"],
+                metaso_mode="chat",
                 summary_prompt="分析{target}\n{results}",
             )
         ],
@@ -106,6 +108,15 @@ def test_concurrency_limit_warns_over_30(capsys: pytest.CaptureFixture) -> None:
         force=False,
     )
     assert "warning" in capsys.readouterr().err.lower() or "⚠️" in capsys.readouterr().err
+
+
+def test_batch_dry_run_verbose_includes_metaso_queries(capsys: pytest.CaptureFixture) -> None:
+    cfg = _make_cfg()
+    _dry_run_preview(["公司A"], cfg.dimensions, cfg, verbose=True)
+    err = capsys.readouterr().err
+    assert "MiniMax Search" in err
+    assert "Metaso (chat mode" in err
+    assert "公司A 法定代表人" in err
 
 
 async def test_batch_company_failure_does_not_stop_others(tmp_path: Path) -> None:

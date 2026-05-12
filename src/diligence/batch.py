@@ -227,6 +227,22 @@ def _exit_code(results: list[CompanyRunResult]) -> int:
     return 0
 
 
+def _normalize_metaso_target(target: str) -> str:
+    """Match Metaso query target normalisation used by search_node."""
+    return target.replace("(", "（").replace(")", "）")
+
+
+def _write_dimension_query_preview(dim: Dimension, target: str) -> None:
+    sys.stderr.write("    MiniMax Search:\n")
+    for q in dim.minimax_queries:
+        sys.stderr.write(f"      - {q.replace('{target}', target)}\n")
+    if dim.metaso_queries:
+        metaso_target = _normalize_metaso_target(target)
+        sys.stderr.write(f"    Metaso ({dim.metaso_mode} mode, size={dim.metaso_search_size}):\n")
+        for q in dim.metaso_queries:
+            sys.stderr.write(f"      - {q.replace('{target}', metaso_target)}\n")
+
+
 def _dry_run_preview(targets: list[str], dims: list[Dimension], config: AppConfig, *, verbose: bool) -> None:  # noqa: FBT001
     batch_cfg = config.batch
     est = batch_cfg.company_concurrency * config.dimension_concurrency * config.query_concurrency_per_dimension
@@ -245,8 +261,7 @@ def _dry_run_preview(targets: list[str], dims: list[Dimension], config: AppConfi
         sys.stderr.write(f"    {i}. {t}\n")
     if verbose and targets and dims:
         sys.stderr.write(f"\n  [sample] dimension '{dims[0].name}' queries for '{targets[0]}':\n")
-        for q in dims[0].minimax_queries:
-            sys.stderr.write(f"    - {q.replace('{target}', targets[0])}\n")
+        _write_dimension_query_preview(dims[0], targets[0])
     sys.stderr.write("--\n")
 
 
@@ -261,6 +276,7 @@ async def _process_one(  # noqa: PLR0913
     resume: bool,
     batch_dir: str | None,
     config_path: str = "",
+    all_dimension_names: dict[str, str] | None = None,
 ) -> CompanyRunResult:
     """Process a single company with resume support."""
     th = _target_hash(target)
@@ -289,6 +305,7 @@ async def _process_one(  # noqa: PLR0913
                 config=config,
                 output_dir=str(company_dir),
                 config_path=config_path,
+                all_dimension_names=all_dimension_names,
             )
             return result.model_copy(update={"index": idx})
         except (RuntimeError, ValueError, OSError) as exc:
@@ -313,6 +330,7 @@ async def run_batch(  # noqa: PLR0913, PLR0911
     name_column: str,
 ) -> int:
     """Run batch due diligence for a list of companies."""
+    all_dimension_names = {d.id: d.name for d in config.dimensions if d.enabled}
     dims = [d for d in config.dimensions if d.enabled]
     if only:
         if err := validate_dimension_ids(only, config.dimensions, label="--only"):
@@ -376,6 +394,7 @@ async def run_batch(  # noqa: PLR0913, PLR0911
                     resume=resume,
                     batch_dir=batch_dir,
                     config_path=config_path,
+                    all_dimension_names=all_dimension_names,
                 )
                 for i, t in enumerate(targets)
             ]

@@ -309,17 +309,17 @@ def test_save_node_no_metaso_line_when_zero(tmp_path: Path, capsys: pytest.Captu
     assert "Metaso" not in err
 
 
-# ── config.yaml: fetchable_domains ────────────────────────────────────────────
+# ── config.yaml: fetch_blocked_domains ────────────────────────────────────────
 
 
-def test_config_fetchable_domains_loaded(tmp_path: Path) -> None:
-    """fetchable_domains list is correctly loaded from config.yaml."""
+def test_config_fetch_blocked_domains_loaded(tmp_path: Path) -> None:
+    """fetch_blocked_domains list is correctly loaded from config.yaml."""
     content = textwrap.dedent("""
         schema_version: "1.0"
         merge_prompt: "x"
-        fetchable_domains:
-          - "qcc.com"
-          - "cnipa.gov.cn"
+        fetch_blocked_domains:
+          - "qixin.com"
+          - "tianyancha.com"
         dimensions:
           - id: basic_info
             name: 工商基本信息
@@ -332,11 +332,11 @@ def test_config_fetchable_domains_loaded(tmp_path: Path) -> None:
     p = tmp_path / "config.yaml"
     p.write_text(content)
     cfg = load_config(str(p))
-    assert cfg.fetchable_domains == ["qcc.com", "cnipa.gov.cn"]
+    assert cfg.fetch_blocked_domains == ["qixin.com", "tianyancha.com"]
 
 
-def test_config_fetchable_domains_defaults_to_empty(tmp_path: Path) -> None:
-    """fetchable_domains defaults to [] when not specified."""
+def test_config_fetch_blocked_domains_defaults_to_empty(tmp_path: Path) -> None:
+    """fetch_blocked_domains defaults to [] when not specified."""
     content = textwrap.dedent("""
         schema_version: "1.0"
         merge_prompt: "x"
@@ -352,4 +352,4 @@ def test_config_fetchable_domains_defaults_to_empty(tmp_path: Path) -> None:
     p = tmp_path / "config.yaml"
     p.write_text(content)
     cfg = load_config(str(p))
-    assert cfg.fetchable_domains == []
+    assert cfg.fetch_blocked_domains == []

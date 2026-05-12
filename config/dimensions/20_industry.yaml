@@ -1,0 +1,13 @@
+id: industry
+name: 行业与细分
+order: 20
+enabled: true
+required: false
+minimax_queries:
+- '"{target}" 所属行业'
+- '"{target}" 经营范围'
+- '"{target}" 主营业务'
+- '"{target}" 主营产品'
+metaso_queries:
+- '{target}属于什么行业？国民经济行业分类是什么？主营业务和产品是什么？'
+summary_prompt_file: ../prompts/dimensions/industry.md

@@ -7,6 +7,7 @@ Credentials are read exclusively through diligence.settings (pydantic-settings).
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import httpx
 import structlog
@@ -34,9 +35,12 @@ async def run_search(
     query: str,
     dimension_id: str,
     timeout: int = 30,
-    max_results: int = 10,
+    max_results: int = 0,
 ) -> list[SearchItem]:
     """Call MiniMax /v1/coding_plan/search and return parsed SearchItems.
+
+    max_results > 0 applies a local cap.  max_results <= 0 keeps all results
+    returned by MiniMax.
 
     Raises:
         httpx.TimeoutException: if the request exceeds *timeout* seconds.
@@ -49,12 +53,14 @@ async def run_search(
         "Content-Type": "application/json",
     }
 
-    async with httpx.AsyncClient(timeout=timeout) as client:
+    async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
         response = await client.post(url, headers=headers, json={"q": query})
         response.raise_for_status()
 
     data = response.json()
-    organic = data.get("organic", [])[:max_results]
+    organic = data.get("organic", [])
+    if max_results > 0:
+        organic = organic[:max_results]
     now = datetime.now(UTC)
 
     items: list[SearchItem] = []
@@ -70,6 +76,7 @@ async def run_search(
                 snippet=snippet,
                 query=query,
                 dimension_id=dimension_id,
+                source="minimax",
                 rank=rank,
                 fetched_at=now,
             )
@@ -79,12 +86,58 @@ async def run_search(
     return items
 
 
+_TRACKING_QUERY_PREFIXES = ("utm_",)
+_TRACKING_QUERY_KEYS = {"from", "source", "spm"}
+
+
+def normalize_url(url: str | None) -> str | None:
+    """Normalize a URL for dedup comparison without mutating its semantics.
+
+    - lowercase scheme and host
+    - strip www. prefix
+    - strip trailing / from path
+    - strip tracking query params (utm_*, from, source, spm)
+    - sort query params for deterministic comparison
+    - preserve business query params (id, q, etc.)
+
+    Returns None when url is None. Unparseable URLs are returned as-is (stripped).
+    """
+    if not url:
+        return None
+    parsed = urlparse(url.strip())
+    if not parsed.netloc:
+        return url.strip()
+
+    scheme = parsed.scheme.lower() or "https"
+    netloc = parsed.netloc.lower().removeprefix("www.")
+    path = parsed.path.rstrip("/") or "/"
+
+    query_pairs: list[tuple[str, str]] = []
+    for key, value in parse_qsl(parsed.query, keep_blank_values=True):
+        key_lower = key.lower()
+        if key_lower in _TRACKING_QUERY_KEYS:
+            continue
+        if key_lower.startswith(_TRACKING_QUERY_PREFIXES):
+            continue
+        query_pairs.append((key, value))
+
+    query_pairs.sort()
+    query = urlencode(query_pairs, doseq=True)
+    return urlunparse((scheme, netloc, path, "", query, ""))
+
+
 def dedup_items(items: list[SearchItem]) -> list[SearchItem]:
-    """Deduplicate by URL (preferred) or title+snippet when URL is absent."""
+    """Deduplicate by normalized URL (preferred) or title+snippet when URL is absent.
+
+    Uses normalize_url() so that minor URL variations (www, trailing slash,
+    tracking params) are treated as the same item.  The first occurrence wins,
+    meaning Metaso source items (prepended before MiniMax items) take priority.
+    """
     seen: set[str] = set()
     result: list[SearchItem] = []
     for item in items:
-        key = item.url if item.url else (item.title + item.snippet)
+        norm = normalize_url(item.url)
+        key = f"url:{norm}" if norm else f"text:{item.title}{item.snippet}"
         if key not in seen:
             seen.add(key)
             result.append(item)

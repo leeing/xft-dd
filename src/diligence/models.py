@@ -26,9 +26,10 @@ class SearchItem(BaseModel):
     title: str
     url: str | None = None
     snippet: str
-    full_text: str = ""  # Playwright-fetched full page text; empty = not fetched
+    full_text: str = ""  # crawl4ai-fetched full page text; empty = not fetched
     query: str
     dimension_id: str
+    source: Literal["minimax", "metaso_chat", "metaso_search"] = "minimax"
     rank: int | None = None
     fetched_at: datetime
 
@@ -41,6 +42,7 @@ class DimensionSearchResult(BaseModel):
     status: Literal["success", "partial", "failed"]
     items: list[SearchItem]
     error: str | None = None
+    extractions: dict[str, object] | None = None  # structured field extraction results; None = not performed
 
 
 class DimensionSummary(BaseModel):
@@ -48,7 +50,7 @@ class DimensionSummary(BaseModel):
 
     dimension_id: str
     dimension_name: str
-    status: Literal["success", "partial", "failed"]
+    status: Literal["success", "partial", "failed", "not_run"]
     summary: str
     confidence: Literal["高", "中", "低", "待核实"]
     uncertain_facts: list[str]

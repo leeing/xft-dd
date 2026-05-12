@@ -1,0 +1,13 @@
+id: listing
+name: 上市情况
+order: 80
+enabled: true
+required: false
+minimax_queries:
+  - '"{target}" 上市'
+  - '"{target}" 股票代码'
+metaso_mode: search
+metaso_search_size: 1
+metaso_queries:
+  - "{target}是否在A股、港股或美股上市？股票代码是什么？是否有IPO或拟上市计划？"
+summary_prompt_file: ../prompts/dimensions/listing.md
