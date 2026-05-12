@@ -148,6 +148,7 @@ async def test_enrich_items_snippet_match_fetched() -> None:
         )
     ]
     fetch_count = 0
+    mock_crawler = MagicMock()
 
     async def fake_fetch(url: str, crawler: object, timeout_ms: int = 25000, max_chars: int = 6900) -> str:
         nonlocal fetch_count
@@ -155,7 +156,7 @@ async def test_enrich_items_snippet_match_fetched() -> None:
         return "full page content " * 50
 
     with patch("diligence.utils.fetch._fetch_page_markdown", new=AsyncMock(side_effect=fake_fetch)):
-        result = await enrich_items(items, blocked_domains=[], target=TARGET)
+        result = await enrich_items(items, blocked_domains=[], target=TARGET, crawler=mock_crawler)
 
     assert fetch_count == 1
     assert result[0].full_text != ""
@@ -190,7 +191,13 @@ async def test_enrich_items_preserves_order() -> None:
         _make_item("https://qcc.com/2", title=TARGET + " B"),
         _make_item("https://other.com/3", title=TARGET + " C"),
     ]
-    result = await enrich_items(items, blocked_domains=[], target=TARGET)
+    mock_crawler = MagicMock()
+
+    async def fake_fetch(url: str, crawler: object, timeout_ms: int = 25000, max_chars: int = 6900) -> str:
+        return "full page content " * 50
+
+    with patch("diligence.utils.fetch._fetch_page_markdown", new=AsyncMock(side_effect=fake_fetch)):
+        result = await enrich_items(items, blocked_domains=[], target=TARGET, crawler=mock_crawler)
     assert [i.title for i in result] == [TARGET + " A", TARGET + " B", TARGET + " C"]
 
 
@@ -258,12 +265,14 @@ async def test_enrich_items_returns_original_order_after_priority_crawl() -> Non
     ]
     fetch_urls: list[str] = []
 
+    mock_crawler = MagicMock()
+
     async def record_fetch(url: str, crawler: object, timeout_ms: int = 25000, max_chars: int = 6900) -> str:
         fetch_urls.append(url)
         return "content " * 50
 
     with patch("diligence.utils.fetch._fetch_page_markdown", new=AsyncMock(side_effect=record_fetch)):
-        result = await enrich_items(items, blocked_domains=[], target=TARGET)
+        result = await enrich_items(items, blocked_domains=[], target=TARGET, crawler=mock_crawler)
 
     # Output order preserved
     assert [i.title for i in result] == [TARGET + " Second", TARGET + " First", TARGET + " Third"]
@@ -279,13 +288,14 @@ async def test_enrich_items_avoid_items_not_fetched_but_preserved() -> None:
         _make_item("https://example.com/3", title=TARGET + " C"),  # neutral → fetched
     ]
     fetch_urls: list[str] = []
+    mock_crawler = MagicMock()
 
     async def record_fetch(url: str, crawler: object, timeout_ms: int = 25000, max_chars: int = 6900) -> str:
         fetch_urls.append(url)
         return "content " * 50
 
     with patch("diligence.utils.fetch._fetch_page_markdown", new=AsyncMock(side_effect=record_fetch)):
-        result = await enrich_items(items, blocked_domains=[], target=TARGET)
+        result = await enrich_items(items, blocked_domains=[], target=TARGET, crawler=mock_crawler)
 
     assert len(result) == 3  # all items preserved
     assert result[1].full_text == ""  # qcc.com avoid: not fetched
