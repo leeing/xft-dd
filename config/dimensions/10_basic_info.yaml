@@ -45,16 +45,8 @@ extract_fields:
     description: 工商登记经营范围全文或摘要
   - field_name: 所属行业
     description: 企业所属行业，如制造业/批发和零售业/软件和信息技术服务业等
-  - field_name: 曾用名
-    description: 企业历史名称；没有则标记未找到
-  - field_name: 英文名
-    description: 企业英文名称；没有则标记未找到
   - field_name: 官网
     description: 企业官方网站URL；优先提取官网，其次提取权威来源中的网站字段
-  - field_name: 联系电话
-    description: 公开披露的联系电话，可能来自年报、官网、招聘网站或商业数据库
-  - field_name: 电子邮箱
-    description: 公开披露的企业邮箱，可能来自年报、官网、招聘网站或商业数据库
   - field_name: 参保人数
     description: 社保参保人数或员工人数；优先使用年报参保人数
   - field_name: 人员规模
