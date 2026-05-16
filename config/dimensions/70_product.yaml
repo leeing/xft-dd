@@ -5,7 +5,6 @@ enabled: true
 required: false
 minimax_queries:
   - '"{target}" 主营产品'
-  - '"{target}" 核心产品'
   - '"{target}" 客户'
   - '"{target}" 供应商'
 metaso_mode: search

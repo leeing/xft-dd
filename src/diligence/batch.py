@@ -15,6 +15,7 @@ import sys
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 
 import structlog
 
@@ -315,7 +316,7 @@ async def _process_one(  # noqa: PLR0913
             return CompanyRunResult(index=idx, target=target, status="failed", error=str(exc))
 
 
-async def run_batch(  # noqa: PLR0913, PLR0911
+async def run_batch(  # noqa: C901, PLR0913, PLR0911
     *,
     input_file: str,
     config: AppConfig,
@@ -323,6 +324,7 @@ async def run_batch(  # noqa: PLR0913, PLR0911
     only: list[str] | None,
     skip: list[str] | None,
     dry_run: bool,
+    crawler_mode: bool = False,
     resume: bool,
     batch_dir: str | None,
     force_high_concurrency: bool,
@@ -363,6 +365,43 @@ async def run_batch(  # noqa: PLR0913, PLR0911
     if dry_run:
         _dry_run_preview(targets, dims, config, verbose=verbose)
         return 0
+
+    if crawler_mode:
+        from diligence.crawler_mode import CrawlerStats, run_crawler_mode_for_target
+        from diligence.settings import settings
+
+        if not settings.cache_enabled:
+            sys.stderr.write("error: --crawler-mode requires CACHE_ENABLED=true\n")
+            return 1
+        sys.stderr.write(f"batch crawler mode: {len(targets)} companies, concurrency={batch_cfg.company_concurrency}\n")
+        sys.stderr.write("--\n")
+        semaphore = asyncio.Semaphore(batch_cfg.company_concurrency)
+        total_stats = CrawlerStats()
+
+        async def crawl_one(idx: int, target: str) -> CrawlerStats:
+            async with semaphore:
+                sys.stderr.write(f"  [{idx}/{len(targets)}] {target}\n")
+                return await run_crawler_mode_for_target(target, config)
+
+        crawler_results = await asyncio.gather(
+            *(crawl_one(i + 1, t) for i, t in enumerate(targets)),
+            return_exceptions=True,
+        )
+        for i, result in enumerate(crawler_results):
+            if isinstance(result, Exception):
+                log.error("company_crashed", target=targets[i], error=str(result))
+                sys.stderr.write(f"  [{i + 1}/{len(targets)}] {targets[i]} -- CRASHED: {result}\n")
+                continue
+            total_stats.add(cast(CrawlerStats, result))
+        sys.stderr.write("--\n")
+        sys.stderr.write(
+            "crawler complete: "
+            f"targets={total_stats.targets}, queries={total_stats.queries_total}, "
+            f"l1_hit={total_stats.l1_hits}, l1_miss={total_stats.l1_misses}, "
+            f"search_failed={total_stats.search_failed}, urls={total_stats.urls_considered}, "
+            f"full_text={total_stats.full_text_items}\n"
+        )
+        return 0 if total_stats.search_failed == 0 else 1
 
     try:
         ctx = _init_batch_dir(targets, config, resume=resume, batch_dir=batch_dir)

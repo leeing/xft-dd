@@ -6,7 +6,6 @@ required: false
 minimax_queries:
   - '"{target}" 专利'
   - '"{target}" 商标'
-  - '"{target}" 软件著作权'
 metaso_mode: search
 metaso_search_size: 1
 metaso_queries:

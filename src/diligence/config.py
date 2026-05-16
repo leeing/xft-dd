@@ -84,7 +84,7 @@ class AppConfig(BaseModel):
 
     # crawl4ai fetch parameters (used when fetch_enabled=true on a dimension)
     crawl_fetch_timeout: int = Field(default=25, ge=5, le=120)
-    crawl_fetch_concurrency: int = Field(default=2, ge=1, le=10)
+    crawl_fetch_concurrency: int = Field(default=30, ge=1, le=100)
     max_full_text_chars: int = Field(default=6900, ge=100, le=100000)
 
     # structured field extraction (used when dimension has extract_fields)

@@ -11,6 +11,7 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import httpx
 import structlog
+from sqlalchemy.exc import SQLAlchemyError
 
 from diligence.models import SearchItem, make_item_id
 from diligence.settings import settings
@@ -28,6 +29,11 @@ def _search_url() -> str:
     base = settings.minimax_base_url.rstrip("/")
     root = base[: base.rfind("/v1")] if "/v1" in base else base
     return f"{root}/v1{_SEARCH_PATH}"
+
+
+def search_cache_params(*, max_results: int) -> dict[str, object]:
+    """Return cache-affecting MiniMax Search parameters."""
+    return {"endpoint": _search_url(), "max_results": max_results}
 
 
 async def run_search(
@@ -48,6 +54,20 @@ async def run_search(
         ValueError: if the response body is not valid JSON / missing expected keys.
     """
     url = _search_url()
+    cache_params = search_cache_params(max_results=max_results)
+    if settings.cache_enabled is True and settings.search_cache_enabled is True:
+        try:
+            from diligence.cache.repository import SearchCacheKey, SearchCacheRepo
+
+            key = SearchCacheKey(provider="minimax", query_text=query, params=cache_params)
+            cached = await SearchCacheRepo().get_items(key, dimension_id=dimension_id)
+        except SQLAlchemyError as exc:
+            log.warning("search_cache_read_failed", query=query[:40], error=str(exc))
+        else:
+            if cached is not None:
+                log.debug("search_cache_hit", query=query[:40], items=len(cached))
+                return cached
+
     headers = {
         "Authorization": f"Bearer {settings.minimax_api_key}",
         "Content-Type": "application/json",
@@ -83,6 +103,14 @@ async def run_search(
         )
 
     log.debug("search_done", query=query[:40], items=len(items))
+    if settings.cache_enabled is True and settings.search_cache_enabled is True:
+        try:
+            from diligence.cache.repository import SearchCacheKey, SearchCacheRepo
+
+            key = SearchCacheKey(provider="minimax", query_text=query, params=cache_params)
+            await SearchCacheRepo().put_success(key, raw_response=data, organic=organic)
+        except SQLAlchemyError as exc:
+            log.warning("search_cache_write_failed", query=query[:40], error=str(exc))
     return items
 
 

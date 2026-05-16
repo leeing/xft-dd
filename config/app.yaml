@@ -5,7 +5,7 @@ search_timeout_seconds: 30
 max_results_per_query: 0
 runs_dir: runs
 crawl_fetch_timeout: 25
-crawl_fetch_concurrency: 10
+crawl_fetch_concurrency: 100
 max_full_text_chars: 10000
 fetch_blocked_domains:
   - qixin.com

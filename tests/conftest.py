@@ -6,6 +6,7 @@ from collections.abc import Generator
 
 import pytest
 import diligence.nodes.summarize_node as sn
+from diligence.settings import settings
 
 
 @pytest.fixture(autouse=True)
@@ -14,3 +15,9 @@ def reset_openai_client() -> Generator[None, None, None]:
     sn._ai_client = None
     yield
     sn._ai_client = None
+
+
+@pytest.fixture(autouse=True)
+def disable_sql_cache_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep unit tests isolated from a developer's real .env cache settings."""
+    monkeypatch.setattr(settings, "cache_enabled", False)

@@ -140,6 +140,30 @@ def test_settings_all_three_keys_decoded_independently() -> None:
     assert s.llm_api_key == k3
 
 
+def test_settings_sql_cache_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    """SQL cache is opt-in and defaults to local SQLite when enabled later."""
+    for name in (
+        "CACHE_ENABLED",
+        "CACHE_DATABASE_URL",
+        "CACHE_CREATE_TABLES",
+        "CACHE_POLICY_VERSION",
+        "CACHE_WORKER_ID",
+        "SEARCH_CACHE_ENABLED",
+        "SEARCH_CACHE_TTL_DAYS",
+        "FETCH_CACHE_ENABLED",
+        "FETCH_CACHE_TTL_DAYS",
+        "FETCH_FAILED_RETRY_HOURS",
+        "FETCH_CACHE_LOCK_MINUTES",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    s = Settings(_env_file=None)
+    assert s.cache_enabled is False
+    assert s.cache_database_url.startswith("sqlite+aiosqlite:///")
+    assert s.search_cache_enabled is True
+    assert s.fetch_cache_enabled is True
+    assert s.fetch_cache_lock_minutes == 10
+
+
 # ── keys.py CLI helpers ────────────────────────────────────────────────────
 
 

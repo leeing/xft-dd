@@ -68,6 +68,23 @@ class Settings(BaseSettings):
     llm_base_url: str = Field(default="https://api.minimax.io/v1")
     llm_model: str = Field(default="MiniMax-M2.7-Highspeed")
 
+    # SQL cache — optional L1 search cache + L2 fetch cache.
+    # Supports sqlite+aiosqlite:///... for local development and
+    # postgresql+asyncpg://... for shared remote caches.
+    cache_enabled: bool = Field(default=False)
+    cache_database_url: str = Field(default="sqlite+aiosqlite:///cache/diligence_cache.db")
+    cache_create_tables: bool = Field(default=True)
+    cache_policy_version: str = Field(default="v1-202605")
+    cache_worker_id: str = Field(default="local-dev")
+
+    search_cache_enabled: bool = Field(default=True)
+    search_cache_ttl_days: int = Field(default=14)
+
+    fetch_cache_enabled: bool = Field(default=True)
+    fetch_cache_ttl_days: int = Field(default=30)
+    fetch_failed_retry_hours: int = Field(default=24)
+    fetch_cache_lock_minutes: int = Field(default=10)
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

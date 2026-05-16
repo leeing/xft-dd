@@ -34,6 +34,10 @@ uv run main.py --batch companies.csv --name-column company_name
 # 批量续跑（跳过已完成企业）
 uv run main.py --batch companies.txt --resume --batch-dir batch_runs/20260510-...
 
+# 爬虫模式：只构建 MiniMax L1 + crawl4ai L2 缓存，不跑 Metaso/LLM/报告
+CACHE_ENABLED=true uv run main.py "某公司" --crawler-mode
+CACHE_ENABLED=true uv run main.py --batch companies.txt --crawler-mode
+
 # 显式指定配置目录或兼容旧单文件配置
 uv run main.py "某公司" --config config/
 uv run main.py "某公司" --config config.yaml
@@ -104,6 +108,20 @@ METASO_VERIFY_TLS=true
 LLM_API_KEY=
 LLM_BASE_URL=https://api.minimax.io/v1
 LLM_MODEL=MiniMax-M2.7-Highspeed
+
+# SQL cache：可选；本地 SQLite，协作/生产建议 PostgreSQL
+CACHE_ENABLED=false
+CACHE_DATABASE_URL=sqlite+aiosqlite:///cache/diligence_cache.db
+# CACHE_DATABASE_URL=postgresql+asyncpg://user:password@host:5432/xft_cache
+CACHE_CREATE_TABLES=true
+CACHE_POLICY_VERSION=v1-202605
+
+SEARCH_CACHE_ENABLED=true
+SEARCH_CACHE_TTL_DAYS=14
+FETCH_CACHE_ENABLED=true
+FETCH_CACHE_TTL_DAYS=30
+FETCH_FAILED_RETRY_HOURS=24
+FETCH_CACHE_LOCK_MINUTES=10
 ```
 
 API key 支持 `SM4:` 前缀密文存储，相关工具在 `src/diligence/keys.py`。
@@ -182,6 +200,54 @@ MiniMax Search -> dedup -> Metaso prepend -> dedup -> crawl4ai -> summarize
 ```
 
 第二次去重用于处理 Metaso source items 与 MiniMax 裸搜索结果之间的重复 URL。
+
+### 2.1 SQL 两级缓存（可选）
+
+实现：`src/diligence/cache/`
+
+开启 `CACHE_ENABLED=true` 后，系统会使用 SQL 数据库缓存两个高成本环节：
+
+```text
+L1 search_cache:
+MiniMax query + params + policy_version -> raw_response_json + SearchItem URL 索引
+
+L2 fetch_cache:
+normalized_url + policy_version -> crawl4ai markdown + content_hash + status
+```
+
+MiniMax 路径会先查 L1，未命中才调用 MiniMax Search；随后所有 URL 都会查 L2，未命中才调用 crawl4ai。Metaso 不查 L1，但 Metaso 返回的真实 URL 会复用 L2。
+
+`content_hash` 基于 crawl4ai markdown 的轻量规范化文本计算：统一换行、去首尾空白、压缩连续空行后做 SHA-256。它用于判断内容变化，不参与 URL 去重。
+
+多人协作时，L2 在 crawl 前会尝试写入 URL 级 lease（`locked_by` / `locked_until`）。抢不到 lease 的 worker 会保留原 snippet 继续流程，避免同一个 URL 被并发重复抓取。
+
+第一版使用 SQLAlchemy metadata + `create_all` 自动建表，方便后续接入 Alembic；不要在业务代码中手写分散的 `CREATE TABLE`。
+
+### 2.2 爬虫模式
+
+实现：`src/diligence/crawler_mode.py`
+
+当提示词、字段提取和报告策略还在优化时，可以先用爬虫模式沉淀网页缓存资产：
+
+```bash
+CACHE_ENABLED=true uv run main.py --batch companies.txt --crawler-mode
+```
+
+爬虫模式只执行：
+
+```text
+MiniMax Search -> L1 search_cache -> crawl4ai -> L2 fetch_cache
+```
+
+规则：
+
+- 只使用 `minimax_queries`，不调用 Metaso。
+- 不调用 LLM，不生成最终报告。
+- 每个 MiniMax query 先查 L1；如果 L1 已命中，整条 query 直接跳过，不再检查该 query 下 URL 的 L2。
+- 如果 L1 未命中，调用 MiniMax Search 写入 L1，再对返回 URL 走 crawl4ai/L2 缓存。
+- L2 仍遵守 `source_registry`、`fetch_blocked_domains`、URL lease 和失败冷却策略。
+
+完整模式仍是默认模式：MiniMax 可用 L1/L2，Metaso 不查 L1 但会复用 L2，随后继续结构化提取、摘要、合并报告。
 
 ### 3. Metaso 增强
 

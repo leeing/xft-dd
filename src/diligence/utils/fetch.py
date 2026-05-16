@@ -12,20 +12,107 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from urllib.parse import unquote, urlparse
 
 import structlog
 from crawl4ai import AsyncWebCrawler  # type: ignore[import-untyped]
+from sqlalchemy.exc import SQLAlchemyError
 
 from diligence.models import SearchItem
+from diligence.settings import settings
 from diligence.utils.source_registry import classify_source
 
 log = structlog.get_logger(__name__)
 
 _METASO_SCHEME = "metaso://"
 _SHORT_CRAWL_THRESHOLD = 100
+_UNSAFE_CRAWL_DOMAINS = ("smeok.com",)
+_DOWNLOAD_EXTENSIONS = frozenset(
+    {
+        ".7z",
+        ".doc",
+        ".docx",
+        ".pdf",
+        ".ppt",
+        ".pptx",
+        ".rar",
+        ".xls",
+        ".xlsx",
+        ".zip",
+    }
+)
 
 _FETCH_BIAS_RANK: dict[str, int] = {"prefer": 0, "neutral": 1, "unknown": 2, "avoid": 3}
 _AUTHORITY_RANK: dict[str, int] = {"high": 0, "medium": 1, "low": 2, "unknown": 3}
+
+
+def _is_unsafe_crawl_url(url: str) -> bool:
+    """Return True for URLs that should be kept as snippets instead of crawled."""
+    parsed = urlparse(url)
+    host = parsed.netloc.lower().removeprefix("www.")
+    if any(host == domain or host.endswith(f".{domain}") for domain in _UNSAFE_CRAWL_DOMAINS):
+        return True
+
+    path = unquote(parsed.path).lower()
+    return any(path.endswith(ext) for ext in _DOWNLOAD_EXTENSIONS)
+
+
+async def _read_fetch_cache(url: str) -> str | None:
+    """Return cached markdown for *url* when the optional SQL cache is enabled."""
+    if not (settings.cache_enabled is True and settings.fetch_cache_enabled is True):
+        return None
+    try:
+        from diligence.cache.repository import FetchCacheRepo
+
+        hit = await FetchCacheRepo().get_markdown(url)
+    except SQLAlchemyError as exc:
+        log.warning("fetch_cache_read_failed", url=url, error=str(exc))
+        return None
+    if hit is None:
+        return None
+    log.debug("fetch_cache_hit", url=url, chars=len(hit.markdown))
+    return hit.markdown
+
+
+async def _write_fetch_cache_success(url: str, text: str) -> None:
+    """Persist successful crawl markdown when the optional SQL cache is enabled."""
+    if not (settings.cache_enabled is True and settings.fetch_cache_enabled is True):
+        return
+    try:
+        from diligence.cache.repository import FetchCacheRepo
+
+        await FetchCacheRepo().put_success(url, text)
+    except SQLAlchemyError as exc:
+        log.warning("fetch_cache_write_failed", url=url, error=str(exc))
+
+
+async def _write_fetch_cache_failed(url: str, error: str) -> None:
+    """Persist crawl failure metadata when the optional SQL cache is enabled."""
+    if not (settings.cache_enabled is True and settings.fetch_cache_enabled is True):
+        return
+    try:
+        from diligence.cache.repository import FetchCacheRepo
+
+        await FetchCacheRepo().put_failed(url, error)
+    except SQLAlchemyError as exc:
+        log.warning("fetch_cache_write_failed", url=url, error=str(exc))
+
+
+async def _acquire_fetch_cache_lease(url: str) -> bool:
+    """Reserve a URL for crawl when SQL cache is enabled.
+
+    Returns True when crawling should proceed.  When another worker owns the
+    lease, return False so this run keeps the original snippet and moves on.
+    """
+    if not (settings.cache_enabled is True and settings.fetch_cache_enabled is True):
+        return True
+    try:
+        from diligence.cache.repository import FetchCacheRepo
+
+        return await FetchCacheRepo().acquire_lease(url)
+    except SQLAlchemyError as exc:
+        log.warning("fetch_cache_lease_failed", url=url, error=str(exc))
+        return True
 
 
 def _crawl_priority_key(item: SearchItem) -> tuple[int, int]:
@@ -42,7 +129,7 @@ def _crawl_priority_key(item: SearchItem) -> tuple[int, int]:
     )
 
 
-def _should_fetch(  # noqa: PLR0913
+def _should_fetch(  # noqa: PLR0911, PLR0913
     url: str | None,
     title: str,
     snippet: str,
@@ -59,6 +146,8 @@ def _should_fetch(  # noqa: PLR0913
     - "avoid" pages that already have full_text are not re-fetched.
     """
     if not url or url.startswith(_METASO_SCHEME):
+        return False
+    if _is_unsafe_crawl_url(url):
         return False
     if target not in title and target not in snippet:
         return False
@@ -101,7 +190,9 @@ async def _fetch_page_markdown(
     except TimeoutError:
         log.warning("crawl_timeout", url=url)
         return ""
-    except (OSError, ValueError) as exc:
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:  # noqa: BLE001
         log.warning("crawl_error", url=url, error=str(exc))
         return ""
 
@@ -156,6 +247,13 @@ async def enrich_items(  # noqa: PLR0913, C901
         async def do_fetch(item: SearchItem, url: str) -> SearchItem:
             async with semaphore:
                 src = classify_source(item.url, item.title)
+                cached_text = await _read_fetch_cache(url)
+                if cached_text is not None:
+                    return item.model_copy(update={"full_text": cached_text, "snippet": cached_text[:300]})
+                if not await _acquire_fetch_cache_lease(url):
+                    log.debug("fetch_cache_lease_busy", url=url)
+                    return item
+
                 sys.stderr.write(f"  [fetch] {url[:80]} (bias={src.should_fetch_bias}, auth={src.authority_level})\n")
                 text = await _fetch_page_markdown(
                     url,
@@ -164,8 +262,10 @@ async def enrich_items(  # noqa: PLR0913, C901
                     max_chars=max_full_text_chars,
                 )
                 if text:
+                    await _write_fetch_cache_success(url, text)
                     log.debug("fetch_enriched", url=url, chars=len(text))
                     return item.model_copy(update={"full_text": text, "snippet": text[:300]})
+                await _write_fetch_cache_failed(url, "crawl returned no usable markdown")
                 return item
 
         enriched_map: dict[str, SearchItem] = {}

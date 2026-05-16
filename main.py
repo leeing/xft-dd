@@ -141,6 +141,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--only", help="run only these dimensions (comma-separated)")
     parser.add_argument("--skip", help="skip these dimensions (comma-separated)")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--crawler-mode",
+        action="store_true",
+        help="build MiniMax/crawl4ai SQL cache only; no Metaso/LLM",
+    )
     parser.add_argument("--batch", metavar="INPUT_FILE")
     parser.add_argument("--name-column", default="name")
     parser.add_argument("--resume", action="store_true")
@@ -185,6 +190,7 @@ async def _dispatch(args: argparse.Namespace, only: list[str] | None, skip: list
             only=only,
             skip=skip,
             dry_run=args.dry_run,
+            crawler_mode=args.crawler_mode,
             resume=args.resume,
             batch_dir=args.batch_dir,
             force_high_concurrency=args.force_high_concurrency,
@@ -200,6 +206,10 @@ async def _dispatch(args: argparse.Namespace, only: list[str] | None, skip: list
 
     if args.dry_run:
         return await run_dry_run(target=args.target, config=config, only=only, skip=skip)
+    if args.crawler_mode:
+        from diligence.crawler_mode import run_crawler_mode
+
+        return await run_crawler_mode(target=args.target, config=config, only=only, skip=skip)
     return await run_single(target=args.target, config_path=args.config, only=only, skip=skip)
 
 

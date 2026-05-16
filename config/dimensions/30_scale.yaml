@@ -5,9 +5,6 @@ enabled: true
 required: false
 minimax_queries:
   - '"{target}" 参保人数'
-  - '"{target}" 员工人数'
-  - '"{target}" 研发人员'
-  - '"{target}" 工程师 技术人员 招聘'
 metaso_mode: search
 metaso_search_size: 1
 metaso_queries:
