@@ -93,6 +93,10 @@ class WebSearchQueryRecord(BaseModel):
     status: RecordStatus
     raw_response_path: str | None = None
     error: str | None = None
+    cache_key: str | None = None
+    cache_policy_version: str | None = None
+    provider_params_hash: str | None = None
+    max_results: int | None = None
     created_at: datetime
 
 
@@ -162,6 +166,8 @@ class WebEvidenceRecord(BaseModel):
     resolution: str | None = None
     extraction_model: str | None = None
     extraction_prompt_version: str | None = None
+    extraction_prompt_hash: str | None = None
+    extraction_cache_key: str | None = None
     raw_response_path: str | None = None
     created_at: datetime
 

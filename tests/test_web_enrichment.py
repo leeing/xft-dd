@@ -246,6 +246,13 @@ async def test_run_web_enrichment_writes_cache_and_loads_duckdb(
     assert (out / "search_results.jsonl").exists()
     assert (out / "web_evidence.jsonl").exists()
     assert (out / "plan.json").exists()
+    assert (out / "web_cache_report.json").exists()
+    assert (out / "web_cache_report.md").exists()
+    assert (out.parent / "cache_index.json").exists()
+    cache_index = json.loads((out.parent / "cache_index.json").read_text(encoding="utf-8"))
+    assert cache_index["schema_version"] == "1.1"
+    assert cache_index["queries"][0]["key_hash"]
+    assert "extractions" in cache_index
     assert list((out / "provider_responses").glob("*.json"))
 
     conn = duckdb.connect(str(warehouse), read_only=True)
@@ -257,6 +264,130 @@ async def test_run_web_enrichment_writes_cache_and_loads_duckdb(
         assert "供应商新闻" in claim
     finally:
         conn.close()
+
+
+@pytest.mark.asyncio
+async def test_run_web_enrichment_extract_only_reuses_cached_search(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    warehouse = _build_warehouse(tmp_path)
+    web_config = _write_web_config(tmp_path)
+    dimensions_config = _write_supported_dimensions_config(tmp_path)
+    calls = 0
+
+    def fake_build_provider(_name: str, _config: Any) -> _FakeProvider:
+        nonlocal calls
+        calls += 1
+        return _FakeProvider()
+
+    monkeypatch.setattr("diligence.recommender.web.runner.build_provider", fake_build_provider)
+
+    first = await run_web_enrichment(
+        company_name="广东德美精细化工集团股份有限公司",
+        warehouse_db=str(warehouse),
+        web_config_path=str(web_config),
+        dimensions_config_path=str(dimensions_config),
+        output_root=str(tmp_path / "web"),
+        run_id="web-source",
+        load_to_duckdb=False,
+        force_dimensions=True,
+        use_llm_extraction=False,
+        fetch_pages=False,
+    )
+
+    assert first.status == "success"
+    assert calls == 1
+
+    def fail_build_provider(_name: str, _config: Any) -> _FakeProvider:
+        msg = "provider should not be called in extract-only mode"
+        raise AssertionError(msg)
+
+    monkeypatch.setattr("diligence.recommender.web.runner.build_provider", fail_build_provider)
+
+    second = await run_web_enrichment(
+        company_name="广东德美精细化工集团股份有限公司",
+        warehouse_db=str(warehouse),
+        web_config_path=str(web_config),
+        dimensions_config_path=str(dimensions_config),
+        output_root=str(tmp_path / "web"),
+        run_id="web-extract-only",
+        load_to_duckdb=False,
+        force_dimensions=True,
+        use_llm_extraction=False,
+        fetch_pages=False,
+        extract_only=True,
+        source_run_id="web-source",
+    )
+
+    assert second.status == "success"
+    assert second.queries == 1
+    assert second.results == 1
+    assert second.evidence == 1
+    out = Path(second.output_dir)
+    assert (out / "queries.jsonl").exists()
+    assert (out / "search_results.jsonl").exists()
+    assert (out / "web_evidence.jsonl").exists()
+    report = json.loads((out / "web_cache_report.json").read_text(encoding="utf-8"))
+    assert report["cache"]["search_reused"] == 1
+    assert report["cache"]["extraction_reused"] == 1
+
+
+@pytest.mark.asyncio
+async def test_run_web_enrichment_provider_config_change_invalidates_search_cache(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    warehouse = _build_warehouse(tmp_path)
+    web_config = _write_web_config(tmp_path)
+    dimensions_config = _write_supported_dimensions_config(tmp_path)
+    calls = 0
+
+    def fake_build_provider(_name: str, _config: Any) -> _FakeProvider:
+        nonlocal calls
+        calls += 1
+        return _FakeProvider()
+
+    monkeypatch.setattr("diligence.recommender.web.runner.build_provider", fake_build_provider)
+
+    first = await run_web_enrichment(
+        company_name="广东德美精细化工集团股份有限公司",
+        warehouse_db=str(warehouse),
+        web_config_path=str(web_config),
+        dimensions_config_path=str(dimensions_config),
+        output_root=str(tmp_path / "web"),
+        run_id="web-source",
+        load_to_duckdb=False,
+        force_dimensions=True,
+        use_llm_extraction=False,
+        fetch_pages=False,
+    )
+    assert first.status == "success"
+    assert calls == 1
+
+    config_data = yaml.safe_load(web_config.read_text(encoding="utf-8"))
+    config_data["providers"]["fake_search"]["timeout_seconds"] = 9
+    web_config.write_text(yaml.safe_dump(config_data, allow_unicode=True), encoding="utf-8")
+
+    second = await run_web_enrichment(
+        company_name="广东德美精细化工集团股份有限公司",
+        warehouse_db=str(warehouse),
+        web_config_path=str(web_config),
+        dimensions_config_path=str(dimensions_config),
+        output_root=str(tmp_path / "web"),
+        run_id="web-config-changed",
+        load_to_duckdb=False,
+        force_dimensions=True,
+        use_llm_extraction=False,
+        fetch_pages=False,
+        source_run_id="web-source",
+    )
+
+    assert second.status == "success"
+    assert calls == 2
+    report = json.loads((Path(second.output_dir) / "web_cache_report.json").read_text(encoding="utf-8"))
+    assert report["cache"]["search_reused"] == 0
+    assert report["cache"]["search_executed"] == 1
 
 
 @pytest.mark.asyncio

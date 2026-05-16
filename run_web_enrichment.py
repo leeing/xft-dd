@@ -21,14 +21,40 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="run Web enrichment for one DuckDB company profile")
     parser.add_argument("company_name")
     parser.add_argument("--warehouse", default="cache/company_warehouse.duckdb")
-    parser.add_argument("--web-config", default="config/recommender/web_search.yaml")
-    parser.add_argument("--web-extract-llm-config", default="config/recommender/web_extract_llm.yaml")
-    parser.add_argument("--dimensions-config", default="config/recommender/analysis_dimensions.yaml")
+    parser.add_argument("--scenario", help="scenario bundle directory or scenario.yaml")
+    parser.add_argument("--web-config")
+    parser.add_argument("--web-extract-llm-config")
+    parser.add_argument("--dimensions-config")
     parser.add_argument("--output-root")
     parser.add_argument("--only-dimensions", help="comma-separated dimension ids")
     parser.add_argument("--providers", help="comma-separated provider names")
     parser.add_argument("--run-id")
     parser.add_argument("--refresh", action="store_true", help="ignore reusable web cache and create a fresh run")
+    parser.add_argument(
+        "--reuse-search",
+        action="store_true",
+        default=True,
+        help="reuse cached provider search results",
+    )
+    parser.add_argument(
+        "--no-reuse-search",
+        action="store_false",
+        dest="reuse_search",
+        help="do not reuse cached provider search results",
+    )
+    parser.add_argument(
+        "--refresh-search",
+        action="store_true",
+        help="force provider search even when query cache exists",
+    )
+    parser.add_argument("--refresh-fetch", action="store_true", help="reuse search but recrawl fetched pages")
+    parser.add_argument(
+        "--refresh-extraction",
+        action="store_true",
+        help="reuse search/fetch but rerun evidence extraction",
+    )
+    parser.add_argument("--extract-only", action="store_true", help="rerun evidence extraction from a cached web run")
+    parser.add_argument("--source-run-id", help="source web_run_id for --extract-only or cache reuse")
     parser.add_argument(
         "--force-dimensions",
         action="store_true",
@@ -50,6 +76,7 @@ async def _main() -> int:
     result = await run_web_enrichment(
         company_name=args.company_name,
         warehouse_db=args.warehouse,
+        scenario_path=args.scenario,
         web_config_path=args.web_config,
         web_extract_llm_config_path=args.web_extract_llm_config,
         dimensions_config_path=args.dimensions_config,
@@ -62,6 +89,12 @@ async def _main() -> int:
         force_dimensions=args.force_dimensions,
         use_llm_extraction=not args.no_llm_extraction,
         fetch_pages=False if args.no_fetch else None,
+        reuse_search=args.reuse_search,
+        refresh_search=args.refresh_search,
+        refresh_fetch=args.refresh_fetch,
+        refresh_extraction=args.refresh_extraction,
+        extract_only=args.extract_only,
+        source_run_id=args.source_run_id,
     )
     sys.stdout.write(f"status: {result.status}\n")
     sys.stdout.write(f"web_run_id: {result.web_run_id}\n")
