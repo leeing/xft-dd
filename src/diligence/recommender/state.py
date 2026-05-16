@@ -32,6 +32,9 @@ class RecommenderState(TypedDict):
     run_id: str
     use_llm: bool
     use_web_evidence: bool
+    scenario_id: str | None
+    scenario_name: str | None
+    prompt_paths: dict[str, str]
     products_config: ProductsConfig
     dimensions_config: AnalysisDimensionsConfig
     products: list[ProductModule]

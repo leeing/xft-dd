@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import duckdb
+import structlog
 from langgraph.graph import END, START, StateGraph
 
 from diligence.recommender.config_loader import load_dimensions_config, load_products_config
@@ -17,8 +18,12 @@ from diligence.recommender.nodes.llm_match_node import llm_match_node
 from diligence.recommender.nodes.llm_recommend_node import llm_recommend_node
 from diligence.recommender.nodes.save_node import save_node
 from diligence.recommender.nodes.web_evidence_node import web_evidence_node
+from diligence.recommender.progress import display
+from diligence.recommender.scenario import DEFAULT_PROMPTS, load_scenario
 from diligence.recommender.state import RecommenderState
 from diligence.recommender.web import run_web_enrichment
+
+log = structlog.get_logger(__name__)
 
 _cache: dict[str, Any] = {}
 
@@ -52,31 +57,55 @@ async def run_recommendation(  # noqa: PLR0913
     *,
     company_name: str,
     warehouse_db: str = "cache/company_warehouse.duckdb",
-    products_config_path: str = "config/recommender/products.yaml",
-    dimensions_config_path: str = "config/recommender/analysis_dimensions.yaml",
+    scenario_path: str | None = None,
+    products_config_path: str | None = None,
+    dimensions_config_path: str | None = None,
     output_dir: str | None = None,
     run_id: str | None = None,
     use_llm: bool = True,
     use_web_evidence: bool = False,
     with_web: bool = False,
     refresh_web: bool = False,
-    web_config_path: str = "config/recommender/web_search.yaml",
-    web_extract_llm_config_path: str = "config/recommender/web_extract_llm.yaml",
+    web_config_path: str | None = None,
+    web_extract_llm_config_path: str | None = None,
     web_providers: list[str] | None = None,
     web_fetch_pages: bool | None = None,
     web_use_llm_extraction: bool = True,
 ) -> RecommendationRunResult:
-    products_config = load_products_config(products_config_path)
-    dimensions_config = load_dimensions_config(dimensions_config_path)
-    root = output_dir or products_config.output_dir
+    display.header(company_name)
+    scenario = load_scenario(scenario_path) if scenario_path else None
+    products_path = products_config_path or (scenario.products_path if scenario else "config/recommender/products.yaml")
+    dimensions_path = dimensions_config_path or (
+        scenario.dimensions_path if scenario else "config/recommender/analysis_dimensions.yaml"
+    )
+    web_search_path = web_config_path or (
+        scenario.web_search_path if scenario else "config/recommender/web_search.yaml"
+    )
+    web_extract_path = web_extract_llm_config_path or (
+        scenario.web_extract_llm_path if scenario else "config/recommender/web_extract_llm.yaml"
+    )
+    prompt_paths = scenario.prompt_paths if scenario else DEFAULT_PROMPTS.copy()
+    products_config = load_products_config(products_path)
+    dimensions_config = load_dimensions_config(dimensions_path)
+    root = output_dir or (scenario.output_dir if scenario else None) or products_config.output_dir
     rid = run_id or make_recommendation_run_id(company_name)
-    if with_web and (refresh_web or not _has_web_evidence(warehouse_db, company_name)):
+    has_cached = _has_web_evidence(warehouse_db, company_name)
+    if with_web and (refresh_web or not has_cached):
+        reason = "refresh" if refresh_web else "no_cached_web_evidence"
+        log.info(
+            "run_with_web_start_enrichment",
+            company_name=company_name,
+            reason=reason,
+            has_cached_web_evidence=has_cached,
+        )
+        display.info(f"Web 证据: 缓存{'' if has_cached else '不'}存在, 开始搜索")
         await run_web_enrichment(
             company_name=company_name,
             warehouse_db=warehouse_db,
-            web_config_path=web_config_path,
-            web_extract_llm_config_path=web_extract_llm_config_path,
-            dimensions_config_path=dimensions_config_path,
+            scenario_path=scenario_path,
+            web_config_path=web_search_path,
+            web_extract_llm_config_path=web_extract_path,
+            dimensions_config_path=dimensions_path,
             providers=web_providers,
             refresh=refresh_web,
             load_to_duckdb=True,
@@ -85,7 +114,22 @@ async def run_recommendation(  # noqa: PLR0913
         )
         use_web_evidence = True
     elif with_web:
+        log.info(
+            "run_with_web_reuse_cache",
+            company_name=company_name,
+            reason="cached_web_evidence_exists",
+        )
+        display.info("Web 证据: 复用缓存")
         use_web_evidence = True
+    elif use_web_evidence:
+        display.info("Web 证据: 复用已有 DuckDB 数据")
+    else:
+        log.info(
+            "run_no_web_evidence",
+            company_name=company_name,
+            use_llm=use_llm,
+        )
+        display.skip("Web 证据: 未启用 (使用 --with-web 或 --with-web-evidence 开启)")
     initial: RecommenderState = {
         "company_name": company_name,
         "warehouse_db": warehouse_db,
@@ -93,6 +137,9 @@ async def run_recommendation(  # noqa: PLR0913
         "run_id": rid,
         "use_llm": use_llm,
         "use_web_evidence": use_web_evidence,
+        "scenario_id": scenario.config.id if scenario else products_config.scenario,
+        "scenario_name": scenario.config.name if scenario else None,
+        "prompt_paths": prompt_paths,
         "products_config": products_config,
         "dimensions_config": dimensions_config,
         "products": products_config.products,

@@ -8,6 +8,7 @@ from typing import Any
 import yaml
 
 from diligence.recommender.models import AnalysisDimensionsConfig, ProductsConfig
+from diligence.recommender.scenario import maybe_scenario_path
 
 
 def _read_yaml(path: Path) -> dict[str, Any]:
@@ -19,6 +20,9 @@ def _read_yaml(path: Path) -> dict[str, Any]:
 
 
 def load_products_config(path: str | Path) -> ProductsConfig:
+    scenario = maybe_scenario_path(path)
+    if scenario is not None:
+        return load_products_config(scenario.products_path)
     config_path = Path(path)
     if config_path.is_dir():
         config_path = config_path / "products.yaml"
@@ -26,6 +30,9 @@ def load_products_config(path: str | Path) -> ProductsConfig:
 
 
 def load_dimensions_config(path: str | Path) -> AnalysisDimensionsConfig:
+    scenario = maybe_scenario_path(path)
+    if scenario is not None:
+        return load_dimensions_config(scenario.dimensions_path)
     config_path = Path(path)
     if not config_path.is_dir():
         return AnalysisDimensionsConfig.model_validate(_read_yaml(config_path))
