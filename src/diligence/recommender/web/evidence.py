@@ -148,10 +148,7 @@ async def extract_evidence_batch(  # noqa: PLR0913
         return fallback_evidence, request_payload, {"mode": "fallback"}
     try:
         raw_prompt = Path(llm_config.prompt_file).read_text(encoding="utf-8")
-        system_prompt = raw_prompt.format(
-            company_name=company_name,
-            dimension_name=analysis.dimension_id,
-        )
+        system_prompt = raw_prompt.replace("{company_name}", company_name).replace("{dimension_name}", analysis.dimension_id)
         task = llm_config.tasks.get("web_evidence_extract")
         client = get_ai_client()
         response = await client.chat.completions.create(

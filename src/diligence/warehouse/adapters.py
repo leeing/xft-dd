@@ -125,8 +125,8 @@ def build_company_row(credit_code: str, company_name: str, raw_files: RawFiles, 
     insurance_rows = as_list(data(raw_files, "insurances.json"))
 
     employee_count = first_nonempty(query.get("employeeNum"), query.get("empNum"))
-    employee_source = "query_company" if employee_count is not None else None
-    if employee_count is None:
+    employee_source = "query_company" if (employee_count is not None and to_int(employee_count) != 0) else None
+    if employee_count is None or to_int(employee_count) == 0:
         latest_insurance = max(
             (row for row in insurance_rows if isinstance(row, dict) and to_int(row.get("people")) is not None),
             key=lambda row: to_int(row.get("year")) or 0,
@@ -513,6 +513,33 @@ def build_outbound_investment_rows(credit_code: str, raw_files: RawFiles) -> lis
     return rows
 
 
+def _merge_shareholders(rows: list[JsonDict]) -> list[JsonDict]:
+    """Merge shareholder rows from shareholder.json and equity_structure.json by name.
+
+    Prefers equity_structure.json for investment_rate and shareholder.json for paid_amount.
+    """
+    merged: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        name = str(row.get("shareholder_name") or "")
+        if not name:
+            continue
+        if name not in merged:
+            merged[name] = {
+                "name": name,
+                "subscribe_amount": None,
+                "paid_amount": None,
+                "investment_rate": None,
+            }
+        entry = merged[name]
+        if row.get("subscribe_amount") is not None:
+            entry["subscribe_amount"] = row["subscribe_amount"]
+        if row.get("paid_amount") is not None:
+            entry["paid_amount"] = row["paid_amount"]
+        if row.get("investment_rate") is not None:
+            entry["investment_rate"] = row["investment_rate"]
+    return list(merged.values())
+
+
 def build_profile_row(  # noqa: PLR0913
     *,
     company: JsonDict,
@@ -546,15 +573,7 @@ def build_profile_row(  # noqa: PLR0913
         "small_service_trade": query.get("crossBorderSmallServiceTradeMark") == "Y",
         "labels": as_list(query.get("crossBorderLabel")),
     }
-    shareholder_summary = [
-        {
-            "name": row["shareholder_name"],
-            "subscribe_amount": row.get("subscribe_amount"),
-            "paid_amount": row.get("paid_amount"),
-            "investment_rate": row.get("investment_rate"),
-        }
-        for row in shareholders[:8]
-    ]
+    shareholder_summary = _merge_shareholders(shareholders)[:8]
     required = [
         company.get("company_name"),
         company.get("credit_code"),

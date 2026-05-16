@@ -45,6 +45,9 @@ def label_for_value_key(field: str, key: str) -> str:
 
 def format_profile_value(value: Any, *, field: str = "") -> str:
     """Format a profile value for human-facing evidence/report output."""
+    if field == "shareholder_summary" and isinstance(value, list):
+        items = [_format_shareholder(item) for item in value[:8] if isinstance(item, dict) and item.get("name")]
+        return "、".join(items) or "无明显记录"
     if isinstance(value, dict):
         nonzero = {k: v for k, v in value.items() if _has_display_value(v)}
         parts = [
@@ -67,4 +70,15 @@ def _has_display_value(value: Any) -> bool:
     if isinstance(value, (int, float)):
         return value != 0
     return True
+
+
+def _format_shareholder(item: dict[str, Any]) -> str:
+    rate = item.get("investment_rate")
+    if rate is not None:
+        try:
+            pct = f"{float(rate) * 100:.0f}%"
+        except (TypeError, ValueError):
+            pct = str(rate)
+        return f"{item['name']}({pct})"
+    return str(item["name"])
 

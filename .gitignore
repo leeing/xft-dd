@@ -21,6 +21,6 @@ cache/diligence_local.duckdb
 company.txt
 enquery.xlsx
 
-data/
-cache/
+/data/
+/cache/
 recommendation_runs/

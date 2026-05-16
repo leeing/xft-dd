@@ -22,6 +22,10 @@ def _ensure_sqlite_parent(database_url: str) -> None:
     path = parsed.path
     if not path or path in (":memory:", "/:memory:"):
         return
+    # sqlite:///relative/path  → urlparse gives path="/relative/path"
+    # sqlite:////absolute/path → urlparse gives path="/absolute/path"
+    if path.startswith("/") and "////" not in database_url:
+        path = path.lstrip("/")
     Path(path).parent.mkdir(parents=True, exist_ok=True)
 
 
