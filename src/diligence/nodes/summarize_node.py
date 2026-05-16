@@ -9,12 +9,14 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal
 
-import httpx
 import structlog
 from openai import AsyncOpenAI, OpenAIError
 from openai.types.chat import ChatCompletionMessageParam
 from pydantic import BaseModel, ValidationError
 
+from diligence.ai.client import get_ai_client
+from diligence.ai.json_extractor import THINK_TAG_RE as _THINK_TAG_RE  # noqa: F401
+from diligence.ai.json_extractor import extract_json as _extract_json
 from diligence.config import AppConfig, Dimension, ExtractField
 from diligence.models import CostRecord, DimensionSearchResult, DimensionSummary, RunError, SearchItem
 from diligence.settings import settings
@@ -22,6 +24,8 @@ from diligence.state import DiligenceState
 from diligence.utils.source_registry import classify_source
 
 log = structlog.get_logger(__name__)
+
+__all__ = ["_THINK_TAG_RE", "_extract_json", "get_ai_client"]
 
 _CONFIDENCE_ORDER: dict[str, int] = {"高": 3, "中": 2, "低": 1, "待核实": 0}
 _CONFIDENCE_NAMES: dict[int, Literal["高", "中", "低", "待核实"]] = {3: "高", 2: "中", 1: "低", 0: "待核实"}
@@ -50,46 +54,6 @@ class _FieldExtraction(BaseModel):
 
 class _ExtractionsResult(BaseModel):
     extractions: dict[str, list[_FieldExtraction]]
-
-
-_THINK_TAG_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
-_JSON_OBJECT_RE = re.compile(r"\{.*\}", re.DOTALL)
-
-
-_CODE_FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
-
-
-def _extract_json(raw: str) -> str:
-    """Strip <think> blocks and code fences, then extract the outermost JSON object."""
-    cleaned = _THINK_TAG_RE.sub("", raw).strip()
-    # Try code-fenced JSON first (```json ... ```)
-    fence_match = _CODE_FENCE_RE.search(cleaned)
-    if fence_match:
-        candidate = fence_match.group(1).strip()
-        if candidate.startswith("{"):
-            return candidate
-    # Fall back to bare JSON object extraction
-    m = _JSON_OBJECT_RE.search(cleaned)
-    return m.group(0) if m else cleaned
-
-
-_ai_client: AsyncOpenAI | None = None
-
-
-def get_ai_client() -> AsyncOpenAI:
-    """Return a cached AsyncOpenAI-compatible client for the reasoning/summarize layer.
-
-    Uses LLM_* env vars when set; falls back to MINIMAX_* for backward compatibility.
-    """
-    global _ai_client  # noqa: PLW0603
-    if _ai_client is None:
-        api_key = settings.llm_api_key or settings.minimax_api_key
-        _ai_client = AsyncOpenAI(
-            api_key=api_key,
-            base_url=settings.llm_base_url,
-            http_client=httpx.AsyncClient(trust_env=False),
-        )
-    return _ai_client
 
 
 def _apply_confidence_floor(

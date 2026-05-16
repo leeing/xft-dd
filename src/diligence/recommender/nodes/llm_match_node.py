@@ -9,7 +9,8 @@ from typing import Any
 from openai import OpenAIError
 from pydantic import BaseModel, ValidationError
 
-from diligence.nodes.summarize_node import _extract_json, get_ai_client
+from diligence.ai.client import get_ai_client
+from diligence.ai.json_extractor import extract_json
 from diligence.recommender.config_loader import load_prompt
 from diligence.recommender.models import DimensionAnalysis, MatchResult, ProductModule
 from diligence.recommender.state import RecommenderState
@@ -28,8 +29,14 @@ def _facts_for_dimensions(analyses: list[DimensionAnalysis], target_needs: list[
     for item in analyses:
         if item.dimension_id not in target_needs:
             continue
-        facts.extend(fact.claim for fact in item.facts[:4])
-        facts.extend(item.inferences[:2])
+        facts.extend(e.claim for e in item.local_evidence[:4])
+        if not item.local_evidence:
+            facts.extend(fact.claim for fact in item.facts[:4])
+        facts.extend(e.claim for e in item.inference_evidence[:2])
+        if not item.inference_evidence:
+            facts.extend(item.inferences[:2])
+        facts.extend(e.claim for e in item.web_evidence[:3] if e.relation_to_profile != "conflict")
+        facts.extend(f"数据冲突：{e.conflict_note or e.claim}" for e in item.conflicts[:2])
     return facts
 
 
@@ -84,7 +91,7 @@ async def llm_match_node(state: RecommenderState) -> dict[str, object]:
             timeout=LLM_TIMEOUT_SECONDS,
         )
         raw = resp.choices[0].message.content or "{}"
-        parsed: Any = json.loads(_extract_json(raw))
+        parsed: Any = json.loads(extract_json(raw))
         matches = _MatchList.model_validate(parsed).matches
     except (OpenAIError, json.JSONDecodeError, ValidationError, OSError, KeyError, TypeError, ValueError):
         matches = _fallback_match(products, analyses)

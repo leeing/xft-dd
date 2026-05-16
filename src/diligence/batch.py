@@ -316,7 +316,7 @@ async def _process_one(  # noqa: PLR0913
             return CompanyRunResult(index=idx, target=target, status="failed", error=str(exc))
 
 
-async def run_batch(  # noqa: C901, PLR0913, PLR0911
+async def run_batch(  # noqa: C901, PLR0913, PLR0911, PLR0912, PLR0915
     *,
     input_file: str,
     config: AppConfig,

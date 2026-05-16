@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from diligence.evidence.local_builder import make_evidence_id
 from diligence.warehouse import adapters
 from diligence.warehouse.duckdb_client import connect
 from diligence.warehouse.models import CompanyPackage, ImportSummary
@@ -227,8 +228,73 @@ def _load_one_company(
     counts["financing_events"] += _insert_rows(conn, "financing_events", financing_events)
     counts["outbound_investments"] += _insert_rows(conn, "outbound_investments", outbound_investments)
     counts["company_profile"] += _insert_rows(conn, "company_profile", [profile])
+    counts["unified_evidence"] += _insert_rows(
+        conn,
+        "unified_evidence",
+        _local_evidence_rows(package.credit_code, package.company_name, profile, ingested_at),
+    )
     counts[f"status:{import_status_value}"] += 1
     return dict(counts)
+
+
+def _local_evidence_rows(
+    credit_code: str,
+    company_name: str,
+    profile: dict[str, Any],
+    created_at: datetime,
+) -> list[dict[str, Any]]:
+    field_labels = {
+        "industry": "行业",
+        "industry_big": "行业大类",
+        "industry_mid": "行业中类",
+        "industry_small": "行业小类",
+        "employee_count": "员工规模",
+        "registered_capital": "注册资本",
+        "registered_location": "注册地址",
+        "business_scope": "经营范围",
+        "reg_status": "登记状态",
+        "company_org_type": "企业类型",
+        "is_listed": "上市状态",
+        "stock_code": "股票代码",
+        "labels": "企业标签",
+        "ip_counts": "知识产权计数",
+        "risk_counts": "风险计数",
+        "recruitment_count": "招聘数量",
+        "bidding_total": "招投标总数",
+        "branch_count": "分支机构数量",
+        "qualification_count": "资质数量",
+        "financing_event_count": "融资事件数量",
+        "outbound_investment_count": "对外投资数量",
+    }
+    rows: list[dict[str, Any]] = []
+    for field, label in field_labels.items():
+        value = profile.get(field)
+        if value in (None, "", [], {}):
+            continue
+        value_text = adapters.json_text(value) if isinstance(value, (dict, list)) else str(value)
+        rows.append(
+            {
+                "evidence_id": make_evidence_id(credit_code, "local_json", field, value_text),
+                "credit_code": credit_code,
+                "company_name": company_name,
+                "dimension_id": None,
+                "source_type": "local_json",
+                "source_name": "company_profile",
+                "source_path": "company_profile",
+                "source_url": None,
+                "source_field": field,
+                "claim": f"{label}：{value_text}",
+                "value": value_text,
+                "confidence": "中",
+                "authority_level": "high",
+                "relation_to_profile": "primary",
+                "conflict_note": None,
+                "resolution": None,
+                "raw_ref": adapters.json_text({"field": field}),
+                "created_at": created_at,
+            }
+        )
+    return rows
 
 
 def load_prophet_data(

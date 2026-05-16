@@ -21,6 +21,7 @@ TABLES_IN_LOAD_ORDER: tuple[str, ...] = (
     "financing_events",
     "outbound_investments",
     "company_profile",
+    "unified_evidence",
 )
 
 
@@ -269,6 +270,28 @@ DDL: tuple[str, ...] = (
       updated_at TIMESTAMP NOT NULL
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS unified_evidence (
+      evidence_id TEXT PRIMARY KEY,
+      credit_code TEXT,
+      company_name TEXT NOT NULL,
+      dimension_id TEXT,
+      source_type TEXT NOT NULL,
+      source_name TEXT,
+      source_path TEXT,
+      source_url TEXT,
+      source_field TEXT,
+      claim TEXT NOT NULL,
+      value TEXT,
+      confidence TEXT NOT NULL,
+      authority_level TEXT,
+      relation_to_profile TEXT NOT NULL,
+      conflict_note TEXT,
+      resolution TEXT,
+      raw_ref JSON,
+      created_at TIMESTAMP NOT NULL
+    )
+    """,
 )
 
 
@@ -282,4 +305,3 @@ def clear_tables(conn: Any, tables: Iterable[str] = TABLES_IN_LOAD_ORDER) -> Non
     """Delete warehouse table contents in dependency-safe order."""
     for table in reversed(tuple(tables)):
         conn.execute(f"DELETE FROM {table}")  # noqa: S608
-

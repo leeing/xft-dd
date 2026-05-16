@@ -9,9 +9,11 @@ from typing import Any
 from openai import OpenAIError
 from pydantic import BaseModel, ValidationError
 
-from diligence.nodes.summarize_node import _extract_json, get_ai_client
+from diligence.ai.client import get_ai_client
+from diligence.ai.json_extractor import extract_json
 from diligence.recommender.config_loader import load_prompt
 from diligence.recommender.models import ProductModule, RecommendationItem, RecommendationOutput
+from diligence.recommender.recommendation_normalizer import normalize_recommendation_payload
 from diligence.recommender.state import RecommenderState
 from diligence.settings import settings
 
@@ -58,13 +60,22 @@ def _fallback_recommendation(state: RecommenderState) -> RecommendationOutput:
         f"{profile.get('company_name', state['company_name'])} 当前基于本地 DuckDB 画像生成推荐；"
         "证据不足项已保留，后续可通过 Web 搜索补充。"
     )
-    return RecommendationOutput(
+    output = RecommendationOutput(
         company_name=str(profile.get("company_name") or state["company_name"]),
         scenario=state["products_config"].scenario,
         summary=summary,
         recommendations=recs,
         needs_web_enrichment=state["needs_web_enrichment"],
         profile_completeness=float(profile.get("profile_completeness") or 0),
+    )
+    return normalize_recommendation_payload(
+        output,
+        company_name=output.company_name,
+        scenario=output.scenario,
+        products=state["products"],
+        match_results=state["match_results"],
+        needs_web_enrichment=output.needs_web_enrichment,
+        profile_completeness=output.profile_completeness,
     )
 
 
@@ -91,15 +102,22 @@ async def llm_recommend_node(state: RecommenderState) -> dict[str, object]:
             timeout=LLM_TIMEOUT_SECONDS,
         )
         raw = resp.choices[0].message.content or "{}"
-        parsed: Any = json.loads(_extract_json(raw))
-        rec_payload = _RecommendationPayload.model_validate(parsed)
-        recommendation = RecommendationOutput(
+        parsed: Any = json.loads(extract_json(raw))
+        fallback = _fallback_recommendation(state)
+        try:
+            rec_payload = _RecommendationPayload.model_validate(parsed)
+            parsed_payload: Any = rec_payload
+        except ValidationError:
+            parsed_payload = parsed
+        recommendation = normalize_recommendation_payload(
+            parsed_payload,
             company_name=str(state["profile"].get("company_name") or state["company_name"]),
             scenario=state["products_config"].scenario,
-            summary=rec_payload.summary,
-            recommendations=rec_payload.recommendations,
+            products=state["products"],
+            match_results=state["match_results"],
             needs_web_enrichment=state["needs_web_enrichment"],
             profile_completeness=float(state["profile"].get("profile_completeness") or 0),
+            fallback=fallback,
         )
     except (OpenAIError, json.JSONDecodeError, ValidationError, OSError, KeyError, TypeError, ValueError):
         recommendation = _fallback_recommendation(state)

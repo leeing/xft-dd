@@ -31,6 +31,7 @@ class RecommenderState(TypedDict):
     output_root: str
     run_id: str
     use_llm: bool
+    use_web_evidence: bool
     products_config: ProductsConfig
     dimensions_config: AnalysisDimensionsConfig
     products: list[ProductModule]

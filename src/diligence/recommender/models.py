@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from diligence.evidence.models import EvidenceRecord
+
 Confidence = Literal["高", "中", "低", "待补充"]
 DimensionStatus = Literal["supported", "partial", "insufficient"]
+RuleOperator = Literal[">", ">=", "<", "<=", "==", "!=", "contains", "exists"]
 
 
 class EvidenceTemplate(BaseModel):
@@ -15,6 +18,16 @@ class EvidenceTemplate(BaseModel):
 
     field: str
     label: str
+
+
+class SupportRule(BaseModel):
+    """A configured inference rule for one analysis dimension."""
+
+    field: str
+    op: RuleOperator
+    value: Any | None = None
+    claim: str
+    confidence: Confidence = "低"
 
 
 class AnalysisDimension(BaseModel):
@@ -28,6 +41,10 @@ class AnalysisDimension(BaseModel):
     local_fields: list[str] = Field(default_factory=list)
     evidence_templates: list[EvidenceTemplate] = Field(default_factory=list)
     insufficient_evidence: list[str] = Field(default_factory=list)
+    analysis_prompt: str | None = None
+    evidence_policy: str | None = None
+    support_rules: list[SupportRule] = Field(default_factory=list)
+    web_search_queries: list[str] = Field(default_factory=list)
 
     @property
     def title(self) -> str:
@@ -104,7 +121,14 @@ class DimensionAnalysis(BaseModel):
     confidence: Confidence
     facts: list[EvidenceFact] = Field(default_factory=list)
     inferences: list[str] = Field(default_factory=list)
+    local_evidence: list[EvidenceRecord] = Field(default_factory=list)
+    inference_evidence: list[EvidenceRecord] = Field(default_factory=list)
+    web_evidence: list[EvidenceRecord] = Field(default_factory=list)
+    conflicts: list[EvidenceRecord] = Field(default_factory=list)
     missing_evidence: list[str] = Field(default_factory=list)
+    analysis_prompt: str | None = None
+    evidence_policy: str | None = None
+    web_search_queries: list[str] = Field(default_factory=list)
 
 
 class MatchResult(BaseModel):
@@ -158,4 +182,3 @@ class RecommendationRunResult(BaseModel):
     report_path: str | None = None
     result_path: str | None = None
     error: str | None = None
-
