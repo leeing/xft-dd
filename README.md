@@ -580,6 +580,154 @@ config/scenarios/sales_recommendation/
       reason: 企业状态非存续
 ```
 
+### 维度配置 (`analysis_dimensions.yaml`)
+
+每个维度是一个独立条目，完整字段如下：
+
+```yaml
+dimensions:
+  - id: supply_chain_procurement     # 唯一标识 (snake_case)
+    level1: 供应链与采购管理          # 一级分类
+    level2: 采购规模与特征            # 二级分类
+    level3: 供应链复杂度              # 三级分类
+    role: 供应链管理与商业调研专家     # LLM 角色描述
+    local_fields:                    # 从 company_profile 读取的字段
+      - industry
+      - employee_count
+      - business_scope
+      - bidding_total
+      - qualification_count
+    evidence_templates:              # 报告中展示的证据项 (字段→中文标签)
+      - field: industry
+        label: 行业
+      - field: employee_count
+        label: 员工规模
+      - field: bidding_total
+        label: 招投标数量
+    insufficient_evidence:           # 预期但缺失的证据，报告标记为"数据缺口"
+      - 供应商数量
+      - 前五大供应商集中度
+      - 年采购金额
+    analysis_prompt: |               # LLM 维度分析系统提示词
+      判断企业是否存在采购协同、供应商准入、供应商绩效等数字化需求。
+      只能基于已提供证据分析，不得编造供应商数量、采购金额。
+    evidence_policy: |               # 证据强度说明
+      直接采购数据优先于行业和规模推断。制造业、员工规模只能作为间接线索。
+    support_rules:                   # 可选：本地自动推断规则
+      - field: employee_count
+        op: ">="
+        value: 200
+        claim: 员工规模较大，可能存在采购流程协同与供应商管理需求。
+        confidence: 低
+      - field: bidding_total
+        op: ">"
+        value: 0
+        claim: 存在招投标记录，可作为项目型采购管理复杂度线索。
+        confidence: 低
+    web_search_queries:              # 可选：Web 搜索查询模板
+      - "{company_name} 供应商"       # {company_name} 运行时自动替换
+      - "{company_name} 采购"
+      - "{company_name} 招投标"
+```
+
+**字段说明：**
+
+| 字段 | 必填 | 说明 |
+|------|:----:|------|
+| `id` | ✓ | 唯一标识，被 `products.yaml` 的 `target_needs` 和 `dimension_id` 引用 |
+| `level1/2/3` | ✓ | 三级分类，用于报告分组展示 |
+| `local_fields` | ✓ | 必须与 `company_profile` 表列名一致，支持嵌套路径如 `ip_counts.patent` |
+| `evidence_templates` | | 字段到中文标签的映射，报告展示用 |
+| `insufficient_evidence` | | 缺失证据列表，报告会输出为"建议进一步核实" |
+| `support_rules` | | 本地规则推断，fallback 模式下自动执行，LLM 模式作为参考上下文 |
+| `web_search_queries` | | 使用 `{company_name}` 占位符，同时支持 `{industry}` 和 `{industry_big}` |
+
+**`op` 操作符：** `==` `!=` `>` `>=` `<` `<=` `contains` `exists`
+
+**`confidence` 取值：** `高` `中` `低`
+
+新增维度只需在 YAML 中添加一个条目，无需改代码。维度会自动出现在报告和 `result.json` 中。
+
+### 产品规则配置 (`products.yaml`)
+
+每个产品模块支持三种规则：
+
+```yaml
+products:
+  - module_id: procurement_srm             # 唯一标识
+    module_name: 供应商关系管理(SRM)        # 展示名称
+    priority: 90                           # 基础优先级 (0-100)
+    base_score: 50                         # 基础分
+    target_needs:                          # 关联维度 (引用 dimension.id)
+      - supply_chain_procurement
+      - business_product
+    match_rule: 制造业、采购链条较长的企业...  # LLM 匹配规则描述
+
+    # ── 正向规则：命中加分 ──
+    positive_rules:
+      # 维度状态匹配
+      - id: procurement_dimension_supported
+        dimension_id: supply_chain_procurement
+        evidence_type: supported            # supported | partial | insufficient
+        weight: 18                          # 加分值
+        reason: 供应链维度已有证据支持
+      # 画像字段条件
+      - id: bidding_signal
+        source_field: bidding_total          # company_profile 字段名
+        op: ">"                              # 操作符
+        value: 0                             # 阈值
+        weight: 10
+        reason: 存在招投标记录
+
+    # ── 负向规则：命中扣分 ──
+    negative_rules:
+      # 证据缺失
+      - id: missing_supplier_count
+        missing_evidence: 供应商数量
+        penalty: 5                           # 扣分值
+        reason: 缺少供应商数量
+      # 存在冲突
+      - id: conflict_penalty
+        relation_to_profile: conflict
+        penalty: 8
+        reason: 存在 Web 与本地画像冲突
+
+    # ── 排除规则：命中排除该产品 ──
+    exclusion_rules:
+      - id: inactive_company
+        source_field: reg_status
+        op: "!="
+        value: 存续
+        reason: 企业状态非存续
+```
+
+**规则类型一览：**
+
+| 规则类型 | 触发条件 | 效果 |
+|----------|----------|------|
+| `positive_rules` | `dimension_id` + `evidence_type` 匹配 | 加 `weight` 分 |
+| `positive_rules` | `source_field` + `op` + `value` 匹配 | 加 `weight` 分 |
+| `negative_rules` | `missing_evidence` 命中 | 扣 `penalty` 分 |
+| `negative_rules` | `relation_to_profile: conflict` 存在冲突 | 扣 `penalty` 分 |
+| `exclusion_rules` | `source_field` + `op` + `value` 匹配 | 产品被排除 (`excluded: true`) |
+
+**`source_field` 支持嵌套路径**，例如 `ip_counts.patent`、`bank_flags.high_quality_customer`、`risk_counts.self`、`cross_border_flags.labels`。
+
+**评分公式：**
+
+```text
+final_score = base_score
+            + dimension_support      # 关联维度覆盖分
+            + evidence_support       # 本地证据分
+            + web_support            # Web 补证分
+            + positive_score         # 命中 positive_rules 加分总和
+            - negative_score         # 命中 negative_rules 扣分总和
+            - missing_evidence_penalty  # 缺失证据扣分
+            - conflict_penalty       # 冲突扣分
+```
+
+修改 YAML 后重新跑推荐即可看到评分变化。`result.json` 中 `score_breakdown.matched_rules` / `penalty_rules` / `exclusion_rules` 会列出每条命中的规则及证据 ID，`report.md` 会展示分项得分和命中规则。修改规则不影响 LLM 匹配逻辑，但会影响最终排序和分数。
+
 ## 输出文件
 
 每次推荐运行生成：
