@@ -9,7 +9,8 @@ import yaml
 from diligence.recommender.config_loader import load_dimensions_config, load_products_config
 from diligence.recommender.dimension_analyzer import analyze_dimensions
 from diligence.recommender.graph import run_recommendation
-from diligence.recommender.models import AnalysisDimension, EvidenceTemplate
+from diligence.recommender.models import AnalysisDimension, EvidenceTemplate, MatchResult, ProductModule
+from diligence.recommender.recommendation_normalizer import normalize_recommendation_payload
 from diligence.warehouse.prophet_loader import load_prophet_data
 
 
@@ -35,6 +36,18 @@ def _write_recommender_configs(tmp_path: Path) -> tuple[Path, Path]:
                     {"field": "bidding_total", "label": "招投标数量"},
                 ],
                 "insufficient_evidence": ["供应商数量"],
+                "analysis_prompt": "判断采购协同需求。",
+                "evidence_policy": "制造业和规模只能作为间接线索。",
+                "support_rules": [
+                    {
+                        "field": "employee_count",
+                        "op": ">=",
+                        "value": 200,
+                        "claim": "员工规模较大，可能存在采购流程协同需求。",
+                        "confidence": "低",
+                    }
+                ],
+                "web_search_queries": ["{company_name} 供应商", "{company_name} 招投标"],
             },
             {
                 "id": "hr_workforce",
@@ -127,6 +140,27 @@ def test_recommender_configs_load() -> None:
     assert {item.id for item in dimensions.dimensions}
 
 
+def test_recommender_config_loader_supports_bundle_directory(tmp_path: Path) -> None:
+    products_path, dimensions_path = _write_recommender_configs(tmp_path)
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    (bundle / "products.yaml").write_text(products_path.read_text(encoding="utf-8"), encoding="utf-8")
+    dimensions_dir = bundle / "dimensions"
+    dimensions_dir.mkdir()
+    raw_dimensions = yaml.safe_load(dimensions_path.read_text(encoding="utf-8"))["dimensions"]
+    for item in raw_dimensions:
+        (dimensions_dir / f"{item['id']}.yaml").write_text(
+            yaml.safe_dump(item, allow_unicode=True),
+            encoding="utf-8",
+        )
+
+    products = load_products_config(bundle)
+    dimensions = load_dimensions_config(bundle)
+
+    assert [item.module_id for item in products.products] == ["procurement_srm", "hr_attendance"]
+    assert {item.id for item in dimensions.dimensions} == {"supply_chain_procurement", "hr_workforce"}
+
+
 def test_dimension_analyzer_marks_supported_and_missing() -> None:
     dim = AnalysisDimension(
         id="supply_chain_procurement",
@@ -150,6 +184,145 @@ def test_dimension_analyzer_marks_supported_and_missing() -> None:
     assert result.status == "supported"
     assert result.facts
     assert "供应商数量" in result.missing_evidence
+
+
+def test_dimension_analyzer_applies_configured_support_rules() -> None:
+    dim = AnalysisDimension(
+        id="supply_chain_procurement",
+        level1="供应链与采购管理",
+        level2="采购规模与特征",
+        level3="供应链复杂度",
+        role="供应链管理与商业调研专家",
+        evidence_templates=[EvidenceTemplate(field="industry", label="行业")],
+        support_rules=[
+            {
+                "field": "employee_count",
+                "op": ">=",
+                "value": 200,
+                "claim": "员工规模较大，可能存在采购流程协同需求。",
+                "confidence": "低",
+            },
+            {
+                "field": "labels",
+                "op": "contains",
+                "value": "高新技术",
+                "claim": "标签包含高新技术线索。",
+                "confidence": "低",
+            },
+        ],
+        analysis_prompt="判断采购管理复杂度。",
+        evidence_policy="不得把制造业直接等同于采购规模大。",
+        web_search_queries=["{company_name} 供应商", "{company_name} {industry} 采购"],
+        insufficient_evidence=["供应商数量"],
+    )
+
+    result = analyze_dimensions(
+        profile={
+            "company_name": "测试公司",
+            "industry": "制造业",
+            "employee_count": 300,
+            "labels": ["高新技术企业"],
+        },
+        dimensions=[dim],
+    )[0]
+
+    assert result.analysis_prompt == "判断采购管理复杂度。"
+    assert result.evidence_policy == "不得把制造业直接等同于采购规模大。"
+    assert result.web_search_queries == ["测试公司 供应商", "测试公司 制造业 采购"]
+    assert "员工规模较大，可能存在采购流程协同需求。" in result.inferences
+    assert "标签包含高新技术线索。" in result.inferences
+
+
+def test_dimension_analyzer_uses_chinese_labels_for_risk_counts() -> None:
+    dim = AnalysisDimension(
+        id="compliance_risk",
+        level1="合规与风险评估",
+        level2="法律风险排查",
+        level3="风险与合规信号",
+        role="复合型商业尽调专家团队",
+        evidence_templates=[EvidenceTemplate(field="risk_counts", label="风险计数")],
+        insufficient_evidence=["关联交易风险"],
+    )
+
+    result = analyze_dimensions(
+        profile={"risk_counts": {"self": 301, "pre": 57, "court_session": 193, "judgement_doc": 87}},
+        dimensions=[dim],
+    )[0]
+
+    claim = result.facts[0].claim
+    assert "自身风险:301" in claim
+    assert "历史变更风险:57" in claim
+    assert "开庭公告:193" in claim
+    assert "裁判文书:87" in claim
+    assert "court_session" not in claim
+
+
+def test_recommendation_normalizer_repairs_llm_payload() -> None:
+    products = [
+        ProductModule(
+            module_id="finance_erp",
+            module_name="财务管理(ERP)",
+            priority=86,
+            target_needs=["finance_tax"],
+            match_rule="财务复杂度较高",
+        ),
+        ProductModule(
+            module_id="hr_attendance",
+            module_name="人力资源与考勤管理",
+            priority=80,
+            target_needs=["hr_workforce"],
+            match_rule="员工规模较大",
+        ),
+    ]
+    matches = [
+        MatchResult(
+            module_id="finance_erp",
+            module_name="财务管理(ERP)",
+            matched=True,
+            score=70,
+            confidence="中",
+            business_need="财务核算与业财协同",
+            reason="多组织财务管理复杂",
+            supporting_dimensions=["finance_tax"],
+            missing_evidence=["财务系统使用情况"],
+        ),
+        MatchResult(
+            module_id="hr_attendance",
+            module_name="人力资源与考勤管理",
+            matched=True,
+            score=60,
+            confidence="中",
+            business_need="人事考勤管理",
+            reason="员工规模较大",
+            supporting_dimensions=["hr_workforce"],
+            missing_evidence=["排班制度"],
+        ),
+    ]
+
+    output = normalize_recommendation_payload(
+        {
+            "summary": "",
+            "recommendations": [
+                {"rank": 9, "module_id": "unknown", "module_name": "非法模块", "score": 99},
+                {"rank": 2, "module_id": "hr_attendance", "module_name": "", "score": -5},
+                {"rank": 1, "module_id": "finance_erp", "module_name": "财务管理(ERP)", "score": 120},
+                {"rank": 3, "module_id": "finance_erp", "score": 90},
+            ],
+        },
+        company_name="测试公司",
+        scenario="product_recommendation",
+        products=products,
+        match_results=matches,
+        needs_web_enrichment=True,
+        profile_completeness=1.2,
+    )
+
+    assert [item.module_id for item in output.recommendations] == ["finance_erp", "hr_attendance"]
+    assert [item.rank for item in output.recommendations] == [1, 2]
+    assert output.recommendations[0].score == 100
+    assert output.recommendations[1].score == 0
+    assert output.recommendations[1].module_name == "人力资源与考勤管理"
+    assert output.profile_completeness == 1.0
 
 
 @pytest.mark.asyncio
@@ -177,4 +350,10 @@ async def test_run_recommendation_mvp_without_llm(monkeypatch: pytest.MonkeyPatc
     assert (output_dir / "report.md").exists()
     payload = json.loads((output_dir / "result.json").read_text(encoding="utf-8"))
     assert payload["recommendations"]
-
+    dimensions = json.loads((output_dir / "dimension_analysis.json").read_text(encoding="utf-8"))
+    assert dimensions[0]["analysis_prompt"] == "判断采购协同需求。"
+    assert dimensions[0]["evidence_policy"] == "制造业和规模只能作为间接线索。"
+    assert dimensions[0]["web_search_queries"] == [
+        "广东德美精细化工集团股份有限公司 供应商",
+        "广东德美精细化工集团股份有限公司 招投标",
+    ]
