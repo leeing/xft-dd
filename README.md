@@ -1,723 +1,933 @@
-# xft-dd · 企业尽调自动化工具
+# Prophet 数据目录
 
-基于多源检索、crawl4ai 全文抓取、结构化字段提取和 LLM 综合推理的企业尽调流水线。输入企业名称后，系统会按配置并行检索多个尽调维度，生成可审计的 Markdown 报告，并保存原始搜索结果、维度摘要、字段提取结果和运行成本。
+## 目录结构
 
-当前版本的核心目标不是“把数据模型一次设计到完美”，而是先把数据流做成 **可追溯、可降级、可验证、可迭代**。
-
----
-
-## 快速开始
-
-```bash
-# 安装依赖
-uv sync
-
-# 复制环境变量模板，填写 API 凭证
-cp .env.example .env
-
-# 单企业尽调
-uv run main.py "佛山市固特家居制品有限公司"
-
-# 仅处理指定维度
-uv run main.py "某公司" --only basic_info,tech_cert
-
-# 排除指定维度
-uv run main.py "某公司" --skip listing
-
-# 预览查询词，不发起网络/API 调用
-uv run main.py "某公司" --dry-run
-
-# 批量处理（支持 .txt 或 .csv）
-uv run main.py --batch companies.txt
-uv run main.py --batch companies.csv --name-column company_name
-
-# 批量续跑（跳过已完成企业）
-uv run main.py --batch companies.txt --resume --batch-dir batch_runs/20260510-...
-
-# 爬虫模式：只构建 MiniMax L1 + crawl4ai L2 缓存，不跑 Metaso/LLM/报告
-CACHE_ENABLED=true uv run main.py "某公司" --crawler-mode
-CACHE_ENABLED=true uv run main.py --batch companies.txt --crawler-mode
-
-# 显式指定配置目录或兼容旧单文件配置
-uv run main.py "某公司" --config config/
-uv run main.py "某公司" --config config.yaml
+```
+data/
+  {统一社会信用代码}_{企业名称}/
+    .meta.json        # 查询元数据（企业名、信用代码、各 fetcher 获取时间与缓存状态）
+    *.json            # 各数据类型的 API 返回结果
 ```
 
-常用开发命令：
-
-```bash
-uv run pytest
-uv run ruff check
-uv run ruff format
-```
-
-### Docker 部署
-
-如果不想安装 Python 3.12+ 和 Playwright 浏览器，可以直接用 Docker 一键运行：
-
-```bash
-# 构建镜像
-docker build -t xft .
-
-# 单企业尽调
-docker run --rm --env-file .env -v $(pwd)/runs:/app/runs xft "佛山市固特家居制品有限公司"
-
-# 仅处理指定维度
-docker run --rm --env-file .env -v $(pwd)/runs:/app/runs \
-  xft "某公司" --only basic_info,tech_cert
-
-# 批量处理
-docker run --rm --env-file .env \
-  -v $(pwd)/runs:/app/runs \
-  -v $(pwd)/batch_runs:/app/batch_runs \
-  -v $(pwd)/companies.csv:/data/companies.csv:ro \
-  xft --batch /data/companies.csv
-
-# 使用 docker-compose
-docker compose run --rm xft "佛山市固特家居制品有限公司"
-```
-
-镜像内置 Playwright Chromium 和默认配置，通过 volume 挂载 `runs/` 和 `batch_runs/` 输出产物。如需自定义配置，可挂载 `config/` 目录：
-
-```bash
-docker run --rm --env-file .env \
-  -v $(pwd)/runs:/app/runs \
-  -v $(pwd)/my-config:/app/config:ro \
-  xft "某公司"
-```
-
-> 注意：`.env` 不进镜像，必须在运行时通过 `--env-file` 注入。建议 ≥2GB 内存。
-
----
-
-## 环境变量
-
-复制 `.env.example` 后按需填写：
-
-```env
-# MiniMax Search：网页搜索召回
-MINIMAX_API_KEY=SM4:<加密后的密钥>
-MINIMAX_BASE_URL=https://api.minimax.io/v1
-
-# Metaso：可选增强源
-METASO_API_KEY=
-METASO_ENABLED=false
-METASO_VERIFY_TLS=true
-
-# LLM：OpenAI 兼容推理接口；为空时复用 MINIMAX_API_KEY
-LLM_API_KEY=
-LLM_BASE_URL=https://api.minimax.io/v1
-LLM_MODEL=MiniMax-M2.7-Highspeed
-
-# SQL cache：可选；本地 SQLite，协作/生产建议 PostgreSQL
-CACHE_ENABLED=false
-CACHE_DATABASE_URL=sqlite+aiosqlite:///cache/diligence_cache.db
-# CACHE_DATABASE_URL=postgresql+asyncpg://user:password@host:5432/xft_cache
-CACHE_CREATE_TABLES=true
-CACHE_POLICY_VERSION=v1-202605
-
-SEARCH_CACHE_ENABLED=true
-SEARCH_CACHE_TTL_DAYS=14
-FETCH_CACHE_ENABLED=true
-FETCH_CACHE_TTL_DAYS=30
-FETCH_FAILED_RETRY_HOURS=24
-FETCH_CACHE_LOCK_MINUTES=10
-```
-
-API key 支持 `SM4:` 前缀密文存储，相关工具在 `src/diligence/keys.py`。
-
----
-
-## 总体架构
-
-流水线由 LangGraph 组装，先初始化运行上下文，再按维度扇出执行 `search + summarize`，最后扇入合并报告并保存产物。
-
-```mermaid
-flowchart TD
-    A["CLI / Batch 输入企业名称"] --> B["load_config + 参数过滤"]
-    B --> C["init_node<br/>生成 run_id / active_dimensions / output_dir"]
-    C --> D{"route_node<br/>按维度 fan-out"}
-    D --> E1["search_summarize<br/>basic_info"]
-    D --> E2["search_summarize<br/>industry"]
-    D --> E3["search_summarize<br/>..."]
-    E1 --> F["collect_node<br/>完整性和 required 维度检查"]
-    E2 --> F
-    E3 --> F
-    F --> G["merge_node<br/>注入摘要 + 提取表 + 未执行维度"]
-    G --> H["save_node<br/>写 final_report / raw / summaries / run_meta"]
-```
-
-每个维度分支内部：
-
-```mermaid
-flowchart TD
-    A["MiniMax Search<br/>多 query 并发"] --> B["dedup_items<br/>URL 归一化去重"]
-    B --> C{"Metaso enabled?"}
-    C -- "否" --> E
-    C -- "是" --> D["Metaso chat/search<br/>prepend 高质量来源"]
-    D --> E["cross-provider dedup<br/>再次 URL 归一化去重"]
-    E --> F{"fetch_enabled?"}
-    F -- "否" --> H
-    F -- "是" --> G["crawl4ai enrichment<br/>source_registry 决定抓取偏好<br/>prefer → neutral → unknown → avoid"]
-    G --> H["DimensionSearchResult"]
-    H --> I{"extract_fields?"}
-    I -- "否" --> K["LLM summarize"]
-    I -- "是" --> J["structured extraction<br/>full_text + snippet fallback<br/>字段校验 + 置信度降级"]
-    J --> K
-    K --> L["DimensionSummary"]
-```
-
----
-
-## 数据流与关键决策
-
-### 1. 搜索召回：MiniMax Search
-
-实现：`src/diligence/utils/minimax_search.py`
-
-- 每个维度配置多条 `minimax_queries`。
-- 维度内查询并发由 `query_concurrency_per_dimension` 控制。
-- `max_results_per_query` 控制本地保留条数；设为 `0` 表示 MiniMax 返回几条就全部进入后续流程。
-- 返回 `SearchItem`：`title`、`url`、`snippet`、`source=minimax`、`rank`。
-- 搜索层只负责召回，通常没有网页全文。
-
-### 2. URL 归一化去重
-
-实现：`normalize_url()` / `dedup_items()`
-
-去重规则：
-
-- 优先按 URL 去重。
-- URL 会小写 scheme/host、去掉 `www.`、去掉尾部 `/`。
-- 删除跟踪参数：`utm_*`、`from`、`source`、`spm`。
-- 保留业务 query，例如 `id`、`q`。
-- 无 URL 时降级为 `title + snippet` 去重。
-
-数据流中有两次去重：
-
-```text
-MiniMax Search -> dedup -> Metaso prepend -> dedup -> crawl4ai -> summarize
-```
-
-第二次去重用于处理 Metaso source items 与 MiniMax 裸搜索结果之间的重复 URL。
-
-### 2.1 SQL 两级缓存（可选）
-
-实现：`src/diligence/cache/`
-
-开启 `CACHE_ENABLED=true` 后，系统会使用 SQL 数据库缓存两个高成本环节：
-
-```text
-L1 search_cache:
-MiniMax query + params + policy_version -> raw_response_json + SearchItem URL 索引
-
-L2 fetch_cache:
-normalized_url + policy_version -> crawl4ai markdown + content_hash + status
-```
-
-MiniMax 路径会先查 L1，未命中才调用 MiniMax Search；随后所有 URL 都会查 L2，未命中才调用 crawl4ai。Metaso 不查 L1，但 Metaso 返回的真实 URL 会复用 L2。
-
-`content_hash` 基于 crawl4ai markdown 的轻量规范化文本计算：统一换行、去首尾空白、压缩连续空行后做 SHA-256。它用于判断内容变化，不参与 URL 去重。
-
-多人协作时，L2 在 crawl 前会尝试写入 URL 级 lease（`locked_by` / `locked_until`）。抢不到 lease 的 worker 会保留原 snippet 继续流程，避免同一个 URL 被并发重复抓取。
-
-第一版使用 SQLAlchemy metadata + `create_all` 自动建表，方便后续接入 Alembic；不要在业务代码中手写分散的 `CREATE TABLE`。
-
-### 2.2 爬虫模式
-
-实现：`src/diligence/crawler_mode.py`
-
-当提示词、字段提取和报告策略还在优化时，可以先用爬虫模式沉淀网页缓存资产：
-
-```bash
-CACHE_ENABLED=true uv run main.py --batch companies.txt --crawler-mode
-```
-
-爬虫模式只执行：
-
-```text
-MiniMax Search -> L1 search_cache -> crawl4ai -> L2 fetch_cache
-```
-
-规则：
-
-- 只使用 `minimax_queries`，不调用 Metaso。
-- 不调用 LLM，不生成最终报告。
-- 每个 MiniMax query 先查 L1；如果 L1 已命中，整条 query 直接跳过，不再检查该 query 下 URL 的 L2。
-- 如果 L1 未命中，调用 MiniMax Search 写入 L1，再对返回 URL 走 crawl4ai/L2 缓存。
-- L2 仍遵守 `source_registry`、`fetch_blocked_domains`、URL lease 和失败冷却策略。
-
-完整模式仍是默认模式：MiniMax 可用 L1/L2，Metaso 不查 L1 但会复用 L2，随后继续结构化提取、摘要、合并报告。
-
-### 3. Metaso 增强
-
-实现：`src/diligence/utils/metaso.py`
-
-启用条件：
-
-```env
-METASO_ENABLED=true
-METASO_API_KEY=...
-```
-
-维度通过 `metaso_queries` 和 `metaso_mode` 控制：
-
-| 模式 | 字段 | 产物 | 适用场景 |
-|------|------|------|----------|
-| `chat` | `metaso_mode: chat` | AI answer item + source items | 需要综合问答和来源引用 |
-| `search` | `metaso_mode: search` | 真实网页 URL + summary/rawContent | 需要更接近原始网页的数据 |
-
-chat 模式会把 AI 综合答案包装成 `metaso://` URL 的 `SearchItem`，同时把 API 返回的 sources 转成真实 URL 的 source items。search 模式直接返回真实 URL 的 `SearchItem`。Metaso 结果 prepend 到已有搜索结果前，随后再做跨 provider 去重。
-
-### 4. 来源识别：source_registry
-
-实现：`src/diligence/utils/source_registry.py`
-
-`classify_source(url, title)` 返回：
-
-```text
-source_type       来源类型
-authority_level   high / medium / low / unknown
-display_name      展示名称
-domain            归一化域名
-should_fetch_bias prefer / neutral / avoid
-```
-
-目前覆盖的典型来源：
-
-| 来源 | 类型 | 权威级别 | 抓取偏好 |
-|------|------|:---:|:---:|
-| `gsxt.gov.cn` | government_registry | high | prefer |
-| `cnipa.gov.cn` | official_ip | high | prefer |
-| 未知 `.gov.cn` | government_notice | high | prefer |
-| 企查查 / 天眼查 / 爱企查 / 启信宝 | commercial_registry | high | avoid |
-| BOSS直聘 / 猎聘 / 前程无忧 | recruiting | medium | neutral |
-| 1688 | b2b_marketplace | medium | neutral |
-| 百度地图 / 高德地图 / 大众点评 | map_directory | low | neutral |
-| `metaso://` / metaso.cn | search_ai | medium | avoid |
-
-`source_registry` 的职责是提供稳定信号，不直接做事实裁决。冲突裁决仍交给 LLM，但 prompt 和提取表会显式带上来源名称、来源类型和权威等级。
-
-### 5. crawl4ai 抓取策略
-
-实现：`src/diligence/utils/fetch.py`
-
-维度设置 `fetch_enabled: true` 后启用。`_should_fetch()` 的主要条件：
-
-- URL 非空。
-- URL 不是 `metaso://`。
-- `title` 或 `snippet` 包含目标企业名称。
-- `source_registry.should_fetch_bias != "avoid"`。
-- URL 不命中 `fetch_blocked_domains`。
-
-抓取顺序会按优先级排序：
-
-```text
-prefer/high -> prefer/medium -> neutral/high -> neutral/medium -> unknown -> avoid(skip)
-```
-
-这个排序只影响 crawl 调用顺序，不改变最终 `items` 的返回顺序。返回顺序仍保持搜索/增强后的排名语义。
-
-抓取失败或被跳过时，item 会保留原始 snippet，后续仍可进入 snippet fallback。商业工商库等 `avoid` 域名通常不再用 crawl4ai 二次抓取，避免把时间花在登录墙、反爬页或无效详情页上。
-
-### 6. 结构化字段提取
-
-实现：`src/diligence/nodes/summarize_node.py`
-
-维度配置 `extract_fields` 后，在主摘要前执行一次结构化提取：
-
-1. `_select_extraction_sources()` 先选择所有 `full_text`。
-2. 再补充最多 8 条 snippet fallback。
-3. snippet 少于 20 字会被过滤。
-4. 同 URL 已有 full_text 时，不再重复加入 snippet。
-5. 提取 prompt 为每个来源标注：
-   - 来源类型
-   - 权威等级
-   - 来源名称
-   - 内容类型：`full_text` / `snippet`
-   - 证据权重：`high` / `low`
-6. LLM 输出字段候选值、来源 ID、来源 URL、字段置信度。
-7. 代码过滤 hallucinated `source_item_id`，只允许引用进入 prompt 的 sources。
-8. 执行确定性字段校验。
-9. snippet-only 字段置信度封顶。
-10. 结果写入 `DimensionSearchResult.extractions` 并注入后续摘要和 merge prompt。
-
-字段提取失败会重试 1 次；仍失败则降级为直接使用网页正文/snippet 做摘要。
-
-### 7. 字段格式校验与提取统计
-
-结构化提取后，`_validate_extractions()` 会做确定性清洗：
-
-| 字段类型 | 处理 |
-|----------|------|
-| 统一社会信用代码 | 提取 18 位代码；无匹配则删除候选 |
-| 电子邮箱 | 提取邮箱地址；无匹配则删除候选 |
-| 来源URL | strict 模式下无 `http(s)` URL 则删除 |
-| 官网/网址 | 提取 `http(s)` URL；裸 `www.` 或无 URL 时保留但降级 |
-| 电话 | 不像手机号/座机/400 电话则降级 |
-| 日期/营业期限 | 不像日期、长期、至今则降级 |
-| 注册资本/实缴资本 | 不像金额则降级 |
-| 占位值 | `未找到`、`暂无`、`无`、`未披露` 等直接删除 |
-| 未知字段 | 保留，不做硬校验 |
-
-日志会输出字段清洗统计：
-
-```text
-[工商基本信息] structured extraction: 18/34 fields found (removed=3, fmt↓=2, snip↓=1, norm=4)
-```
-
-含义：
-
-- `removed`：删除无效候选或占位值。
-- `fmt↓`：格式校验导致置信度降级。
-- `snip↓`：snippet-only 证据导致高置信度封顶为低。
-- `norm`：字段值被归一化，例如信用代码、邮箱、URL。
-
-### 8. 维度摘要与可信度硬规则
-
-主摘要阶段要求 LLM 输出 JSON：
-
+`.meta.json`：
 ```json
 {
-  "summary": "500字以内的综合摘要",
-  "confidence": "高|中|低|待核实",
-  "uncertain_facts": ["..."],
-  "evidence_item_ids": ["..."]
-}
-```
-
-程序会执行硬性可信度上限：
-
-| 条件 | 最高可信度 |
-|------|:---:|
-| 维度搜索状态 `failed` | 待核实 |
-| 搜索结果数为 0 | 待核实 |
-| 仅 1 条搜索结果 | 低 |
-| 所有结果均无 URL | 低 |
-
-LLM 引用不存在的 `evidence_item_ids` 会被过滤。
-
-### 9. 合并报告与维度状态
-
-实现：`src/diligence/nodes/merge_node.py`
-
-merge 阶段会把每个维度的摘要和结构化提取表注入最终 prompt。提取表在 merge prompt 中被标注为“优先采信”。
-
-系统区分三种“没有数据”：
-
-| 状态 | 含义 | 报告表现 |
-|------|------|----------|
-| 未执行 | 维度因 `--only/--skip` 或配置过滤没有运行 | 写明“本维度未在本次运行中检索” |
-| 未找到 | 维度运行成功，但没有找到字段或事实 | 写“未找到” |
-| 执行失败 | active 维度未产出摘要或搜索/摘要异常 | 写“执行失败” |
-
-`main.py` 和 `batch.py` 会把过滤前的 enabled 维度名传入 `all_dimension_names`，因此最终报告能感知被跳过的维度，而不是让 LLM 自行脑补。
-
----
-
-## 配置说明
-
-默认配置已经改为目录化结构，CLI 默认读取 `config/`。旧的 `config.yaml` 仍可通过 `--config config.yaml` 加载，用于兼容或对照。
-
-```text
-config/
-├── app.yaml
-├── prompts/
-│   ├── merge.md
-│   ├── merge_system.md
-│   ├── summarize_system.md
-│   ├── extract_system.md
-│   ├── extract_user_template.md
-│   └── dimensions/
-│       ├── basic_info.md
-│       └── ...
-└── dimensions/
-    ├── 10_basic_info.yaml
-    ├── 20_industry.yaml
-    └── ...
-```
-
-`config/app.yaml` 存放全局运行参数：
-
-```yaml
-schema_version: "1.0"
-
-dimension_concurrency: 8
-query_concurrency_per_dimension: 5
-search_timeout_seconds: 30
-max_results_per_query: 0
-runs_dir: "runs"
-
-crawl_fetch_timeout: 25
-crawl_fetch_concurrency: 2
-max_full_text_chars: 6900
-
-fetch_blocked_domains:
-  - "qixin.com"
-  - "qcc.com"
-
-report_options:
-  include_sources: true
-  include_checklist: true
-  max_sources_per_dimension: 5
-
-batch:
-  company_concurrency: 1
-  continue_on_company_error: true
-  skip_existing: true
-  batch_runs_dir: "batch_runs"
-```
-
-`config/dimensions/*.yaml` 存放维度元数据、查询词和字段 schema：
-
-```yaml
-dimensions:
-  - id: basic_info
-    name: 工商基本信息
-    order: 10
-    enabled: true
-    required: true
-    fetch_enabled: true
-    minimax_queries:
-      - '"{target}"'
-    metaso_queries:
-      - "{target} 工商注册信息 统一社会信用代码 法定代表人 注册资本"
-    metaso_mode: search
-    metaso_search_size: 1
-    extract_fields:
-      - field_name: 统一社会信用代码
-        description: "18位字母数字组合，企业唯一识别码"
-      - field_name: 法定代表人
-        description: "法定代表人姓名"
-      - field_name: 注册资本
-        description: "金额+币种，如1000万元人民币"
-    summary_prompt: |
-      请从以下搜索结果中提取"{target}"的工商基本信息。
-      {results}
-```
-
-实际目录配置里推荐把长 prompt 放到 `config/prompts/dimensions/{id}.md`，维度文件只引用：
-
-```yaml
-summary_prompt_file: ../prompts/dimensions/basic_info.md
-```
-
-`summary_prompt_file` 路径相对当前维度 YAML 文件解析。新增维度时，新增一个 `config/dimensions/{order}_{id}.yaml` 和对应 prompt 文件即可。`id` 全局唯一，`order` 控制输出顺序，`required=true` 表示该维度失败会影响进程退出码。
-
-日常 review 建议直接看拆分文件：
-
-```bash
-git diff config/dimensions/10_basic_info.yaml
-git diff config/prompts/dimensions/basic_info.md
-git diff config/prompts/merge.md
-```
-
----
-
-## 内置尽调维度
-
-当前默认覆盖 8 个维度：
-
-| 维度 ID | 名称 | 是否必需 |
-|---------|------|:---:|
-| `basic_info` | 工商基本信息 | 是 |
-| `industry` | 行业与细分 | 否 |
-| `scale` | 员工规模 | 否 |
-| `background` | 企业背景 | 否 |
-| `tech_cert` | 科技属性资质 | 否 |
-| `ip` | 知识产权 | 否 |
-| `product` | 产品与定位 | 否 |
-| `listing` | 上市情况 | 否 |
-
----
-
-## 产物文件
-
-单企业运行产物位于 `runs/{run_id}/`：
-
-| 文件 | 内容 |
-|------|------|
-| `final_report.md` | 最终 Markdown 尽调报告 |
-| `dimension_summaries.json` | 各维度摘要、可信度、待核实项、证据 ID |
-| `raw_search_results.json` | 每维度原始搜索结果、抓取正文、结构化提取结果 |
-| `run_meta.json` | run_id、状态、失败维度、active 维度、成本、开始/结束时间 |
-
-`raw_search_results.json` 中结构化提取示例：
-
-```json
-{
-  "basic_info": {
-    "items": [],
-    "extractions": {
-      "extractions": {
-        "统一社会信用代码": [
-          {
-            "source_item_id": "b71f82f6ae32",
-            "source_url": "https://example.com/company",
-            "value": "91440605682473330H",
-            "confidence": "高"
-          }
-        ]
-      }
-    }
+  "company_name": "安徽扬山联合精密技术有限公司",
+  "credit_code": "91340521MA2TQP1G4L",
+  "fetchers": {
+    "info":            {"fetched_at": "2026-05-14T...", "from_cache": false},
+    "risk_insight":    {"fetched_at": "2026-05-14T...", "from_cache": true}
   }
 }
 ```
 
-批量运行额外生成：
+## API 响应格式
 
-| 文件 | 内容 |
-|------|------|
-| `batch_summary.md` | 批量运行摘要 |
-| `batch_summary.csv` | 每家公司状态和产物路径 |
-| `batch_meta.json` | 批次元数据 |
+两类上游系统，响应结构不同：
+
+| 系统 | 路径前缀 | 成功标志 | 空数据标志 |
+|------|----------|----------|------------|
+| Prophet | `/prophet/` | `"success": true, "code": 200` | `data.list: null` 或 `data: {}` |
+| NewEnt | `/newEnt/` | `"code": 200` | `"code": 100` 或 `data: null` |
 
 ---
 
-## 成本计量
+## 数据分类速查
 
-`save_node` 会在 stderr 输出并写入 `run_meta.json`：
+### 基本信息
 
-```text
-本次调用成本：
-   MiniMax Search: 8 次
-   LLM 推理: 12 次，tokens: 42,284
-   Metaso: 2 次成功，0 次失败，credits: 12
+| 文件 | 来源 | 描述 |
+|------|------|------|
+| `info.json` | prophet | 企业工商基本信息，含 companyId（其他接口的 eid） |
+| `ext.json` | prophet | 企业联系方式（电话、邮箱、网站） |
+| `slow.json` | prophet | 企业主要成员（董监高） |
+| `getbasinf.json` | newEnt | 企业详细信息（newEnt 源，字段与 info 互补，上市公司尤其丰富） |
+| `intellectual.json` | prophet | 知识产权概要：各项知识产权的消息数 |
+| `background.json` | prophet | 背景信息概要：各背景维度的消息数 |
+
+### 风险洞察
+
+| 文件 | 来源 | 描述 |
+|------|------|------|
+| `risk_insight.json` | prophet | 风险汇总：自身/关联/历史风险数量 + 各类风险命中情况 |
+| `annoucement.json` | prophet | 法院公告列表（起诉状副本、开庭传票、执行通知等） |
+| `judgement_doc.json` | prophet | 裁判文书列表（文书号、类型、标题） |
+| `judgement_detail.json` | prophet | 裁判文书详情（需传文书 key，当前固定返回空） |
+| `break_faith.json` | prophet | 失信被执行人信息 |
+
+### 经营动态
+
+| 文件 | 来源 | 描述 |
+|------|------|------|
+| `business_info.json` | prophet | 开庭公告（案号、法院、法庭、日期、案由） |
+| `business_scope.json` | prophet | 经营范围（纯文本） |
+| `check.json` | prophet | 行政检查记录（检查机关、日期、结果） |
+| `certification.json` | prophet | 企业资质认证（ISO 等） |
+| `change.json` | prophet | 工商变更记录（变更项、变更前后值、变更时间） |
+| `land.json` | prophet | 土地信息（坐落、面积、出让方式、使用年限等） |
+| `recruit_message.json` | prophet | 招聘信息（职位、薪资、学历、经验要求、来源） |
+| `tax.json` | prophet | 税务评级信息（年度 A/B/C/D 级纳税人） |
+
+### 知识产权
+
+| 文件 | 来源 | 描述 |
+|------|------|------|
+| `brand.json` | prophet | 商标信息（名称、注册号、国际分类、状态、申请日期） |
+| `copyright.json` | prophet | 作品著作权信息 |
+| `software.json` | prophet | 软件著作权（全称、简称、版本号、登记号、登记日期） |
+| `partner.json` | prophet | 知识产权合作方（专利申请人/发明人/代理机构等） |
+
+### 背景关联
+
+| 文件 | 来源 | 描述 |
+|------|------|------|
+| `equityStructure.json` | prophet | 股权结构（股东、出资金额、出资比例） |
+| `equity_penetration_d.json` | prophet | 股权穿透图（多层投资关系） |
+| `investorInfo.json` | prophet | 对外投资（被投企业、出资金额、出资比例） |
+| `shareholder_info.json` | prophet | 股东个人信息（当前固定传空，返回 `{}`） |
+| `branch.json` | prophet | 分支机构（分公司名称、注册号、经营状态） |
+| `staff.json` | prophet | 主要人员（姓名、职务） |
+| `insurances.json` | prophet | 社保参保人数（按年份） |
+| `relationship.json` | prophet | 关联关系概览（股权穿透图/投融资/对外投资/分支机构/交易链） |
+| `pledgee.json` | prophet | 动产抵押/质押信息 |
+
+### 资本市场
+
+| 文件 | 来源 | 描述 |
+|------|------|------|
+| `query_bond_new.json` | newEnt | 债券信息（名称、类型、发行额、利率、评级、到期日等） |
+| `queryFCNew.json` | newEnt | 融资事件（融资轮次、金额、投资方、日期、来源） |
+| `queryInvestor.json` | newEnt | 对外投资企业列表（被投企业、出资额、出资比例） |
+| `queryInvestmentEventNew.json` | newEnt | 企业作为投资方的投资事件 |
+| `queryBiddingTotal.json` | newEnt | 招投标总数 |
+
+### 招投标
+
+| 文件 | 来源 | 描述 |
+|------|------|------|
+| `queryCompanyBiddingNewInviting.json` | newEnt | 招标公告（公司作为招标方） |
+| `queryCompanyBiddingNewWinner.json` | newEnt | 中标结果（公司作为中标方，含项目名、金额、地区、日期） |
+
+### 标签画像
+
+| 文件 | 来源 | 描述 |
+|------|------|------|
+| `label.json` | newEnt | **已加工**：queryCompany 标签翻译为中文 |
+| `queryCompany.json` | newEnt | 企业工商画像（联系方式、地址、行业、标签 PNG、智能评级） |
+| `queryBaseLabel.json` | newEnt | 企业基础标签（专精特新、高新、园区等） |
+| `query_risk_rating.json` | newEnt | 风险评分（税务/质押/司法/经营/财务 5 维分值） |
+| `querySameTelEnt.json` | newEnt | 相同电话关联企业 |
+| `queryActualControl.json` | newEnt | 实际控制权链（持股路径、控制比例） |
+
+### 其他
+
+| 文件 | 来源 | 描述 |
+|------|------|------|
+| `licence.json` | prophet | 行政许可（许可证名称、编号、颁发机构、有效期） |
+| `queryQualification.json` | newEnt | 企业资质认定（专精特新、高新技术企业等含有效期） |
+
+---
+
+## 全部文件字段详解
+
+### info.json — 企业基本信息
+
+所有查询的入口。其他 newEnt 接口需要从中提取 `data.info.info.companyId` 作为 `eid`。
+
+```
+code                            响应码 (200=成功)
+data.info.info
+  name                          企业名称
+  unifiedSocialCreditCode       统一社会信用代码
+  companyId                     企业唯一标识（其他接口的 eid 来源）
+  legalPersonName               法定代表人
+  legalPersonType               法定代表人类型（1=自然人）
+  regCapital                    注册资本（含币种，如 "5000.000000万人民币"）
+  regLocation                   注册地址
+  regStatus                     经营状态（存续/注销/吊销等）
+  regStatusCode                 经营状态码（2=存续）
+  regNumber                     工商注册号
+  estiblishTime                 成立日期（"YYYY-MM-DD HH:mm:ss"）
+  businessScope                 经营范围（完整文本）
+  companyOrgType                企业类型（有限责任公司/股份有限公司等）
+  cate1 / cate2 / cate3         行业分类（大类/中类/小类）
+  base                          地区代码（如 "ah"）
+  baseChinese                   地区中文名
+  chinameabbr                   企业简称
+  formerName                    曾用名
+  companycode                   企业编码
+  innercode                     内部编码
+  listedCompanyState            上市状态（0=非上市, 1=上市）
+  secucode / secuabbr / secumainid / secumarket  证券代码/简称/主板代码/市场
+  pictureurl                    企业照片 URL
+  staffTypeName                 人员规模分类
+  sum                           关联数量
+data.info.geoPoint              GPS 坐标 {lat, lon}
+data.info.partner[]             股东列表
+  name                          股东名称
+  amount                        出资金额
+  putCapitalProportion          出资比例（如 "100.00%"）
+  investorType                  投资者类型（2=法人）
+  certName / certNo             证照名称/编号
+  capital[]                     实缴明细
+    amomon                      实缴金额
+    paymet                      出资方式（货币/实物等）
+    time                        实缴日期
+  capitalActl                   实缴信息（JSON 字符串）
+data.info.listPartner           合伙人列表（合伙企业专用）
+data.background                 （固定 null，见 background.json）
+data.folloed                    关注状态
 ```
 
-| API | 计量方式 |
-|-----|----------|
-| MiniMax Search | 成功搜索请求次数 |
-| Metaso chat | 6 credits / query |
-| Metaso search | 6 × size credits / query |
-| LLM | completions 调用次数与 total_tokens |
+### ext.json — 企业联系方式
 
----
+```
+code / message / success / url  标准 prophet 响应头
+data
+  businessPhone[]               企业联系电话
+  email                         企业邮箱
+  phones[]                      其他电话
+  website                       企业网站 URL
+```
 
-## 容错与降级
+### slow.json — 企业主要成员
 
-| 故障场景 | 降级策略 |
+```
+data.staffExts[]
+  name                          人员姓名
+  staffTypeName                 职务（执行董事兼总经理/监事/财务负责人等）
+  affiliateCompany              关联公司数量
+```
+
+### getbasinf.json — 企业详细信息 (newEnt)
+
+上市公司信息尤其丰富，包含证券代码、交易所、主营业务、企业简介。
+
+```
+msg / code                      newEnt 响应头
+data
+  zaxUid                        企业唯一标识
+  custUid                       客户标识
+  custNm                        企业名称
+  chnShtNm                      中文简称
+  entpTypNm                     企业类型名称（其他公司/上市公司等）
+  swFrsIdtNm / swScdIdtNm / swThdIdtNm  行业分类（一级/二级/三级）
+  exgCd                         交易所（深圳证券交易所等）
+  lstBrdNm / lstBrdCd           上市板块/板块代码（创业板/主板）
+  scrShtNm                      证券简称
+  stkCd                         股票代码
+  entpEngNm                     英文全称
+  engShtNm                      英文简称
+  foundDt                       成立日期
+  lstDt                         上市日期
+  dlstDt                        退市日期（1900-01-01=未退市）
+  regCpt                        注册资本（万元）
+  pvcCty                        所在省市
+  ofcAdr                        办公地址
+  lglRprsPsn                    法定代表人
+  chrm                          董事长
+  indptDirLst                   独立董事列表（逗号分隔）
+  brdScrty                      董事会秘书
+  genMng                        总经理
+  cmpTel                        公司电话
+  cmpFax                        公司传真
+  cmpMbx                        公司邮箱
+  cmpHmpg                       公司主页
+  ofcPstCd                      办公邮编
+  empQty                        员工数量
+  actFirmNm                     会计师事务所
+  mainBus                       主营业务描述
+  entpIntro                     企业简介
+  oprScp                        经营范围
+```
+
+### intellectual.json — 知识产权概要
+
+与 risk_insight.json、background.json、relationship.json 结构相同，是一类"概览"响应。
+
+```
+data.intellectual[]             知识产权各项
+  name                          名称（商标查询/专利查询/软件著作权/作品著作权/网站备案）
+  no                            编号
+  legal                         是否法律相关
+  messageNo                     消息数量
+data.background / .info / .marketing / .operation / .relationship / .riskCount / .riskInsight
+                                其他维度（均为 null，对应各自的独立 JSON）
+```
+
+### background.json — 背景信息概要
+
+```
+data.background[]               背景各项
+  name                          名称（工商信息/主要成员/股东信息/变更信息/主营构成/企业年报/股权结构/最终受益人/实际控制权/附近企业/经营范围/公司规模）
+  no                            编号
+  legal                         是否法律相关
+  messageNo                     消息数量
+```
+
+### risk_insight.json — 风险洞察汇总
+
+```
+data.riskCount
+  selfRisk                      自身风险总数
+  selfRiskList[]                自身风险分类 [{name: "被执行人", total: 1}, ...]
+  arroundRisk                   关联风险总数
+  arroundRiskList[]             关联风险明细
+  preRisk                       历史风险总数
+  preRiskMap                    历史风险分布（key-value map）
+data.riskInsight[]              风险项明细
+  name                          风险名称（失信信息/被执行人/关联被执行人/案件流程/股权冻结/司法拍卖/司法协助等）
+  no                            风险项编号
+  legal                         是否法律风险
+  messageNo                     风险消息数
+```
+
+### annoucement.json — 法院公告
+
+```
+data.list[]                     公告列表（null=无数据）
+  bltntypename                  公告类型（起诉状副本及开庭传票/其他/裁判文书等）
+  content                       公告全文
+  courtcode                     法院名称
+  province                      省份
+  publishdate                   发布日期（毫秒时间戳）
+  party2                        当事人
+data.pageNo / pageSize / total  分页信息
+```
+
+### judgement_doc.json — 裁判文书
+
+```
+data.list[]
+  key                           文书唯一标识（用于 judgement_detail 查询）
+  wenshuhao                     文书号（如 "（2024）粤01民终828号"）
+  wenshuming                    文书名称
+  type                          案件类型（民事案件/非诉保全审查案件等）
+  city                          城市/省份
+```
+
+### judgement_detail.json — 裁判文书详情
+
+当前实现固定返回 `data: {}`，文件存在但无实际内容。
+
+### break_faith.json — 失信被执行人
+
+```
+data.list[]                     失信记录（null=无数据）
+data.pageNo / total             分页
+```
+
+### business_info.json — 开庭公告
+
+```
+data.list[]
+  caseNo                        案号（如 "（2026）粤0307民初257号"）
+  caseReason                    案由（合同纠纷/劳动争议/买卖合同纠纷等）
+  court                         法院
+  courtroom                     法庭
+  startDate                     开庭日期（毫秒时间戳）
+  area                          地区
+  judge                         法官
+  plaintiff[]                   原告
+  defendant[]                   被告
+  litigant[]                    当事人
+  contractors                   承办人
+```
+
+### business_scope.json — 经营范围
+
+```
+data.info                       经营范围纯文本
+```
+
+### check.json — 行政检查
+
+```
+data.list[]
+  checkDate                     检查日期
+  checkOrg                      检查机关
+  checkResult                   检查结果（合格/符合要求/发现问题...）
+  checkType                     检查类型
+  companyName                   被检查企业名称
+data.pageNo / total             分页
+```
+
+### certification.json — 企业资质认证
+
+```
+data.list[]                     认证记录（null=无数据）
+data.pageNo / total             分页
+```
+
+### change.json — 工商变更
+
+```
+data.list[]
+  changeItem                    变更事项（董事备案/注册资本变更/章程备案/住所变更等）
+  changeTime                    变更时间（毫秒时间戳）
+  contentAfter                  变更后内容
+  contentBefore                 变更前内容
+data.pageNo / pageSize / total  分页
+```
+
+### land.json — 土地信息
+
+```
+data.list[]
+  projectName                   项目名称
+  projectLocation               项目坐落
+  landUseRightPerson            土地使用权人
+  landUseType                   土地用途（工业用地等）
+  landSupplyMethod              供地方式（挂牌出让等）
+  landLevel                     土地级别
+  landUsePeriod                 使用年限（年）
+  area                          面积（公顷）
+  contractedVolumeRate          约定容积率
+  contractedVolumeRateCeiling   容积率上限
+  district                      区县
+  category                      行业类别
+  electronicRegulatoryNumber    电子监管号
+  agreementStartTime            约定开工时间
+  committedTime                 约定交地时间
+  contractDate                  合同签订日期
+  scheduledCompletion           约定竣工时间（毫秒时间戳）
+  instalmentPayment[]           分期付款明细
+    instalment_payment_agreed_payment_amount     约定付款金额
+    instalment_payment_convention_payment_date   约定付款日期
+    instalment_payment_contract_payment_period_number  付款期数
+  authority                     批准机关
+  id                            记录 ID
+```
+
+### recruit_message.json — 招聘信息
+
+```
+data.list[]
+  title                         职位名称
+  companyName                   招聘企业
+  city                          城市
+  district                      区县
+  class                         工作性质（全职/兼职）
+  education                     学历要求
+  experience                    经验要求
+  oriSalary                     薪资范围（如 "15-22k"）
+  location                      工作地点
+  description                   职位描述（HTML）
+  source                        招聘来源（Boss直聘/猎聘等）
+  startdate                     发布日期
+  enddate                       截止日期
+  employerNumber                雇主编号
+  fromUrl                       来源链接
+```
+
+### tax.json — 税务评级
+
+```
+data.list[]
+  name / companyName            企业名称
+  idNumber                      纳税人识别号
+  year                          评价年度
+  grade                         纳税信用等级（A/B/C/D）
+  evalDepartment                评价机关
+  base                          地区
+  type                          类型
+  source                        数据来源 URL
+data.pageNo / total             分页
+```
+
+### brand.json — 商标信息
+
+```
+data.list[]
+  tmName                        商标名称
+  regNo                         注册号/申请号
+  intCls                        国际分类号
+  clsName                       分类名称（交通工具/科研服务等）
+  status                        状态（2/3 等）
+  appDate                       申请日期（毫秒时间戳）
+  regDate                       注册日期
+  applicantCn                   申请人中文名
+  addressCn                     申请人地址
+  agent                         代理机构
+  announcementDate              公告日期
+  announcemenIssue              公告期号
+  gjzcrq / hqzdrq / yxqrq       国际注册日期/后期指定日期/优先权日期
+  privateDateStart              专用权开始日期
+  tmGoods[]                     商品/服务列表
+  tmFlowCat[]                   流程分类
+  category                      分类
+```
+
+### copyright.json — 作品著作权
+
+```
+data.list[]                     著作权记录（null=无数据）
+data.pageNo / total             分页
+```
+
+### software.json — 软件著作权
+
+```
+data.list[]
+  fullName                      软件全称
+  simpleName                    软件简称
+  version                       版本号
+  regNum                        登记号（如 "2026SR0586432"）
+  regTime                       登记日期（毫秒时间戳）
+  authorNationality             著作权人
+  catNum                        分类号
+  publishTime                   首次发表日期
+  entName / entId               企业名称/ID
+  softwareId                    软件 ID
+```
+
+### partner.json — 知识产权合作方
+
+专利的申请人、发明人、代理机构等信息。
+
+```
+data.list[]
+  title                         专利名称
+  abs                           专利摘要
+  appnumber                     专利申请号
+  pubnumber                     专利公开号
+  appdate                       申请日期
+  pubDate                       公开日期
+  applicantname[]               申请人
+  inventroName[]                发明人
+  agencyName                    代理机构
+  agentName[]                   代理人
+  address                       地址
+  mainipc                       主 IPC 分类号
+  ipc[]                         全部 IPC 分类号
+  patType                       专利类型（1=发明专利等）
+  createTime                    创建时间
+```
+
+### equityStructure.json — 股权结构
+
+```
+data[]
+  name                          股东名称
+  amomon                        出资金额
+  investmentRate                出资比例（0-1 小数）
+  investorType                  投资者类型（2=法人）
+  listed                        是否上市
+  hOLDSUM                       持股总数
+  pCTOFTOTALSHARES              占总股比
+```
+
+### equity_penetration_d.json — 股权穿透
+
+```
+data[]
+  companyName                   企业名称（被投资方/投资方）
+  amount                        出资金额
+  putCapitalProportion          出资比例
+  spreadOut                     -1=向下穿透（子公司），1=向上穿透（股东）
+  unit                          金额单位（万元）
+```
+
+### investorInfo.json — 对外投资
+
+```
+data.data[]
+  name                          被投资企业名称
+  parentEnterprise              投资方（本企业）
+  amount                        出资金额
+  putCapitalProportion          出资比例
+  investorType                  投资者类型
+  investorInfo[]                出资明细
+    amomon                      出资金额
+    investmentRate              出资比例
+    paymet                      出资方式
+    time                        出资时间
+    virtualId                   虚拟 ID
+data.pageNum / pageSize / totalCounts  分页
+```
+
+### shareholder_info.json — 股东个人信息
+
+当前实现传空 name，固定返回空对象 `{}`。
+
+### branch.json — 分支机构
+
+```
+data.list[]
+  name                          分公司名称
+  unifiedSocialCreditCode       统一社会信用代码
+  regNumber                     注册号
+  regStatus                     经营状态
+  regInstitute                  登记机关
+  estiblishTime                 成立日期
+  legalPersonName               负责人
+```
+
+### staff.json — 主要人员
+
+```
+data.list[]
+  name                          姓名
+  staffTypeName                 职务（执行董事兼总经理/监事/财务负责人等）
+data.pageNo / pageSize / total  分页
+```
+
+### insurances.json — 社保参保人数
+
+```
+data[]
+  year                          年份
+  people                        参保人数
+```
+
+### relationship.json — 关联关系
+
+```
+data.relationship[]
+  name                          关系类型（股权穿透图/投融资/对外投资/分支机构/交易链）
+  no                            编号
+  legal                         是否法律相关
+  messageNo                     消息数
+  tradingName                   交易链名称
+```
+
+### pledgee.json — 动产抵押/质押
+
+```
+data.list[]                     抵押/质押记录（null=无数据）
+data.pageNo / total             分页
+```
+
+### query_bond_new.json — 债券信息 (newEnt)
+
+```
+data.list[]
+  objId / windCd                债券 Wind 代码
+  custNm                        发行主体
+  bndNm                         债券全称
+  bndShtNm                      债券简称
+  espBndTypNm                   债券类型（可转债/公司债等）
+  isuAncDt                      发行公告日
+  lstDt                         上市日
+  mtuDt                         到期日
+  dlstDt                        退市日
+  bndTrmYear                    债券期限（年）
+  intrMth                       计息方式（单利/复利）
+  crdRatLvl                     信用评级
+  ratDt                         评级日期
+  ratOrgNm                      评级机构
+  parVal                        面值
+  parIntrRat                    票面利率（%）
+  actIsuAmt                     实际发行额（亿元）
+  plnIsuAmt                     计划发行额
+  isuPrc                        发行价格
+  sprd                          利差
+  payIntrFrq                    付息频率
+  rpayMthNm                     偿付方式
+  isuObj                        发行对象
+data.total / pageNum / pageSize 分页
+```
+
+### queryFCNew.json — 融资事件 (newEnt)
+
+```
+data.list[]
+  id                            事件 ID
+  companyId                     企业标识
+  entName                       企业名称
+  financingRounds               融资轮次（IPO上市/战略融资/A轮...）
+  financingAmount               融资金额（如 "4.43亿人民币"）
+  releaseDate                   发布日期
+  investor[]                    投资方列表
+  investorFull / investorName   投资方全称/名称
+  financingProduct              融资产品/项目名
+  financingTitle                融资标题
+  financingMsg                  融资描述
+  financingSource               融资来源描述（含 URL 文本）
+  financingSourceList[]         融资来源 [{title, url}]
+  province / city / county      省/市/区县
+  statusAccount                 账户状态
+  creditGrantingCustomer        授信客户标识
+  intelligentAtarRating         智能星级（L1-L6）
+  insideLabel[]                 行内标签
+  industryMax / industryBig / industryMid  行业代码
+  idtCtgNm / idtBigClsNm / idtMidClsNm / idtSmlClsNm  行业分类名
+```
+
+### queryInvestor.json — 对外投资 (newEnt)
+
+```
+data.list[]
+  companyName                   被投资企业名称
+  amount                        出资金额
+  proportion                    出资比例（0-1 小数）
+  putCapitalProportion          出资比例（字符串，如 "100.00%"）
+  regStatus                     被投企业状态
+  companyOrgType                被投企业类型
+  estiblishTime                 成立日期
+  legalPersonName               法定代表人
+  proCiCo                       所在省市
+  capital[]                     实缴明细
+    unit                        币种
+    amomon                      金额
+    paymet                      出资方式
+    time                        出资时间
+  uid / eid / investorId        各类标识
+data.total / pageNo / pageSize  分页
+```
+
+### queryInvestmentEventNew.json — 投资事件 (newEnt)
+
+本企业作为投资方参与的投资事件。
+
+```
+data.list[]
+  id                            事件 ID
+  companyId                     被投企业标识
+  entName                       被投企业名称
+  investor[]                    投资方列表（含本企业）
+  financingRounds               融资轮次
+  financingAmount               融资金额
+  releaseDate                   发布日期
+  financingProduct              产品名
+  financingSource               来源描述
+  financingSourceList[]         来源列表 [{title, url}]
+  province / city / county      省/市/区县
+  (其他字段同 queryFCNew)
+```
+
+### queryBiddingTotal.json — 招投标总数 (newEnt)
+
+```
+data.total                      招投标总次数
+```
+
+### queryCompanyBiddingNewInviting.json — 招标公告 (newEnt)
+
+```
+code / total                    响应码 / 总数
+list[]                          招标项目列表
+  title                         项目标题
+  province / city / county      省/市/区县
+  pubTime                       发布时间
+  typeNm                        类型名称（招标）
+  dataType                      数据类型
+  moneyStr / money              金额
+  bidNo                         项目编号
+  caller                        招标方
+  bidSubtype                    子类型
+  (字段结构同 Winner，但数据为招标视角)
+```
+
+### queryCompanyBiddingNewWinner.json — 中标结果 (newEnt)
+
+```
+code / total                    响应码 / 总数
+list[]
+  title                         项目标题（如 "当自然资规出让告字[2022]第13号中标公示"）
+  province / city / county      省/市/区县
+  pubTime                       公示时间
+  typeNm                        类型（中标）
+  dataType                      数据类型（土地拍卖/工程招标等）
+  moneyStr / money              金额
+  bidNo                         项目编号
+  bidType                       招标类型
+  bidSubtype                    子类型
+  caller                        招标方
+  callerPerson / callerPhone    招标方联系人/电话
+  winnersStr                    中标方（逗号分隔）
+  winners[]                     中标方列表
+  winnerProvinceStr / winnerProvince[]     中标方省份
+  winnerCityStr / winnerCity[]             中标方城市
+  winnerMoneysStr / winnerMoneys[]         中标金额
+  winnerPersonStr / winnerPerson[]         中标方联系人
+  entpName                      本企业名称（用于匹配）
+  agency / agencyPerson / agencyPhone      代理机构信息
+  projectType / projectPerson / projectPhone  项目类型/联系人/电话
+  busName                       业务名称
+  process                       处理状态
+```
+
+### label.json — 标签映射（已加工）
+
+从 queryCompany 的 `insideLabel` 和 `crossBorderLabel` 翻译为中文。
+
+```
+company_name                    企业名称
+labels[]                        中文标签列表
+raw_label_codes[]               PNG 原始编码列表
+```
+
+已知标签映射（`_LABEL_MAP`，未映射的显示为 `未知标签:<code>`）：
+
+| PNG 编码 | 中文标签 |
 |----------|----------|
-| 单条 MiniMax 查询超时 | 维度状态变为 `partial`，继续处理成功查询结果 |
-| 全部 MiniMax 查询失败 | 维度状态 `failed`，摘要可信度封顶为待核实 |
-| Metaso 不可用 | 回退到 MiniMax-only |
-| crawl4ai 抓取失败 | 保留原 snippet，不中断后续摘要 |
-| 商业库/登录墙来源 | 默认 `avoid`，跳过 crawl，保留 item 用于 snippet fallback |
-| 结构化提取 JSON 解析失败 | 自动重试 1 次，仍失败则跳过提取表 |
-| summarize JSON 解析失败 | 自动重试 1 次，仍失败则 fallback 为原始 snippet 摘要 |
-| LLM 编造 evidence ID | 代码过滤不存在的 ID |
-| active 维度没有摘要 | collect/merge/save 均视为失败维度 |
-| required 维度失败 | `required_failed=true`，CLI 退出码为 2 |
+| `inside.png` | 行内客户 |
+| `total.png` | 总战客户 |
+| `high_value.png` | 高质量客户 |
+| `retail_card.png` | 零售卡/零售关联客户 |
+| `star5.png` | 综合星级标签 |
+| `star5Tech.png` | 科技企业资质5星 |
+| `chrFinInd.png` | 特色金融客户 |
+| `chrFinHiQltCustAcqInd.png` | 特色金融高质量获客客户 |
+| `techFinInd.png` | 科技金融客户 |
+| `digitalFinInd.png` | 数字金融客户 |
+| `hiOprValCustInd.png` | 高经营价值客户 |
+| `smallService.png` | 跨境小额服务贸易 |
 
----
+### queryCompany.json — 企业工商画像 (newEnt)
 
-## 退出码
+与 info.json 字段互补，包含联系方式、标签、智能评级。
 
-| 退出码 | 含义 |
-|:---:|------|
-| 0 | 成功，或只有非 required 维度部分失败 |
-| 1 | 参数错误、配置错误或管道整体失败 |
-| 2 | required 维度失败，报告不完整 |
+```
+data
+  entName                       企业名称
+  legalName                     法定代表人
+  regNo                         工商注册号
+  orgNo                         组织机构代码
+  regCapCur                     注册资本币种
+  employeeNum                   员工数量（年报填报数）
+  empNum                        参保人数
+  establishDate                 成立日期
+  orgType                       机构类型（企业/个体工商户等）
+  province / county             省/区县
+  industryBig                   行业大类
+  idtCtgNm / idtSmlClsNm        行业分类名称
+  phoneList[]                   联系电话
+  emailList[]                   企业邮箱
+  yearRptCmnAddr                年报通讯地址
+  formerName                    曾用名
+  source                        数据来源（如 "企业填报工商年报"）
+  dataType                      数据类型
+  statusAccount                 账户状态（A=正常）
+  insideLabel[]                 行内标签（PNG 文件名列表）
+  crossBorderLabel[]            跨境标签
+  highQualityCustomer           高质量客户（Y/N）
+  intelligentAtarRating         智能星级评级（L1-L6）
+  chrFinInd                     特色金融标识（Y/N）
+  techFinInd                    科技金融标识（Y/N）
+  digitalFinInd                 数字金融标识（Y/N）
+  phFinInd                      普惠金融标识（Y/N）
+  hiOprValCustInd               高经营价值客户标识（Y/N）
+  divideBattle                  分战标识（Y/N）
+  crossBorderServiceTradeMark / crossBorderSmallServiceTradeMark / crossBorderSmallExportSalesMark / crossBorderCapitalProjectMark  跨境标识
+  coordinate                    GPS {lat, lon}
+  rtlCmNmLst                    零售客户名单
+  idtCtgNm / idtBigClsNm / idtMidClsNm / idtSmlClsNm  行业分类
+```
 
----
+### queryBaseLabel.json — 企业基础标签 (newEnt)
 
-## 项目结构
+```
+potentialRating                 潜在评级（可为 null）
+data[]
+  labelName                     标签名称（如 "专精特新中小企业(省级)"/"高新技术企业认定"/"创新型中小企业"/"园区企业"）
+  labelClass                    标签分类（return-rate / company-info）
+  labelType                     标签类型（1/2/null）
+  parkName                      园区名称（园区企业时返回园区列表）
+```
 
-```text
-main.py                          CLI 入口
-Dockerfile                       多阶段 Docker 构建
-docker-compose.yml               一键运行服务定义
-config/                          默认目录化配置
-config.yaml                      兼容旧单文件配置
-src/diligence/
-├── config.py                    Pydantic 配置模型
-├── models.py                    SearchItem / DimensionSearchResult / RunMeta 等
-├── settings.py                  .env 加载与密钥解密
-├── keys.py                      SM4 key 工具
-├── state.py                     LangGraph State 与 reducer
-├── graph.py                     LangGraph 组装与 run_company_graph()
-├── batch.py                     批量处理与续跑
-├── nodes/
-│   ├── init_node.py             初始化 run_id、active_dimensions、输出目录
-│   ├── route_node.py            LangGraph Send fan-out
-│   ├── search_node.py           MiniMax + Metaso + dedup + crawl4ai
-│   ├── summarize_node.py        结构化提取、字段校验、维度摘要
-│   ├── collect_node.py          fan-in 完整性检查
-│   ├── merge_node.py            最终报告合并
-│   └── save_node.py             产物写入与成本打印
-└── utils/
-    ├── minimax_search.py        MiniMax Search 封装、URL 归一化去重
-    ├── metaso.py                Metaso chat/search 客户端
-    ├── fetch.py                 crawl4ai 抓取、抓取排序与过滤
-    └── source_registry.py       来源识别、权威等级、抓取偏好
-tests/
-├── test_fetch.py
-├── test_source_registry.py
-├── test_search.py
-├── test_summarize_helpers.py
-├── test_nodes.py
-├── test_graph.py
-├── test_batch.py
-└── ...
+### query_risk_rating.json — 风险评分 (newEnt)
+
+```
+data
+  taxRisk                       税务风险分值
+  pledgeRisk                    质押风险分值
+  judicialRisk                  司法风险分值
+  businessRisk                  经营风险分值
+  financialRisk                 财务风险分值
+  totalScore                    综合风险总分
+```
+
+### querySameTelEnt.json — 相同电话关联企业 (newEnt)
+
+```
+data.list[]
+  entName                       关联企业名称
+  entStatus                     经营状态
+  establishDate                 成立日期
+  legalName                     法定代表人
+  phoneList                     电话列表（空格分隔）
+  regCap                        注册资本
+  uid                           企业标识
+data.total / pageNo / pageSize  分页
+```
+
+### queryActualControl.json — 实际控制权 (newEnt)
+
+展示企业的控制链（谁通过什么路径控制谁）。
+
+```
+data.list[]
+  name                          企业名称
+  alias                         企业别名
+  cid                           企业标识
+  percent                       最终受益比例
+  regStatus                     经营状态
+  regCapital                    注册资本
+  estiblishTime                 成立日期（毫秒时间戳）
+  legalPersonName               法定代表人
+  chainList[]                   控制链路（二维数组，每条链路是一个节点序列）
+    [][]
+      type                      节点类型（percent=持股比例, company=企业）
+      value                     节点值（比例百分比或企业名称）
+      cid                       企业标识（type=company 时）
+```
+
+### licence.json — 行政许可
+
+```
+data.list[]
+  licenceName                   许可证名称
+  licenceNumber                 许可证编号
+  department                    颁发机关
+  fromDate                      生效日期
+  toDate                        截止日期
+  scope                         许可范围
+  grade                         等级
+  state                         状态
+  type                          类型
+  issuedate                     签发日期
+  entName                       企业名称
+data.pageNo / total             分页
+```
+
+### queryQualification.json — 企业资质认定 (newEnt)
+
+```
+data[]
+  labNm                         资质名称（专精特新中小企业/高新技术企业认定/创新型中小企业等）
+  labId                         资质编号
+  custNm                        企业名称
+  eftDt                         生效日期
+  nvldDt                        失效日期
+  quaYear                       认定年度
+  pblhDt                        认定日期
+  revOrPblhOrg                  评定/颁发机构
+  lvlNm                         等级名称
+  rnk                           排名
+  busAmtInc / busAmtIncStr      营业收入/字符串
+  incYear                       收入年度
+  taxAmt / taxAmtStr            纳税额/字符串
+  taxYear                       纳税年度
+  idStsNm                       状态
+  datSrc                        数据来源
+  url                           来源 URL
+  zaxUid / custUid / unqKey     各类标识
+  ancNm                         曾用名
+  lstNm                         名单名称
+  prodPrjPplNm                  产品/项目/人员名
+  lstYearOrBch                  名单年度/批次
+  idtNm                         行业名称
 ```
 
 ---
 
-## 架构模式
+## 读取建议
 
-### LangGraph fan-out / fan-in
-
-`route_node` 为每个 active dimension 发送一个 `search_summarize_node` 分支。`state.py` 中的 reducer 负责合并字典、成本和错误。
-
-### 配置驱动维度
-
-新增、删除、停用维度通常只改 `config/dimensions/*.yaml` 和对应 prompt 文件。代码不绑定固定 8 个维度；默认配置只是当前尽调模板。
-
-### 来源信号代码化，事实裁决仍由 LLM 执行
-
-`source_registry` 负责稳定识别来源和权威等级，结构化提取和 merge prompt 使用这些信号。代码不直接按权重裁决事实，避免把冲突处理做得过死。
-
-### 先审计，后重构
-
-当前版本没有引入完整 Fact / ResolvedFact / EvidenceChunk 三层事实模型。字段候选仍保存在 `DimensionSearchResult.extractions`，报告合并时注入提取表。等真实样本暴露出跨运行比较、人工复核数据库、复杂冲突裁决需求后，再考虑事实层重构。
-
----
-
-## 当前冻结测试建议
-
-P2 crawl priority ordering 已具备冻版测试条件。建议用真实样本先观察，而不是继续堆抽象：
-
-```text
-10-20 家企业
-覆盖：制造业、科技公司、小企业、上市公司、政府公告多的企业、商业库结果多的企业
-观察：字段命中率、错误字段、crawl 成功率、snippet fallback 贡献、报告是否误导
-```
-
-后续优化触发条件：
-
-| 观察到的问题 | 下一步 |
-|--------------|--------|
-| crawl 慢或波动大 | 做 URL fetch cache，30 天 TTL |
-| 字段冲突频繁且报告裁决不稳 | 引入轻量事实层或独立 conflict resolver |
-| snippet 贡献高但误报多 | 做 source-aware confidence policy |
-| 字段校验误杀 | 细化 validator 和字段类型映射 |
-| 报告仍混淆未执行/未找到/失败 | 强化 merge prompt 和状态契约 |
-
----
-
-## 技术栈
-
-| 组件 | 用途 |
-|------|------|
-| Python 3.12+ | 运行时 |
-| LangGraph | 管道编排 |
-| Pydantic v2 | 配置和数据模型 |
-| pydantic-settings | 环境变量加载 |
-| httpx | 异步 HTTP |
-| crawl4ai | 页面抓取与 Markdown 提取 |
-| OpenAI SDK | OpenAI 兼容 LLM 调用 |
-| structlog | 结构化日志 |
-| PyYAML | 配置解析 |
-| uv | 依赖与虚拟环境 |
-| pytest | 测试 |
-| Ruff | lint / format |
+1. **先传 `.meta.json`** — 了解哪些数据已获取、是否来自缓存
+2. **按分析目标选 JSON** — 参考分类速查表，不需要全部传入
+3. **最小高价值组合**：`info.json` + `label.json` + `risk_insight.json` + `query_risk_rating.json`
+4. **`label.json` 是已加工的**，直接用 `labels[]`，不需要自行解析 PNG 文件名
+5. **空数据不是错误**：文件为 `{}`、`data.list: null`、`data: null` 表示该维度无数据
+6. **时间戳格式**：prophet 系统返回两种 — 字符串 `"YYYY-MM-DD HH:mm:ss"` 和毫秒时间戳整数，按上下文区分
