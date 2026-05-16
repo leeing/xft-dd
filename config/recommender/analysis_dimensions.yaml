@@ -1,0 +1,249 @@
+version: "1.0"
+dimensions:
+  - id: basic_profile
+    level1: 企业基础信息与股权结构
+    level2: 基础特征与控股关系
+    level3: 主体规模与属性
+    role: 企业尽职调查与资质验证专家
+    local_fields:
+      - company_name
+      - industry
+      - industry_big
+      - employee_count
+      - company_org_type
+      - is_listed
+      - stock_code
+      - shareholder_summary
+      - branch_count
+    evidence_templates:
+      - field: industry
+        label: 行业
+      - field: employee_count
+        label: 员工规模
+      - field: company_org_type
+        label: 企业类型
+      - field: is_listed
+        label: 上市状态
+      - field: shareholder_summary
+        label: 股东结构
+    insufficient_evidence:
+      - 股权穿透层级
+      - 实际控制人
+      - 国资/外资持股比例
+
+  - id: business_product
+    level1: 业务模式与产品特征
+    level2: 行业与产业链定位
+    level3: 主营业务与产品属性
+    role: C端业务多维度分析师
+    local_fields:
+      - industry
+      - industry_big
+      - industry_small
+      - business_scope
+      - labels
+      - ip_counts
+    evidence_templates:
+      - field: industry_big
+        label: 细分行业
+      - field: business_scope
+        label: 经营范围
+      - field: labels
+        label: 标签
+      - field: ip_counts
+        label: 知识产权
+    insufficient_evidence:
+      - 官网产品线
+      - 产品型号与技术规格
+      - 目标客群
+
+  - id: supply_chain_procurement
+    level1: 供应链与采购管理
+    level2: 采购规模与特征
+    level3: 供应链复杂度
+    role: 供应链管理与商业调研专家
+    local_fields:
+      - industry
+      - employee_count
+      - business_scope
+      - bidding_total
+      - qualification_count
+    evidence_templates:
+      - field: industry
+        label: 行业
+      - field: employee_count
+        label: 员工规模
+      - field: bidding_total
+        label: 招投标数量
+      - field: qualification_count
+        label: 资质数量
+    insufficient_evidence:
+      - 供应商数量
+      - 前五大供应商集中度
+      - 年采购金额
+      - 采购物料类型
+
+  - id: sales_channel
+    level1: 销售与市场覆盖
+    level2: 销售模式与网络
+    level3: 渠道与市场覆盖
+    role: C端业务多维度分析师
+    local_fields:
+      - labels
+      - branch_count
+      - recruitment_count
+      - recent_recruitment_titles
+      - cross_border_flags
+    evidence_templates:
+      - field: branch_count
+        label: 分支机构数量
+      - field: recruitment_count
+        label: 招聘数量
+      - field: recent_recruitment_titles
+        label: 近期招聘岗位
+      - field: cross_border_flags
+        label: 跨境标签
+    insufficient_evidence:
+      - 经销商数量
+      - 渠道收入占比
+      - 电商平台覆盖
+
+  - id: hr_workforce
+    level1: 人力资源与用工特征
+    level2: 用工与考勤特征
+    level3: 用工规模与岗位结构
+    role: 企业运营与人力资源分析师
+    local_fields:
+      - employee_count
+      - recruitment_count
+      - recent_recruitment_titles
+    evidence_templates:
+      - field: employee_count
+        label: 员工规模
+      - field: recruitment_count
+        label: 招聘数量
+      - field: recent_recruitment_titles
+        label: 近期招聘岗位
+    insufficient_evidence:
+      - 倒班/排班制度
+      - 考勤打卡要求
+      - 劳动争议情况
+
+  - id: finance_tax
+    level1: 财务与税务特征
+    level2: 财税数字化水平
+    level3: 财务管理复杂度
+    role: 财税数字化专家
+    local_fields:
+      - employee_count
+      - branch_count
+      - shareholder_summary
+      - risk_counts
+      - bank_flags
+    evidence_templates:
+      - field: employee_count
+        label: 员工规模
+      - field: branch_count
+        label: 分支机构数量
+      - field: shareholder_summary
+        label: 股东结构
+      - field: bank_flags
+        label: 银行标签
+    insufficient_evidence:
+      - 财务系统使用情况
+      - 全电票试点情况
+      - 财务共享或业财一体化线索
+
+  - id: tech_innovation
+    level1: 科技创新与研发能力
+    level2: 研发投入与资质
+    level3: 资质与知识产权
+    role: 企业尽职调查与资质验证专家
+    local_fields:
+      - ip_counts
+      - qualification_count
+      - labels
+      - recent_recruitment_titles
+    evidence_templates:
+      - field: ip_counts
+        label: 知识产权数量
+      - field: qualification_count
+        label: 资质数量
+      - field: labels
+        label: 科技资质标签
+    insufficient_evidence:
+      - 发明专利明细
+      - 研发费用占比
+      - 研发人员占比
+
+  - id: compliance_risk
+    level1: 合规与风险评估
+    level2: 法律风险排查
+    level3: 风险与合规信号
+    role: 复合型商业尽调专家团队
+    local_fields:
+      - risk_counts
+      - reg_status
+      - is_listed
+      - bidding_total
+      - qualification_count
+    evidence_templates:
+      - field: risk_counts
+        label: 风险计数
+      - field: reg_status
+        label: 登记状态
+      - field: is_listed
+        label: 上市状态
+      - field: qualification_count
+        label: 资质数量
+    insufficient_evidence:
+      - 股权质押风险
+      - 关联交易风险
+      - 验厂记录
+
+  - id: overseas_business
+    level1: 海外业务与全球化
+    level2: 海外收入与布局
+    level3: 跨境业务线索
+    role: 企业出海业务分析师
+    local_fields:
+      - cross_border_flags
+      - registered_capital
+      - company_org_type
+      - labels
+    evidence_templates:
+      - field: cross_border_flags
+        label: 跨境业务标签
+      - field: registered_capital
+        label: 注册资本
+      - field: company_org_type
+        label: 企业类型
+    insufficient_evidence:
+      - 海外收入占比
+      - 海外团队岗位
+      - 海外产能布局
+
+  - id: digitalization
+    level1: 数字化与信息化水平
+    level2: 信息化系统应用
+    level3: 数字化建设与系统痛点
+    role: 企业运营与人力资源分析师
+    local_fields:
+      - employee_count
+      - branch_count
+      - recent_recruitment_titles
+      - ip_counts
+      - labels
+    evidence_templates:
+      - field: employee_count
+        label: 员工规模
+      - field: branch_count
+        label: 多组织程度
+      - field: recent_recruitment_titles
+        label: 招聘岗位
+      - field: labels
+        label: 企业标签
+    insufficient_evidence:
+      - ERP/CRM/MES/PLM系统使用情况
+      - 系统孤岛与数据治理情况
+      - 协同办公痛点

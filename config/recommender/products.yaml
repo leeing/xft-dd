@@ -1,0 +1,71 @@
+version: "1.0"
+scenario: product_recommendation
+output_dir: recommendation_runs
+products:
+  - module_id: procurement_srm
+    module_name: 供应商关系管理(SRM)
+    priority: 90
+    target_needs:
+      - supply_chain_procurement
+      - business_product
+    match_rule: 制造业、采购链条较长、招投标或资质较多、员工规模较大的企业，优先考虑供应商准入、采购协同和供应商绩效管理。
+
+  - module_id: finance_erp
+    module_name: 财务管理(ERP)
+    priority: 86
+    target_needs:
+      - finance_tax
+      - basic_profile
+      - digitalization
+    match_rule: 多组织、员工规模较大、上市或股权结构较复杂的企业，优先考虑财务核算、合并报表、预算和业财一体化。
+
+  - module_id: crm_channel
+    module_name: 客户与渠道管理(CRM)
+    priority: 82
+    target_needs:
+      - sales_channel
+      - business_product
+      - overseas_business
+    match_rule: 存在销售团队、跨区域市场、经销渠道、跨境或多客户触达线索的企业，优先考虑客户管理和渠道协同。
+
+  - module_id: hr_attendance
+    module_name: 人力资源与考勤管理
+    priority: 80
+    target_needs:
+      - hr_workforce
+      - digitalization
+    match_rule: 员工规模较大、招聘活跃、制造或多组织企业，优先考虑组织人事、考勤排班、薪酬绩效和用工合规。
+
+  - module_id: ip_management
+    module_name: 知识产权与研发资产管理
+    priority: 76
+    target_needs:
+      - tech_innovation
+      - business_product
+    match_rule: 专利、商标、软著或科技资质较丰富的企业，优先考虑知识产权台账、研发项目和资质维护。
+
+  - module_id: risk_compliance
+    module_name: 风控合规管理
+    priority: 74
+    target_needs:
+      - compliance_risk
+      - basic_profile
+    match_rule: 上市公司、风险记录较多、资质/招投标/合规要求较高的企业，优先考虑风险监测、合规流程和证照管理。
+
+  - module_id: bidding_management
+    module_name: 招投标管理
+    priority: 70
+    target_needs:
+      - supply_chain_procurement
+      - sales_channel
+      - compliance_risk
+    match_rule: 有招投标记录或政府/大客户项目线索的企业，优先考虑标讯跟踪、投标流程、项目资料和合同归档。
+
+  - module_id: data_analytics
+    module_name: 数据分析与经营驾驶舱
+    priority: 68
+    target_needs:
+      - digitalization
+      - finance_tax
+      - sales_channel
+    match_rule: 规模较大、多组织、多业务线或经营信息复杂的企业，优先考虑经营指标、财务销售采购数据整合和管理驾驶舱。
