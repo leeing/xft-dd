@@ -474,6 +474,27 @@ digitalization             数字化与信息化水平
     - 供应商数量
     - 前五大供应商集中度
     - 年采购金额
+  analysis_prompt: |
+    判断该企业是否存在采购协同、供应商准入、供应商绩效、采购合规等数字化需求。
+    只能基于已提供证据分析，不得编造供应商数量、采购金额或采购品类。
+  evidence_policy: |
+    直接采购数据优先于行业和规模推断。制造业、员工规模、资质和招投标只能作为间接线索。
+    没有供应商和采购金额证据时，不得给出高置信结论。
+  support_rules:
+    - field: employee_count
+      op: ">="
+      value: 200
+      claim: 员工规模较大，可能存在采购流程协同与供应商管理需求。
+      confidence: 低
+    - field: bidding_total
+      op: ">"
+      value: 0
+      claim: 存在招投标记录，可作为项目型采购或销售管理复杂度线索。
+      confidence: 低
+  web_search_queries:
+    - "{company_name} 供应商"
+    - "{company_name} 采购"
+    - "{company_name} 招投标"
 ```
 
 字段说明：
@@ -496,9 +517,61 @@ evidence_templates
 
 insufficient_evidence
   当前本地数据不足时，需要后续 Web search 或人工补充的证据项。
+
+analysis_prompt
+  该维度自己的分析意图。LLM match 会收到这个字段，并优先遵守该维度的分析口径。
+
+evidence_policy
+  该维度的证据使用边界。例如哪些是直接证据、哪些只是间接线索、哪些结论不能从当前字段推出。
+
+support_rules
+  该维度的本地规则推断。命中后会进入 dimension_analysis.json 的 inferences，不会伪装成事实证据。
+
+web_search_queries
+  后续 Web enrichment 的补证查询模板。当前 MVP 不会自动搜索，但会把渲染后的查询写入 dimension_analysis.json。
 ```
 
 新增维度时，优先只改 YAML。只有当新增维度需要读取 `company_profile` 里不存在的新字段时，才需要扩展 ETL 和 Gold 层。
+
+`support_rules` 当前支持的操作符：
+
+```text
+exists      字段存在且非空
+contains    字符串、列表或字典值中包含指定内容
+==          等于
+!=          不等于
+>           数值大于
+>=          数值大于等于
+<           数值小于
+<=          数值小于等于
+```
+
+字段可以使用点路径访问嵌套 JSON，例如：
+
+```yaml
+support_rules:
+  - field: risk_counts.self
+    op: ">="
+    value: 20
+    claim: 自身风险记录较多，建议建立风险台账和合规跟踪机制。
+    confidence: 中
+```
+
+`web_search_queries` 支持这些模板变量：
+
+```text
+{company_name}
+{industry}
+{industry_big}
+```
+
+示例：
+
+```yaml
+web_search_queries:
+  - "{company_name} ERP"
+  - "{company_name} {industry} 数字化"
+```
 
 ### 产品模块配置
 
@@ -572,8 +645,185 @@ Prompt 设计原则：
 
 - 基于证据，不允许编造。
 - 区分事实、推断、缺失证据。
+- 每个维度的 `analysis_prompt` 和 `evidence_policy` 优先于全局 prompt。
+- `web_search_queries` 只代表后续补证方向，不能当作已经存在的事实。
 - 明确本地数据不足时应输出数据缺口。
 - Web search 未接入前，不假设外部信息。
+
+### Web Search 配置
+
+文件：
+
+```text
+config/recommender/web_search.yaml
+```
+
+当前 Web enrichment 是 MVP V2.1 能力，目标是把 Web search 像 `data/` JSON 一样资产化：先缓存原始文件和中间文件，再导入 DuckDB，最后推荐流程按需读取 `web_evidence`。
+
+配置示例：
+
+```yaml
+version: "1.1"
+enabled: true
+cache_root: data/web
+default_providers:
+  - minimax_search
+
+providers:
+  metaso_search:
+    type: metaso
+    enabled: false
+    mode: search
+    search_size: 3
+    timeout_seconds: 30
+
+  metaso_chat:
+    type: metaso
+    enabled: false
+    mode: chat
+    search_size: 3
+    timeout_seconds: 45
+
+  minimax_search:
+    type: minimax
+    enabled: true
+    max_results: 5
+    timeout_seconds: 30
+
+execution:
+  max_queries_per_dimension: 3
+  max_results_per_query: 5
+  fetch_pages: true
+  refresh: false
+
+fetch:
+  enabled: true
+  timeout_seconds: 25
+  concurrency: 20
+  max_full_text_chars: 12000
+  blocked_domains:
+    - qixin.com
+    - qcc.com
+```
+
+当前复用已有 provider 代码：
+
+```text
+src/diligence/utils/minimax_search.py
+src/diligence/utils/fetch.py
+src/diligence/utils/metaso.py
+```
+
+默认链路是：
+
+```text
+MiniMax Search -> crawl4ai fetch -> LLM/fallback evidence extraction
+```
+
+Metaso 默认关闭，可通过 `--providers minimax_search,metaso_search` 或配置文件启用。
+
+API key 仍从现有 `.env` / `settings.py` 读取：
+
+```text
+minimax_api_key
+metaso_api_key
+metaso_enabled
+metaso_verify_tls
+```
+
+MVP V2 暂时不把 API key 完全 YAML 化，避免重复造密钥管理；后续可以把 provider key 来源也配置化。
+
+### Web 缓存目录
+
+默认写入：
+
+```text
+data/web/
+  {credit_code}_{company_name}/
+    {web_run_id}/
+      manifest.json
+      plan.json
+      skipped_queries.jsonl
+      queries.jsonl
+      search_results.jsonl
+      fetched_pages.jsonl
+      extraction_requests.jsonl
+      extraction_results.jsonl
+      web_evidence.jsonl
+      conflicts.jsonl
+      provider_responses/
+        minimax_search__0001.json
+      pages/
+        {content_hash}.md
+        {content_hash}.json
+```
+
+文件含义：
+
+```text
+manifest.json
+  本次 Web enrichment 的公司、provider、维度、配置和状态。
+
+queries.jsonl
+  实际执行的查询。每行包含 dimension_id、provider、query、status、raw_response_path。
+
+search_results.jsonl
+  标准化搜索结果。每行包含 title、url、snippet、preview、page_path、content_hash、source、rank。
+
+fetched_pages.jsonl
+  crawl4ai 抓取后的页面元信息。DuckDB 存路径和 hash，不直接存大量正文。
+
+extraction_requests.jsonl / extraction_results.jsonl
+  Web 证据抽取的 LLM 输入摘要和输出结构，便于审计与重放。
+
+web_evidence.jsonl
+  证据层。当前支持 supplement / confirmation / conflict，并保留冲突说明。
+
+provider_responses/
+  provider 返回 payload 的缓存。当前以标准化后的 ProviderSearchResponse 保存，后续可增强为完整 HTTP raw response。
+```
+
+### Web DuckDB 表
+
+`etl_web_to_duckdb.py` 会创建并写入：
+
+```text
+web_search_runs
+web_search_queries
+web_search_results
+web_pages
+web_evidence
+```
+
+常用查询：
+
+```sql
+SELECT dimension_id, claim, source_title, source_url
+FROM web_evidence
+WHERE company_name = '广东德美精细化工集团股份有限公司'
+ORDER BY created_at DESC;
+```
+
+当前 `web_evidence` 是给推荐链路消费的稳定接口。网页正文保留在 `data/web/.../pages/`，DuckDB 只保存页面路径、hash、preview 和结构化证据。
+
+### Web 抽取 LLM 配置
+
+文件：
+
+```text
+config/recommender/web_extract_llm.yaml
+config/recommender/prompts/extract_evidence_system.md
+```
+
+Web 证据抽取 LLM 与推荐 LLM 解耦。当前实现仍复用项目现有 OpenAI-compatible client，但抽取任务有独立的 prompt、timeout、temperature、source 数量和 source 字符数配置。
+
+如果不想调用 LLM：
+
+```bash
+uv run python run_web_enrichment.py --no-llm-extraction "企业名称"
+```
+
+fallback 会使用去重后的搜索结果生成低置信 `supplement` 证据。
 
 ## 扩容能力
 
@@ -618,6 +868,63 @@ config/recommender/products.yaml
 config/recommender/analysis_dimensions.yaml
 ```
 
+推荐新增步骤：
+
+1. 先定义稳定 `id`，例如 `production_manufacturing`。
+2. 填写 `level1/level2/level3/role`。
+3. 从 `company_profile` 选择可用字段写入 `local_fields` 和 `evidence_templates`。
+4. 用 `analysis_prompt` 写清楚该维度要判断什么。
+5. 用 `evidence_policy` 写清楚证据边界，避免把间接线索说成强结论。
+6. 用 `support_rules` 配置本地可解释推断。
+7. 用 `web_search_queries` 配置后续补证方向。
+8. 在 `products.yaml` 中让相关产品的 `target_needs` 引用这个新维度。
+
+新增维度示例：
+
+```yaml
+- id: production_manufacturing
+  level1: 生产制造与产能管理
+  level2: 生产组织与工厂运营
+  level3: 产能、设备与制造协同
+  role: 制造业运营与数字化转型专家
+  local_fields:
+    - industry
+    - employee_count
+    - business_scope
+    - recent_recruitment_titles
+  evidence_templates:
+    - field: industry
+      label: 行业
+    - field: employee_count
+      label: 员工规模
+    - field: business_scope
+      label: 经营范围
+  insufficient_evidence:
+    - 工厂数量
+    - 产线数量
+    - MES/ERP/PLM 使用情况
+  analysis_prompt: |
+    判断企业是否存在生产计划、车间执行、质量追溯、设备协同和制造数据采集需求。
+    只能基于本地画像和后续补证结果分析，不得编造产线数量或设备类型。
+  evidence_policy: |
+    制造业属性和员工规模是间接线索；工厂、产线、设备、系统招标和招聘 JD 是更强证据。
+  support_rules:
+    - field: industry
+      op: contains
+      value: 制造
+      claim: 制造业属性提示可能存在生产组织和车间协同场景。
+      confidence: 低
+    - field: employee_count
+      op: ">="
+      value: 300
+      claim: 员工规模较大，可能存在生产排程、质量和现场管理复杂度。
+      confidence: 低
+  web_search_queries:
+    - "{company_name} MES"
+    - "{company_name} 工厂"
+    - "{company_name} 生产线"
+```
+
 如果新维度依赖当前 `company_profile` 没有的字段，需要同步扩展：
 
 ```text
@@ -638,6 +945,24 @@ config/recommender/analysis_dimensions.yaml
 2. 如果字段需要结构化分析，扩展 Silver 表。
 3. 如果字段会被推荐或报告直接使用，扩展 `company_profile`。
 4. 在 `analysis_dimensions.yaml` 中把该字段加入对应维度的 `local_fields`。
+
+### 更多 Web Search Provider
+
+当前 provider adapter 在：
+
+```text
+src/diligence/recommender/web/providers.py
+```
+
+新增 provider 的推荐步骤：
+
+1. 在 `providers.py` 新增 adapter，实现 `search(query, dimension_id=...)`。
+2. 返回统一 `ProviderSearchResponse`，其中 `items` 尽量使用现有 `SearchItem` 形状。
+3. 在 `build_provider()` 注册 provider type。
+4. 在 `config/recommender/web_search.yaml` 增加 provider 配置。
+5. 增加测试，验证缓存文件和 DuckDB 导入。
+
+原则：provider 负责搜索，runner 负责缓存，loader 负责入库，推荐流程只读 DuckDB。
 
 ## 拷贝给别人使用
 
@@ -715,7 +1040,9 @@ src/diligence/recommender/
 
 当前 MVP 有意保持简单，因此存在以下限制：
 
-- 只基于本地 DuckDB 企业画像，不主动 Web search。
+- 默认推荐仍优先使用本地 DuckDB 企业画像；只有显式使用 `--with-web` 才会在缺少 Web 证据时自动搜索。
+- Web 缓存复用当前按企业最新 run 粗粒度判断，后续可以升级为按 provider、query、维度和配置 hash 的细粒度缓存。
+- Web 抽取 LLM 已有独立配置和 prompt，但底层 client 暂时复用项目现有 OpenAI-compatible client。
 - `dimension_analyze` 的本地推断规则较轻量，适合作为 MVP，不等于完整专家判断。
 - LLM 返回的推荐排序目前按模型输出接受，尚未强制按分数归一化重排。
 - 复杂字段还没有全部从 47 类 JSON 中解析出来。
@@ -740,24 +1067,42 @@ src/diligence/recommender/
 
 目标：让产品、维度、阈值更少依赖代码。
 
-建议任务：
+已完成：
 
-- 把 `dimension_analyzer.py` 中的阈值迁移到 YAML。
-- 为每个维度配置 `support_rules` 和 `confidence_rules`。
+- `AnalysisDimension` 支持 `analysis_prompt`、`evidence_policy`、`support_rules`、`web_search_queries`。
+- `dimension_analysis.json` 会输出每个维度的分析口径、证据策略和补证查询。
+- `support_rules` 支持本地规则推断，并写入 `inferences`。
+- 10 个默认维度已补充第一版配置。
+- LLM match prompt 已要求优先遵守每维度自己的分析口径和证据策略。
+
+后续建议任务：
+
 - 为每个产品配置硬性排除条件和加分条件。
+- 增加 `confidence_rules`，让规则命中可以更细致地影响维度置信度。
 - 支持不同推荐场景，例如售前、尽调、客户分层、银行营销。
 
 ### 阶段 3：Web enrichment
 
 目标：数据不足时自动补证，但不破坏本地数据优先原则。
 
-建议任务：
+已完成 MVP V2.1：
 
-- 新增 `web_enrich` 节点。
-- 只在 `needs_web_enrichment = true` 或指定维度证据不足时触发。
-- 搜索结果按维度写入 enrichment evidence。
-- LLM 推荐时同时读取本地证据和 Web 补充证据。
-- 报告中明确标注证据来源。
+- 新增 `config/recommender/web_search.yaml`。
+- 新增 `run_web_enrichment.py`，可按维度查询 Web 并写入 `data/web/`。
+- 新增 `etl_web_to_duckdb.py`，可从 `data/web/` 重建 DuckDB Web 表。
+- 新增 `web_search_runs`、`web_search_queries`、`web_search_results`、`web_evidence` 表。
+- 默认链路调整为 `MiniMax Search + crawl4ai`，Metaso 可选。
+- 搜索前 planner 会跳过本地 JSON 已经支持的维度，并写入 `skipped_queries.jsonl`。
+- 新增页面缓存 `pages/`、`fetched_pages.jsonl` 和 DuckDB `web_pages` 表。
+- 新增独立 Web evidence LLM 抽取配置和 prompt。
+- `web_evidence` 支持 `supplement / confirmation / conflict`，冲突默认以 JSON 画像为准。
+- `run_recommender.py` 支持 `--with-web-evidence`，可把 DuckDB 中缓存的 `web_evidence` 合并到维度推断里。
+- `run_recommender.py` 支持 `--with-web`，当 DuckDB 中缺少 Web 证据时可自动搜索、缓存、入库再生成推荐。
+
+后续建议任务：
+
+- 为 Web evidence 增加冲突消解和置信度提升规则。
+- 报告中单独展示“本地证据”和“Web 补证”。
 
 ### 阶段 4：和原尽调流水线融合
 
@@ -808,6 +1153,79 @@ uv run python run_recommender.py --no-llm "企业名称"
 
 如果只是修改 YAML，不需要重建 DuckDB。
 
+### 执行 Web 补证后
+
+```bash
+uv run python run_web_enrichment.py "企业名称"
+```
+
+默认会复用已有 `data/web/` 缓存；如果已经有可用 run，会返回 `status: skipped`。强制重新搜索：
+
+```bash
+uv run python run_web_enrichment.py --refresh "企业名称"
+```
+
+只补指定维度：
+
+```bash
+uv run python run_web_enrichment.py \
+  --only-dimensions supply_chain_procurement,digitalization \
+  "企业名称"
+```
+
+本地 JSON 已经支持的维度默认会跳过；显式要求仍搜索：
+
+```bash
+uv run python run_web_enrichment.py \
+  --force-dimensions \
+  --only-dimensions basic_profile \
+  "企业名称"
+```
+
+只写文件、不导入 DuckDB：
+
+```bash
+uv run python run_web_enrichment.py --no-etl "企业名称"
+```
+
+不抓取网页正文、不调用 LLM 抽取：
+
+```bash
+uv run python run_web_enrichment.py \
+  --no-fetch \
+  --no-llm-extraction \
+  "企业名称"
+```
+
+手动从 `data/web/` 重建 DuckDB Web 表：
+
+```bash
+uv run python etl_web_to_duckdb.py \
+  --input data/web \
+  --warehouse cache/company_warehouse.duckdb \
+  --rebuild
+```
+
+让推荐读取已缓存的 Web 证据：
+
+```bash
+uv run python run_recommender.py --with-web-evidence "企业名称"
+```
+
+`--with-web-evidence` 不会自动联网，只读取 DuckDB 中已有的 `web_evidence`。这样可以把“搜索缓存”和“推荐生成”两个动作分开验证。
+
+如果希望推荐时自动补 Web：
+
+```bash
+uv run python run_recommender.py --with-web "企业名称"
+```
+
+逻辑是：先查 DuckDB 是否已有 `web_evidence`；已有则复用，没有才搜索、缓存、导入。强制刷新：
+
+```bash
+uv run python run_recommender.py --with-web --refresh-web "企业名称"
+```
+
 ### 修改 ETL 字段解析后
 
 ```bash
@@ -820,9 +1238,9 @@ uv run python run_recommender.py --no-llm "企业名称"
 ### 修改推荐代码后
 
 ```bash
-uv run ruff check src/diligence/recommender run_recommender.py tests/test_recommender.py
-uv run mypy src/diligence/recommender run_recommender.py
-uv run pytest tests/test_recommender.py -q
+uv run ruff check src/diligence/recommender run_recommender.py run_web_enrichment.py etl_web_to_duckdb.py tests/test_recommender.py tests/test_web_enrichment.py
+uv run mypy src/diligence/recommender run_recommender.py run_web_enrichment.py etl_web_to_duckdb.py
+uv run pytest tests/test_recommender.py tests/test_web_enrichment.py -q
 ```
 
 如果改动 warehouse：
@@ -849,4 +1267,3 @@ uv run pytest
 - 配置优先，代码只承载通用流程。
 - 证据不足要显式表达，不用模型想象补齐。
 - 先跑通 MVP，再逐步增强准确性和覆盖面。
-
