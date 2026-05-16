@@ -350,6 +350,18 @@ async def test_run_recommendation_mvp_without_llm(monkeypatch: pytest.MonkeyPatc
     assert (output_dir / "report.md").exists()
     payload = json.loads((output_dir / "result.json").read_text(encoding="utf-8"))
     assert payload["recommendations"]
+    assert payload["evidence_summary"]["local_evidence_count"] > 0
+    assert "by_dimension" in payload["evidence_summary"]
+    first_rec = payload["recommendations"][0]
+    assert first_rec["score_breakdown"]["final_score"] == first_rec["score"]
+    assert "matched_rules" in first_rec["score_breakdown"]
+    assert "scoring_summary" in payload
+    assert payload["scoring_summary"]["rules_evaluated"] >= 0
+    assert first_rec["evidence_trace"]
+    assert {"evidence_id", "claim", "source_type", "relation_to_profile"} <= set(first_rec["evidence_trace"][0])
+    report = (output_dir / "report.md").read_text(encoding="utf-8")
+    assert "推荐评分总览" in report
+    assert "分数构成" in report
     dimensions = json.loads((output_dir / "dimension_analysis.json").read_text(encoding="utf-8"))
     assert dimensions[0]["analysis_prompt"] == "判断采购协同需求。"
     assert dimensions[0]["evidence_policy"] == "制造业和规模只能作为间接线索。"

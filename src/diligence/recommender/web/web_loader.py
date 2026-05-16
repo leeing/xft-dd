@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from diligence.recommender.web.evidence import normalize_resolution
 from diligence.recommender.web.models import WebLoadSummary
 from diligence.warehouse.duckdb_client import connect
 
@@ -388,7 +389,7 @@ def _insert_evidence(conn: Any, row: dict[str, Any]) -> None:
 
 def _insert_unified_web_evidence(conn: Any, row: dict[str, Any]) -> None:
     relation = row.get("relation_to_profile") or row.get("evidence_type") or "supplement"
-    resolution = "use_local" if relation == "conflict" else row.get("resolution")
+    resolution = normalize_resolution(row.get("resolution"), is_conflict=relation == "conflict")
     conn.execute(
         """
         INSERT OR REPLACE INTO unified_evidence (

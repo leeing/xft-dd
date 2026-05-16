@@ -79,6 +79,40 @@ class ProductModule(BaseModel):
     priority: int = Field(ge=0, le=100)
     target_needs: list[str]
     match_rule: str
+    base_score: int | None = Field(default=None, ge=0, le=100)
+    positive_rules: list[ProductScoreRule] = Field(default_factory=list)
+    negative_rules: list[ProductScoreRule] = Field(default_factory=list)
+    exclusion_rules: list[ProductExclusionRule] = Field(default_factory=list)
+
+
+class ProductScoreRule(BaseModel):
+    """Configurable product scoring rule."""
+
+    id: str
+    reason: str
+    weight: int = Field(default=0, ge=0, le=100)
+    penalty: int = Field(default=0, ge=0, le=100)
+    dimension_id: str | None = None
+    source_field: str | None = None
+    evidence_type: str | None = None
+    relation_to_profile: str | None = None
+    missing_evidence: str | None = None
+    op: RuleOperator | None = None
+    value: Any | None = None
+
+
+class ProductExclusionRule(BaseModel):
+    """Configurable product exclusion rule."""
+
+    id: str
+    reason: str
+    dimension_id: str | None = None
+    source_field: str | None = None
+    evidence_type: str | None = None
+    relation_to_profile: str | None = None
+    missing_evidence: str | None = None
+    op: RuleOperator | None = None
+    value: Any | None = None
 
 
 class ProductsConfig(BaseModel):
@@ -102,6 +136,22 @@ class ProductsConfig(BaseModel):
             msg = f"duplicate module_id(s): {', '.join(sorted(duplicates))}"
             raise ValueError(msg)
         return products
+
+
+class ScenarioConfig(BaseModel):
+    """Scenario bundle entry config."""
+
+    version: str = "1.0"
+    id: str
+    name: str
+    description: str | None = None
+    products_config: str = "products.yaml"
+    dimensions_config: str = "analysis_dimensions.yaml"
+    web_search_config: str = "web_search.yaml"
+    web_extract_llm_config: str = "web_extract_llm.yaml"
+    prompts: dict[str, str] = Field(default_factory=dict)
+    output_dir: str | None = None
+    web_cache_root: str | None = None
 
 
 class EvidenceFact(BaseModel):
@@ -146,6 +196,94 @@ class MatchResult(BaseModel):
     missing_evidence: list[str] = Field(default_factory=list)
 
 
+class ScoreBreakdown(BaseModel):
+    """Machine-readable score explanation for one recommendation."""
+
+    base_priority: int = 0
+    dimension_support: int = 0
+    evidence_support: int = 0
+    web_support: int = 0
+    missing_evidence_penalty: int = 0
+    conflict_penalty: int = 0
+    final_score: int = Field(default=0, ge=0, le=100)
+    positive_score: int = 0
+    negative_score: int = 0
+    excluded: bool = False
+    matched_rules: list[ScoreRuleTrace] = Field(default_factory=list)
+    penalty_rules: list[ScoreRuleTrace] = Field(default_factory=list)
+    exclusion_rules: list[ScoreRuleTrace] = Field(default_factory=list)
+
+
+class ScoreRuleTrace(BaseModel):
+    """One matched scoring rule trace."""
+
+    rule_id: str
+    rule_type: Literal["positive", "negative", "exclusion"]
+    delta: int = 0
+    reason: str
+    evidence_ids: list[str] = Field(default_factory=list)
+    matched: bool = True
+
+
+class EvidenceTraceItem(BaseModel):
+    """One evidence item supporting a recommendation."""
+
+    evidence_id: str
+    dimension_id: str | None = None
+    source_type: str
+    source_name: str
+    source_url: str | None = None
+    source_field: str | None = None
+    claim: str
+    confidence: str
+    relation_to_profile: str
+
+
+class ConflictSummaryItem(BaseModel):
+    """One conflict surfaced in the final output."""
+
+    dimension_id: str | None = None
+    claim: str
+    conflict_note: str | None = None
+    resolution: str | None = None
+    source_url: str | None = None
+
+
+class DimensionEvidenceSummary(BaseModel):
+    """Evidence counts for one analysis dimension."""
+
+    dimension_id: str
+    title: str
+    local_evidence_count: int = 0
+    web_evidence_count: int = 0
+    inference_evidence_count: int = 0
+    conflict_count: int = 0
+    missing_evidence_count: int = 0
+    status: DimensionStatus
+    confidence: Confidence
+
+
+class EvidenceSummary(BaseModel):
+    """Global evidence summary for a recommendation run."""
+
+    local_evidence_count: int = 0
+    web_evidence_count: int = 0
+    inference_evidence_count: int = 0
+    conflict_count: int = 0
+    missing_evidence_count: int = 0
+    by_dimension: list[DimensionEvidenceSummary] = Field(default_factory=list)
+
+
+class ScoringSummary(BaseModel):
+    """Run-level scoring diagnostics."""
+
+    rules_evaluated: int = 0
+    rules_matched: int = 0
+    products_excluded: int = 0
+    conflict_count: int = 0
+    missing_evidence_count: int = 0
+
+
 class RecommendationItem(BaseModel):
     """Final recommendation item."""
 
@@ -159,6 +297,8 @@ class RecommendationItem(BaseModel):
     suggested_pitch: str
     evidence_dimensions: list[str] = Field(default_factory=list)
     data_gaps: list[str] = Field(default_factory=list)
+    score_breakdown: ScoreBreakdown = Field(default_factory=ScoreBreakdown)
+    evidence_trace: list[EvidenceTraceItem] = Field(default_factory=list)
 
 
 class RecommendationOutput(BaseModel):
@@ -166,10 +306,14 @@ class RecommendationOutput(BaseModel):
 
     company_name: str
     scenario: str
+    scenario_name: str | None = None
     summary: str
     recommendations: list[RecommendationItem]
     needs_web_enrichment: bool
     profile_completeness: float
+    evidence_summary: EvidenceSummary = Field(default_factory=EvidenceSummary)
+    conflict_summary: list[ConflictSummaryItem] = Field(default_factory=list)
+    scoring_summary: ScoringSummary = Field(default_factory=ScoringSummary)
 
 
 class RecommendationRunResult(BaseModel):
