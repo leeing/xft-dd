@@ -6,6 +6,7 @@ import hashlib
 from datetime import UTC, datetime
 
 from diligence.models import SearchItem
+from diligence.recommender.progress import display
 from diligence.recommender.web.cache_writer import WebCacheWriter
 from diligence.recommender.web.models import WebFetchConfig, WebPageRecord, WebSearchResultRecord
 from diligence.utils.fetch import enrich_items
@@ -45,14 +46,20 @@ async def fetch_and_cache_pages(
         concurrency=config.concurrency,
         max_full_text_chars=config.max_full_text_chars,
     )
+    fetched_count = sum(1 for item in enriched if item.full_text)
+    skipped_count = len(enriched) - fetched_count
+    display.info(f"📄 爬取页面: {len(records)}个URL, {fetched_count}个成功, {skipped_count}个跳过")
     by_id = {item.id: item for item in enriched}
     updated: list[WebSearchResultRecord] = []
     for record in records:
         item = by_id.get(record.result_id)
         text = item.full_text if item else record.full_text
+        url_display = (record.url or "")[:80]
         if not text:
+            display.branch(f"⏭ {url_display} → 跳过 (无内容)")
             updated.append(record.model_copy(update={"full_text": "", "full_text_preview": ""}))
             continue
+        display.branch(f"✓ {url_display} → {len(text)}字符")
         content_hash = hashlib.sha1(text.encode(), usedforsecurity=False).hexdigest()
         page_path, metadata_path = writer.write_page(
             content_hash,

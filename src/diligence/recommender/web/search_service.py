@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from diligence.models import SearchItem
+from diligence.recommender.progress import display
 from diligence.recommender.web.cache_writer import WebCacheWriter
 from diligence.recommender.web.models import (
     ProviderSearchResponse,
@@ -49,6 +50,11 @@ async def run_provider_query(  # noqa: PLR0913
         f"{provider_name}__{query_index:04d}.json",
         _provider_payload(response),
     )
+    result_count = len(response.items[:max_results])
+    if response.error:
+        display.branch(f"✗ [{provider_name}] {query[:60]} → {response.error}")
+    else:
+        display.branch(f"🔍 [{provider_name}] \"{query[:50]}\" → {result_count}条")
     q_record = WebSearchQueryRecord(
         query_id=query_id,
         web_run_id=web_run_id,

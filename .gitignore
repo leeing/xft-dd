@@ -22,3 +22,5 @@ company.txt
 enquery.xlsx
 
 data/
+cache/
+recommendation_runs/

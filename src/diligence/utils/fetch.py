@@ -45,6 +45,41 @@ _DOWNLOAD_EXTENSIONS = frozenset(
 _FETCH_BIAS_RANK: dict[str, int] = {"prefer": 0, "neutral": 1, "unknown": 2, "avoid": 3}
 _AUTHORITY_RANK: dict[str, int] = {"high": 0, "medium": 1, "low": 2, "unknown": 3}
 
+# Common Chinese company suffixes stripped when extracting the core identifying name.
+_COMPANY_SUFFIXES = (
+    "有限责任公司",
+    "股份有限公司",
+    "有限公司",
+    "合伙企业",
+    "普通合伙",
+    "有限合伙",
+)
+
+
+def _company_name_key(target: str) -> str:
+    """Extract the core identifying portion of a Chinese company name.
+
+    >>> _company_name_key("广东信华电器有限公司")
+    '信华电器'
+    >>> _company_name_key("华为技术有限公司")
+    '华为技术'
+    """
+    key = target
+    # Remove location prefix if present (e.g. 广东, 深圳市, 北京)
+    for prefix in (
+        "广东", "深圳市", "北京市", "上海市", "广州市", "浙江省", "江苏省",
+        "深圳", "北京", "上海", "广州", "浙江", "江苏", "杭州", "成都", "武汉",
+    ):
+        if key.startswith(prefix) and len(key) > len(prefix) + 2:
+            key = key[len(prefix):]
+            break
+    # Remove company suffix
+    for suffix in _COMPANY_SUFFIXES:
+        if key.endswith(suffix) and len(key) > len(suffix) + 1:
+            key = key[:-len(suffix)]
+            break
+    return key
+
 
 def _is_unsafe_crawl_url(url: str) -> bool:
     """Return True for URLs that should be kept as snippets instead of crawled."""
@@ -149,7 +184,11 @@ def _should_fetch(  # noqa: PLR0911, PLR0913
         return False
     if _is_unsafe_crawl_url(url):
         return False
-    if target not in title and target not in snippet:
+    # Require the core company name (not just any substring) in title or snippet.
+    # "广东信华电器有限公司" core is "信华电器", won't match "信华软件" or "信华信".
+    core = _company_name_key(target)
+    combined = f"{title} {snippet}"
+    if core not in combined and target not in combined:
         return False
 
     source = classify_source(url, title)

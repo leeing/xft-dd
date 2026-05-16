@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from diligence.recommender.progress import display
 from diligence.recommender.report_renderer import render_report
 from diligence.recommender.state import RecommenderState
 
@@ -19,6 +20,7 @@ def _write_json(path: Path, value: Any) -> None:
 
 
 async def save_node(state: RecommenderState) -> dict[str, object]:
+    display.phase(5, 5, "生成报告")
     out_dir = Path(state["output_root"]) / state["run_id"]
     out_dir.mkdir(parents=True, exist_ok=True)
     profile_path = out_dir / "profile.json"
@@ -34,6 +36,8 @@ async def save_node(state: RecommenderState) -> dict[str, object]:
     _write_json(result_path, rec.model_dump() if rec else {"error": "recommendation not generated"})
     report_path.write_text(render_report(state), encoding="utf-8")
 
+    status = "failed" if state.get("errors") else "partial" if state.get("needs_web_enrichment") else "success"
+    display.done(str(report_path), status=status)
     return {
         "output_dir": str(out_dir),
         "report_path": str(report_path),

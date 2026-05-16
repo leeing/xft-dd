@@ -340,6 +340,42 @@ uv run python etl_web_to_duckdb.py --input data/web --warehouse cache/company_wa
 uv run python run_recommender.py --with-web-evidence "企业名称"
 ```
 
+按场景运行推荐：
+
+```bash
+uv run python run_recommender.py \
+  --scenario config/scenarios/sales_recommendation \
+  --no-llm \
+  "企业名称"
+```
+
+批量运行并生成交付产物：
+
+```bash
+uv run python run_recommender.py \
+  --scenario config/scenarios/sales_recommendation \
+  --company-list company.txt \
+  --with-web-evidence \
+  --batch-id batch_sales_demo \
+  --batch-output recommendation_runs/batches \
+  --skip-existing
+```
+
+批量模式会在 `recommendation_runs/batches/{batch_id}/` 下生成：
+
+```text
+batch_manifest.json
+companies.txt
+runs/{company}/report.md
+runs/{company}/result.json
+batch_summary.json
+batch_summary.csv
+batch_quality_report.json
+batch_quality_report.md
+failed_companies.txt
+delivery_manifest.json
+```
+
 ## 配置
 
 当前兼容两种配置方式：
@@ -374,5 +410,19 @@ config/recommender/web_search.yaml
 config/recommender/web_extract_llm.yaml
 config/recommender/prompts/extract_evidence_system.md
 ```
+
+也支持场景配置包：
+
+```text
+config/scenarios/sales_recommendation/
+  scenario.yaml
+  products.yaml
+  analysis_dimensions.yaml
+  web_search.yaml
+  web_extract_llm.yaml
+  prompts/
+```
+
+`--scenario` 会同时切换产品、维度、prompt、Web 配置、推荐输出目录和 Web cache root。
 
 更详细的架构、配置和后续计划见 `DUCK.md`。Prophet 数据字段参考见 `docs/prophet-data-catalog.md`。
