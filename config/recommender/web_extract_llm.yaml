@@ -1,0 +1,19 @@
+version: "1.0"
+enabled: true
+prompt_file: config/recommender/prompts/extract_evidence_system.md
+provider: default
+providers:
+  default:
+    type: openai_compatible
+    api_key_env: LLM_API_KEY
+    fallback_api_key_env: MINIMAX_API_KEY
+    base_url_env: LLM_BASE_URL
+    model_env: LLM_MODEL
+    default_base_url: https://api.minimax.io/v1
+    default_model: MiniMax-M2.7-Highspeed
+tasks:
+  web_evidence_extract:
+    temperature: 0
+    timeout_seconds: 90
+    max_sources_per_call: 8
+    max_chars_per_source: 4000
