@@ -42,6 +42,14 @@ class ScenarioBundle:
         return str(_resolve_path(self.root, self.config.web_extract_llm_config))
 
     @property
+    def scoring_policy_path(self) -> str:
+        return str(_resolve_path(self.root, self.config.scoring_policy_config))
+
+    @property
+    def evidence_policy_path(self) -> str:
+        return str(_resolve_path(self.root, self.config.evidence_policy_config))
+
+    @property
     def output_dir(self) -> str | None:
         return str(_resolve_path(self.root, self.config.output_dir)) if self.config.output_dir else None
 
@@ -64,6 +72,8 @@ class ScenarioBundle:
         payload["dimensions_path"] = self.dimensions_path
         payload["web_search_path"] = self.web_search_path
         payload["web_extract_llm_path"] = self.web_extract_llm_path
+        payload["scoring_policy_path"] = self.scoring_policy_path
+        payload["evidence_policy_path"] = self.evidence_policy_path
         payload["prompt_paths"] = self.prompt_paths
         return payload
 
@@ -143,7 +153,14 @@ def _load_scenario_data(scenario_file: Path, *, stack: list[Path]) -> dict[str, 
 
 def _resolve_config_paths(root: Path, data: dict[str, Any]) -> dict[str, Any]:
     resolved = dict(data)
-    for field in ("products_config", "dimensions_config", "web_search_config", "web_extract_llm_config"):
+    for field in (
+        "products_config",
+        "dimensions_config",
+        "web_search_config",
+        "web_extract_llm_config",
+        "scoring_policy_config",
+        "evidence_policy_config",
+    ):
         value = resolved.get(field)
         if isinstance(value, str) and value:
             resolved[field] = str(_resolve_path(root, value))

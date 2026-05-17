@@ -205,6 +205,8 @@ class ScenarioConfig(BaseModel):
     dimensions_config: str = "analysis_dimensions.yaml"
     web_search_config: str = "web_search.yaml"
     web_extract_llm_config: str = "web_extract_llm.yaml"
+    scoring_policy_config: str = "scoring_policy.yaml"
+    evidence_policy_config: str = "evidence_policy.yaml"
     prompts: dict[str, str] = Field(default_factory=dict)
     output_dir: str | None = None
     web_cache_root: str | None = None

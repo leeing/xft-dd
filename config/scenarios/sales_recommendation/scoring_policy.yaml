@@ -1,0 +1,24 @@
+version: "1.0"
+
+# Product recommendation scoring weights for this scenario.
+
+dimension_support:
+  supported_score: 5
+  partial_score: 2
+
+evidence_support:
+  per_item: 1
+  cap: 8
+
+web_support:
+  confirmation_per_item: 2
+  confirmation_cap: 8
+  supplement_per_item: 1
+  supplement_cap: 5
+
+penalties:
+  conflict_per_item: 8
+  missing_evidence_cap: 15
+
+exclusion:
+  score_cap: 20

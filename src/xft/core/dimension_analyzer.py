@@ -9,6 +9,7 @@ from xft.core.models import AnalysisDimension, DimensionAnalysis, EvidenceFact, 
 from xft.display import format_profile_value
 from xft.evidence.local_builder import build_local_evidence, build_rule_evidence
 from xft.evidence.models import EvidenceRecord
+from xft.evidence.policy import DimensionAnalysisPolicy, EvidencePolicy
 
 SUPPORTED_FACTS_THRESHOLD = 3
 SUPPLY_CHAIN_EMPLOYEE_THRESHOLD = 200
@@ -41,8 +42,10 @@ def analyze_dimensions(
     *,
     profile: dict[str, Any],
     dimensions: list[AnalysisDimension],
+    policy: EvidencePolicy | DimensionAnalysisPolicy | None = None,
 ) -> list[DimensionAnalysis]:
     """Generate local, source-aware dimension analysis without web search."""
+    analysis_policy = _dimension_policy(policy)
     results: list[DimensionAnalysis] = []
     for dim in dimensions:
         facts: list[EvidenceFact] = []
@@ -68,7 +71,13 @@ def analyze_dimensions(
                 )
             )
         status: Literal["supported", "partial", "insufficient"]
-        status = "supported" if len(facts) >= SUPPORTED_FACTS_THRESHOLD else "partial" if facts else "insufficient"
+        status = (
+            "supported"
+            if len(facts) >= analysis_policy.supported_facts_threshold
+            else "partial"
+            if facts
+            else "insufficient"
+        )
         confidence: Literal["高", "中", "低", "待补充"]
         confidence = "中" if status == "supported" else "低" if status == "partial" else "待补充"
         inferences = _build_rule_inferences(dim.support_rules, profile)
@@ -183,3 +192,11 @@ def _build_legacy_inferences(dimension_id: str, profile: dict[str, Any]) -> list
     ):
         inferences.append("基于规模或多组织特征，弱推测存在系统协同和经营数据整合需求。")
     return inferences
+
+
+def _dimension_policy(policy: EvidencePolicy | DimensionAnalysisPolicy | None) -> DimensionAnalysisPolicy:
+    if isinstance(policy, EvidencePolicy):
+        return policy.dimension_analysis
+    if policy is not None:
+        return policy
+    return DimensionAnalysisPolicy(supported_facts_threshold=SUPPORTED_FACTS_THRESHOLD)

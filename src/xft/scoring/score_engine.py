@@ -12,7 +12,7 @@ from xft.core.models import (
     ScoringSubject,
     ScoringSummary,
 )
-from xft.scoring.models import ProductScoreResult, RuleEvaluation, ScoringContext, ScoringRunResult
+from xft.scoring.models import ProductScoreResult, RuleEvaluation, ScoringContext, ScoringPolicy, ScoringRunResult
 from xft.scoring.rule_evaluator import (
     collect_product_evidence,
     collect_product_gaps,
@@ -20,17 +20,13 @@ from xft.scoring.rule_evaluator import (
     evaluate_score_rule,
 )
 
-SUPPORTED_DIMENSION_SCORE = 5
-PARTIAL_DIMENSION_SCORE = 2
-LOCAL_EVIDENCE_SCORE_PER_ITEM = 1
-LOCAL_EVIDENCE_SCORE_CAP = 8
-WEB_CONFIRMATION_SCORE_PER_ITEM = 2
-WEB_CONFIRMATION_SCORE_CAP = 8
-WEB_SUPPLEMENT_SCORE_PER_ITEM = 1
-WEB_SUPPLEMENT_SCORE_CAP = 5
-CONFLICT_PENALTY_PER_ITEM = 8
-MISSING_EVIDENCE_PENALTY_CAP = 15
-EXCLUSION_SCORE_CAP = 20
+_DEFAULT_POLICY = ScoringPolicy(
+    dimension_support={"supported_score": 5, "partial_score": 2},
+    evidence_support={"per_item": 1, "cap": 8},
+    web_support={"confirmation_per_item": 2, "confirmation_cap": 8, "supplement_per_item": 1, "supplement_cap": 5},
+    penalties={"conflict_per_item": 8, "missing_evidence_cap": 15},
+    exclusion={"score_cap": 20},
+)
 
 
 def score_products(
@@ -38,12 +34,13 @@ def score_products(
     products: Sequence[Any] | None = None,
     subjects: Sequence[ScoringSubject] | None = None,
     context: ScoringContext,
+    policy: ScoringPolicy | None = None,
 ) -> ScoringRunResult:
     """Score all products using configured positive/negative/exclusion rules."""
     score_subjects = (
         list(subjects) if subjects is not None else [_subject_from_product(product) for product in products or []]
     )
-    product_scores = [_score_product(product, context) for product in score_subjects]
+    product_scores = [_score_product(product, context, policy=policy) for product in score_subjects]
     product_scores = sorted(product_scores, key=_score_sort_key, reverse=True)
     summary = ScoringSummary(
         rules_evaluated=sum(
@@ -63,7 +60,11 @@ def score_products(
     return ScoringRunResult(product_scores=product_scores, summary=summary)
 
 
-def _score_product(product: ScoringSubject, context: ScoringContext) -> ProductScoreResult:
+def _score_product(
+    product: ScoringSubject,
+    context: ScoringContext,
+    policy: ScoringPolicy | None = None,
+) -> ProductScoreResult:
     related = [item for item in context.dimension_analyses if item.dimension_id in product.target_dimensions]
     base_score = product.base_score if product.base_score is not None else int(product.priority * 0.45)
     positive_results = [evaluate_score_rule(rule, context, rule_type="positive") for rule in product.positive_rules]
@@ -74,10 +75,17 @@ def _score_product(product: ScoringSubject, context: ScoringContext) -> ProductS
     matched_negative = [item for item in negative_results if item.matched]
     matched_exclusions = [item for item in exclusion_results if item.matched]
 
-    dimension_support = _dimension_support(related)
+    p = policy or _DEFAULT_POLICY
+    dim = p.dimension_support
+    ev = p.evidence_support
+    web = p.web_support
+    pen = p.penalties
+    exc = p.exclusion
+
+    dimension_support = _dimension_support(related, dim)
     evidence_support = min(
-        LOCAL_EVIDENCE_SCORE_CAP,
-        sum(len(item.local_evidence) for item in related) * LOCAL_EVIDENCE_SCORE_PER_ITEM,
+        ev.get("cap", 8),
+        sum(len(item.local_evidence) for item in related) * ev.get("per_item", 1),
     )
     confirmation_count = sum(
         len([ev for ev in item.web_evidence if ev.relation_to_profile == "confirmation"]) for item in related
@@ -85,12 +93,12 @@ def _score_product(product: ScoringSubject, context: ScoringContext) -> ProductS
     supplement_count = sum(
         len([ev for ev in item.web_evidence if ev.relation_to_profile == "supplement"]) for item in related
     )
-    web_support = min(WEB_CONFIRMATION_SCORE_CAP, confirmation_count * WEB_CONFIRMATION_SCORE_PER_ITEM) + min(
-        WEB_SUPPLEMENT_SCORE_CAP,
-        supplement_count * WEB_SUPPLEMENT_SCORE_PER_ITEM,
+    web_support = min(web.get("confirmation_cap", 8), confirmation_count * web.get("confirmation_per_item", 2)) + min(
+        web.get("supplement_cap", 5),
+        supplement_count * web.get("supplement_per_item", 1),
     )
-    conflict_penalty = -sum(len(item.conflicts) for item in related) * CONFLICT_PENALTY_PER_ITEM
-    missing_penalty = -min(MISSING_EVIDENCE_PENALTY_CAP, sum(len(item.missing_evidence) for item in related))
+    conflict_penalty = -sum(len(item.conflicts) for item in related) * pen.get("conflict_per_item", 8)
+    missing_penalty = -min(pen.get("missing_evidence_cap", 15), sum(len(item.missing_evidence) for item in related))
     positive_score = sum(item.delta for item in matched_positive)
     negative_score = sum(item.delta for item in matched_negative)
     raw_score = (
@@ -105,7 +113,7 @@ def _score_product(product: ScoringSubject, context: ScoringContext) -> ProductS
     )
     final_score = _clamp(raw_score)
     if matched_exclusions:
-        final_score = min(final_score, EXCLUSION_SCORE_CAP)
+        final_score = min(final_score, exc.get("score_cap", 20))
 
     breakdown = ScoreBreakdown(
         base_priority=base_score,
@@ -133,10 +141,11 @@ def _score_product(product: ScoringSubject, context: ScoringContext) -> ProductS
     )
 
 
-def _dimension_support(related: Sequence[DimensionAnalysis]) -> int:
+def _dimension_support(related: Sequence[DimensionAnalysis], dim: dict[str, int] | None = None) -> int:
     supported = sum(1 for item in related if item.status == "supported")
     partial = sum(1 for item in related if item.status == "partial")
-    return supported * SUPPORTED_DIMENSION_SCORE + partial * PARTIAL_DIMENSION_SCORE
+    dim = dim or {}
+    return supported * dim.get("supported_score", 5) + partial * dim.get("partial_score", 2)
 
 
 def _score_sort_key(item: ProductScoreResult) -> tuple[int, int, int, int, int, int]:

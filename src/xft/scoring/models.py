@@ -40,6 +40,17 @@ class ProductScoreResult(BaseModel):
     exclusion_reasons: list[str] = Field(default_factory=list)
 
 
+class ScoringPolicy(BaseModel):
+    """Runtime-configurable scoring weights."""
+
+    version: str = "1.0"
+    dimension_support: dict[str, int] = Field(default_factory=dict)
+    evidence_support: dict[str, int] = Field(default_factory=dict)
+    web_support: dict[str, int] = Field(default_factory=dict)
+    penalties: dict[str, int] = Field(default_factory=dict)
+    exclusion: dict[str, int] = Field(default_factory=dict)
+
+
 class ScoringRunResult(BaseModel):
     """All product scores plus run-level diagnostics."""
 

@@ -7,6 +7,8 @@ products_config: products.yaml
 dimensions_config: analysis_dimensions.yaml
 web_search_config: web_search.yaml
 web_extract_llm_config: web_extract_llm.yaml
+scoring_policy_config: scoring_policy.yaml
+evidence_policy_config: evidence_policy.yaml
 
 prompts:
   match_system: prompts/match_system.md
