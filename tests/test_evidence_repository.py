@@ -8,7 +8,7 @@ from pathlib import Path
 import duckdb
 import pytest
 
-from diligence.evidence.repository import EvidenceRepository
+from xft.evidence.repository import EvidenceRepository
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS unified_evidence (

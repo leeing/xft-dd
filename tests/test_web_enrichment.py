@@ -9,13 +9,14 @@ import duckdb
 import pytest
 import yaml
 
-from diligence.models import SearchItem, make_item_id
-from diligence.web.config_loader import load_web_search_config
-from diligence.web.models import ProviderSearchResponse
-from diligence.web.planner import plan_web_search
-from diligence.web.runner import run_web_enrichment
-from diligence.web.web_loader import load_web_cache_to_duckdb
-from diligence.warehouse.prophet_loader import load_prophet_data
+from xft.models import SearchItem, make_item_id
+from xft.evidence.policy import EvidencePolicy
+from xft.web.config_loader import load_web_search_config
+from xft.web.models import ProviderSearchResponse
+from xft.web.planner import plan_web_search
+from xft.web.runner import run_web_enrichment
+from xft.web.web_loader import load_web_cache_to_duckdb
+from xft.warehouse.prophet_loader import load_prophet_data
 
 
 def _write_json(path: Path, value: object) -> None:
@@ -187,7 +188,7 @@ def test_default_web_search_config_uses_minimax() -> None:
 
 
 def test_planner_skips_supported_dimensions() -> None:
-    from diligence.pipeline.recommender.models import DimensionAnalysis, EvidenceFact
+    from xft.pipeline.recommender.models import DimensionAnalysis, EvidenceFact
 
     analysis = DimensionAnalysis(
         dimension_id="basic_profile",
@@ -210,6 +211,29 @@ def test_planner_skips_supported_dimensions() -> None:
     assert forced.planned[0].analysis.dimension_id == "basic_profile"
 
 
+def test_planner_uses_evidence_policy_skip_threshold() -> None:
+    from xft.pipeline.recommender.models import DimensionAnalysis, EvidenceFact
+
+    analysis = DimensionAnalysis(
+        dimension_id="basic_profile",
+        title="企业基础画像",
+        status="supported",
+        confidence="中",
+        facts=[
+            EvidenceFact(claim="行业：制造业", source_fields=["industry"]),
+            EvidenceFact(claim="员工规模：300", source_fields=["employee_count"]),
+            EvidenceFact(claim="上市状态：是", source_fields=["is_listed"]),
+        ],
+        web_search_queries=["测试公司 股权结构"],
+    )
+    policy = EvidencePolicy.model_validate({"web_planning": {"supported_facts_to_skip_web": 4}})
+
+    plan = plan_web_search([analysis], max_queries_per_dimension=3, policy=policy)
+
+    assert plan.planned[0].analysis.dimension_id == "basic_profile"
+    assert not plan.skipped
+
+
 @pytest.mark.asyncio
 async def test_run_web_enrichment_writes_cache_and_loads_duckdb(
     monkeypatch: pytest.MonkeyPatch,
@@ -222,7 +246,7 @@ async def test_run_web_enrichment_writes_cache_and_loads_duckdb(
     def fake_build_provider(_name: str, _config: Any) -> _FakeProvider:
         return _FakeProvider()
 
-    monkeypatch.setattr("diligence.web.runner.build_provider", fake_build_provider)
+    monkeypatch.setattr("xft.web.runner.build_provider", fake_build_provider)
 
     result = await run_web_enrichment(
         company_name="广东德美精细化工集团股份有限公司",
@@ -281,7 +305,7 @@ async def test_run_web_enrichment_extract_only_reuses_cached_search(
         calls += 1
         return _FakeProvider()
 
-    monkeypatch.setattr("diligence.web.runner.build_provider", fake_build_provider)
+    monkeypatch.setattr("xft.web.runner.build_provider", fake_build_provider)
 
     first = await run_web_enrichment(
         company_name="广东德美精细化工集团股份有限公司",
@@ -303,7 +327,7 @@ async def test_run_web_enrichment_extract_only_reuses_cached_search(
         msg = "provider should not be called in extract-only mode"
         raise AssertionError(msg)
 
-    monkeypatch.setattr("diligence.web.runner.build_provider", fail_build_provider)
+    monkeypatch.setattr("xft.web.runner.build_provider", fail_build_provider)
 
     second = await run_web_enrichment(
         company_name="广东德美精细化工集团股份有限公司",
@@ -348,7 +372,7 @@ async def test_run_web_enrichment_provider_config_change_invalidates_search_cach
         calls += 1
         return _FakeProvider()
 
-    monkeypatch.setattr("diligence.web.runner.build_provider", fake_build_provider)
+    monkeypatch.setattr("xft.web.runner.build_provider", fake_build_provider)
 
     first = await run_web_enrichment(
         company_name="广东德美精细化工集团股份有限公司",

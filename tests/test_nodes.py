@@ -7,14 +7,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 
-from diligence.config import AppConfig, Dimension
-from diligence.models import (
+from xft.config import AppConfig, Dimension
+from xft.models import (
     DimensionSearchResult,
     DimensionSummary,
     SearchItem,
     make_item_id,
 )
-from diligence.state import DiligenceState
+from xft.state import DiligenceState
 
 
 def _make_cfg() -> AppConfig:
@@ -88,7 +88,7 @@ def _base_state(cfg: AppConfig, tmp_path: Path) -> DiligenceState:
 
 
 async def test_search_node_success(tmp_path: Path) -> None:
-    from diligence.nodes.search_node import search_node
+    from xft.nodes.search_node import search_node
 
     cfg = _make_cfg()
     organic = [{"title": "A", "link": "https://qcc.com/1", "snippet": "注册资本", "date": ""}]
@@ -102,7 +102,7 @@ async def test_search_node_success(tmp_path: Path) -> None:
     mock_client.post = AsyncMock(return_value=mock_resp)
 
     state = _base_state(cfg, tmp_path)
-    with patch("diligence.utils.minimax_search.httpx.AsyncClient", return_value=mock_client):
+    with patch("xft.utils.minimax_search.httpx.AsyncClient", return_value=mock_client):
         result = await search_node(state)
 
     dsr = result["search_results_by_dimension"]["basic_info"]
@@ -112,7 +112,7 @@ async def test_search_node_success(tmp_path: Path) -> None:
 
 
 async def test_search_node_timeout_produces_partial(tmp_path: Path) -> None:
-    from diligence.nodes.search_node import search_node
+    from xft.nodes.search_node import search_node
 
     cfg = AppConfig(
         merge_prompt="x",
@@ -148,7 +148,7 @@ async def test_search_node_timeout_produces_partial(tmp_path: Path) -> None:
         return mock_client
 
     state = _base_state(cfg, tmp_path)
-    with patch("diligence.utils.minimax_search.httpx.AsyncClient", side_effect=make_client):
+    with patch("xft.utils.minimax_search.httpx.AsyncClient", side_effect=make_client):
         result = await search_node(state)
 
     dsr = result["search_results_by_dimension"]["basic_info"]
@@ -160,7 +160,7 @@ async def test_search_node_timeout_produces_partial(tmp_path: Path) -> None:
 
 
 async def test_summarize_node_success(tmp_path: Path) -> None:
-    from diligence.nodes.summarize_node import summarize_node
+    from xft.nodes.summarize_node import summarize_node
 
     cfg = _make_cfg()
     dsr = _make_search_result()
@@ -180,7 +180,7 @@ async def test_summarize_node_success(tmp_path: Path) -> None:
     state = _base_state(cfg, tmp_path)
     state["search_results_by_dimension"] = {"basic_info": dsr}
 
-    with patch("diligence.nodes.summarize_node.get_ai_client", return_value=mock_client):
+    with patch("xft.nodes.summarize_node.get_ai_client", return_value=mock_client):
         result = await summarize_node(state)
 
     summary = result["summaries_by_dimension"]["basic_info"]
@@ -190,7 +190,7 @@ async def test_summarize_node_success(tmp_path: Path) -> None:
 
 
 async def test_summarize_node_zero_results_forces_待核实(tmp_path: Path) -> None:
-    from diligence.nodes.summarize_node import summarize_node
+    from xft.nodes.summarize_node import summarize_node
 
     cfg = _make_cfg()
     dsr = DimensionSearchResult(
@@ -215,7 +215,7 @@ async def test_summarize_node_zero_results_forces_待核实(tmp_path: Path) -> N
     state = _base_state(cfg, tmp_path)
     state["search_results_by_dimension"] = {"basic_info": dsr}
 
-    with patch("diligence.nodes.summarize_node.get_ai_client", return_value=mock_client):
+    with patch("xft.nodes.summarize_node.get_ai_client", return_value=mock_client):
         result = await summarize_node(state)
 
     summary = result["summaries_by_dimension"]["basic_info"]
@@ -223,7 +223,7 @@ async def test_summarize_node_zero_results_forces_待核实(tmp_path: Path) -> N
 
 
 async def test_summarize_node_one_result_caps_at_低(tmp_path: Path) -> None:
-    from diligence.nodes.summarize_node import summarize_node
+    from xft.nodes.summarize_node import summarize_node
 
     cfg = _make_cfg()
     dsr = _make_search_result(n_items=1)
@@ -243,7 +243,7 @@ async def test_summarize_node_one_result_caps_at_低(tmp_path: Path) -> None:
     state = _base_state(cfg, tmp_path)
     state["search_results_by_dimension"] = {"basic_info": dsr}
 
-    with patch("diligence.nodes.summarize_node.get_ai_client", return_value=mock_client):
+    with patch("xft.nodes.summarize_node.get_ai_client", return_value=mock_client):
         result = await summarize_node(state)
 
     summary = result["summaries_by_dimension"]["basic_info"]
@@ -251,7 +251,7 @@ async def test_summarize_node_one_result_caps_at_低(tmp_path: Path) -> None:
 
 
 async def test_summarize_node_json_parse_failure_fallback(tmp_path: Path) -> None:
-    from diligence.nodes.summarize_node import summarize_node
+    from xft.nodes.summarize_node import summarize_node
 
     cfg = _make_cfg()
     dsr = _make_search_result(n_items=3)
@@ -263,7 +263,7 @@ async def test_summarize_node_json_parse_failure_fallback(tmp_path: Path) -> Non
     state = _base_state(cfg, tmp_path)
     state["search_results_by_dimension"] = {"basic_info": dsr}
 
-    with patch("diligence.nodes.summarize_node.get_ai_client", return_value=mock_client):
+    with patch("xft.nodes.summarize_node.get_ai_client", return_value=mock_client):
         result = await summarize_node(state)
 
     summary = result["summaries_by_dimension"]["basic_info"]
@@ -274,7 +274,7 @@ async def test_summarize_node_json_parse_failure_fallback(tmp_path: Path) -> Non
 
 
 async def test_summarize_node_fallback_truncates_at_1500(tmp_path: Path) -> None:
-    from diligence.nodes.summarize_node import summarize_node
+    from xft.nodes.summarize_node import summarize_node
 
     cfg = _make_cfg()
     long_snippet = "x" * 600
@@ -305,7 +305,7 @@ async def test_summarize_node_fallback_truncates_at_1500(tmp_path: Path) -> None
     state = _base_state(cfg, tmp_path)
     state["search_results_by_dimension"] = {"basic_info": dsr}
 
-    with patch("diligence.nodes.summarize_node.get_ai_client", return_value=mock_client):
+    with patch("xft.nodes.summarize_node.get_ai_client", return_value=mock_client):
         result = await summarize_node(state)
 
     summary = result["summaries_by_dimension"]["basic_info"]
@@ -314,7 +314,7 @@ async def test_summarize_node_fallback_truncates_at_1500(tmp_path: Path) -> None
 
 
 async def test_summarize_node_hallucinated_ids_filtered(tmp_path: Path) -> None:
-    from diligence.nodes.summarize_node import summarize_node
+    from xft.nodes.summarize_node import summarize_node
 
     cfg = _make_cfg()
     dsr = _make_search_result(n_items=2)
@@ -334,7 +334,7 @@ async def test_summarize_node_hallucinated_ids_filtered(tmp_path: Path) -> None:
     state = _base_state(cfg, tmp_path)
     state["search_results_by_dimension"] = {"basic_info": dsr}
 
-    with patch("diligence.nodes.summarize_node.get_ai_client", return_value=mock_client):
+    with patch("xft.nodes.summarize_node.get_ai_client", return_value=mock_client):
         result = await summarize_node(state)
 
     summary = result["summaries_by_dimension"]["basic_info"]
@@ -346,7 +346,7 @@ async def test_summarize_node_hallucinated_ids_filtered(tmp_path: Path) -> None:
 
 
 async def test_collect_node_all_present(tmp_path: Path) -> None:
-    from diligence.nodes.collect_node import collect_node
+    from xft.nodes.collect_node import collect_node
 
     cfg = _make_cfg()
     summary = DimensionSummary(
@@ -367,7 +367,7 @@ async def test_collect_node_all_present(tmp_path: Path) -> None:
 
 
 async def test_collect_node_required_failed_produces_error(tmp_path: Path) -> None:
-    from diligence.nodes.collect_node import collect_node
+    from xft.nodes.collect_node import collect_node
 
     cfg = _make_cfg()
     failed_summary = DimensionSummary(
@@ -393,7 +393,7 @@ async def test_collect_node_required_failed_produces_error(tmp_path: Path) -> No
 
 
 def test_init_node_sets_started_at(tmp_path: Path) -> None:
-    from diligence.nodes.init_node import init_node
+    from xft.nodes.init_node import init_node
 
     cfg = _make_cfg()
     state = _base_state(cfg, tmp_path)
@@ -405,8 +405,8 @@ def test_init_node_sets_started_at(tmp_path: Path) -> None:
 
 
 def test_save_node_uses_state_started_at(tmp_path: Path) -> None:
-    from diligence.models import CostRecord
-    from diligence.nodes.save_node import save_node
+    from xft.models import CostRecord
+    from xft.nodes.save_node import save_node
 
     cfg = _make_cfg()
     fixed_start = datetime(2026, 1, 1, 0, 0, 0, tzinfo=UTC)
@@ -435,8 +435,8 @@ def test_save_node_uses_state_started_at(tmp_path: Path) -> None:
 
 def test_save_node_started_at_none_uses_fallback(tmp_path: Path) -> None:
     """save_node must not crash and must produce valid run_meta when started_at is None."""
-    from diligence.models import CostRecord
-    from diligence.nodes.save_node import save_node
+    from xft.models import CostRecord
+    from xft.nodes.save_node import save_node
 
     cfg = _make_cfg()
     dsr = _make_search_result()
@@ -468,7 +468,7 @@ def test_save_node_started_at_none_uses_fallback(tmp_path: Path) -> None:
 
 def test_format_summaries_skipped_dims() -> None:
     """Skipped dimensions appear as 未执行 sections."""
-    from diligence.nodes.merge_node import _format_summaries
+    from xft.nodes.merge_node import _format_summaries
 
     summaries: dict[str, DimensionSummary] = {
         "basic_info": DimensionSummary(
@@ -493,7 +493,7 @@ def test_format_summaries_skipped_dims() -> None:
 
 def test_format_summaries_missing_from_summaries() -> None:
     """Active dimension missing from summaries shows 执行失败."""
-    from diligence.nodes.merge_node import _format_summaries
+    from xft.nodes.merge_node import _format_summaries
 
     summaries: dict[str, DimensionSummary] = {}
     active_dim_names = {"basic_info": "工商基本信息"}
@@ -511,7 +511,7 @@ def test_format_summaries_missing_from_summaries() -> None:
 
 def test_format_summaries_all_active_no_skipped() -> None:
     """Normal case: all active dims have summaries, no skipped dims."""
-    from diligence.nodes.merge_node import _format_summaries
+    from xft.nodes.merge_node import _format_summaries
 
     summaries: dict[str, DimensionSummary] = {
         "basic_info": DimensionSummary(
@@ -538,8 +538,8 @@ def test_format_summaries_all_active_no_skipped() -> None:
 
 def test_save_node_missing_active_dimension_counts_as_failed(tmp_path: Path) -> None:
     """Active dimension absent from summaries is tracked as failed in run_meta."""
-    from diligence.models import CostRecord
-    from diligence.nodes.save_node import save_node
+    from xft.models import CostRecord
+    from xft.nodes.save_node import save_node
 
     cfg = _make_cfg()
     state = _base_state(cfg, tmp_path)
@@ -559,7 +559,7 @@ def test_save_node_missing_active_dimension_counts_as_failed(tmp_path: Path) -> 
 
 async def test_search_node_cross_provider_dedup(tmp_path: Path) -> None:
     """MiniMax + Metaso source items with same URL -> dedup keeps only Metaso."""
-    from diligence.nodes.search_node import search_node
+    from xft.nodes.search_node import search_node
 
     cfg = AppConfig(
         merge_prompt="x",
@@ -590,8 +590,8 @@ async def test_search_node_cross_provider_dedup(tmp_path: Path) -> None:
     mm_resp.raise_for_status = MagicMock()
     mm_mock.post = AsyncMock(return_value=mm_resp)
 
-    from diligence.models import make_item_id as mii
-    from diligence.utils.metaso import make_metaso_source_items
+    from xft.models import make_item_id as mii
+    from xft.utils.metaso import make_metaso_source_items
 
     fake_answer = SearchItem(
         id=mii(url="metaso://search?q=x", title="a", snippet="a"),
@@ -613,9 +613,9 @@ async def test_search_node_cross_provider_dedup(tmp_path: Path) -> None:
     state["current_dimension"] = cfg.dimensions[0]
 
     with (
-        patch("diligence.utils.minimax_search.httpx.AsyncClient", return_value=mm_mock),
-        patch("diligence.nodes.search_node.enrich_with_metaso") as mock_metaso,
-        patch("diligence.nodes.search_node.settings") as mock_settings,
+        patch("xft.utils.minimax_search.httpx.AsyncClient", return_value=mm_mock),
+        patch("xft.nodes.search_node.enrich_with_metaso") as mock_metaso,
+        patch("xft.nodes.search_node.settings") as mock_settings,
     ):
         mock_settings.metaso_enabled = True
         mock_settings.metaso_api_key = True

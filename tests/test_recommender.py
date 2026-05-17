@@ -6,12 +6,12 @@ from pathlib import Path
 import pytest
 import yaml
 
-from diligence.pipeline.recommender.config_loader import load_dimensions_config, load_products_config
-from diligence.pipeline.recommender.dimension_analyzer import analyze_dimensions
-from diligence.pipeline.recommender.graph import run_recommendation
-from diligence.pipeline.recommender.models import AnalysisDimension, EvidenceTemplate, MatchResult, ProductModule
-from diligence.pipeline.recommender.recommendation_normalizer import normalize_recommendation_payload
-from diligence.warehouse.prophet_loader import load_prophet_data
+from xft.pipeline.recommender.config_loader import load_dimensions_config, load_products_config
+from xft.pipeline.recommender.dimension_analyzer import analyze_dimensions
+from xft.pipeline.recommender.graph import run_recommendation
+from xft.pipeline.recommender.models import AnalysisDimension, EvidenceTemplate, MatchResult, ProductModule
+from xft.pipeline.recommender.recommendation_normalizer import normalize_recommendation_payload
+from xft.warehouse.prophet_loader import load_prophet_data
 
 
 def _write_json(path: Path, value: object) -> None:
@@ -327,8 +327,8 @@ def test_recommendation_normalizer_repairs_llm_payload() -> None:
 
 @pytest.mark.asyncio
 async def test_run_recommendation_mvp_without_llm(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setattr("diligence.settings.settings.llm_api_key", "")
-    monkeypatch.setattr("diligence.settings.settings.minimax_api_key", "")
+    monkeypatch.setattr("xft.settings.settings.llm_api_key", "")
+    monkeypatch.setattr("xft.settings.settings.minimax_api_key", "")
     warehouse = _build_warehouse(tmp_path)
     products_path, dimensions_path = _write_recommender_configs(tmp_path)
 

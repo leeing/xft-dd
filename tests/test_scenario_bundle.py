@@ -8,6 +8,8 @@ import pytest
 from xft.pipeline.recommender.config_loader import load_dimensions_config, load_products_config
 from xft.pipeline.recommender.graph import run_recommendation
 from xft.pipeline.recommender.scenario import load_scenario
+from xft.evidence.policy import load_evidence_policy
+from xft.scoring.policy_loader import load_scoring_policy
 from xft.web.config_loader import load_web_extract_llm_config, load_web_search_config
 from xft.warehouse.prophet_loader import load_prophet_data
 
@@ -65,6 +67,8 @@ def test_load_scenario_resolves_bundle_paths() -> None:
     assert scenario is not None
     assert scenario.config.id == "sales_recommendation"
     assert scenario.products_path.endswith("config/scenarios/sales_recommendation/products.yaml")
+    assert scenario.scoring_policy_path.endswith("config/scenarios/sales_recommendation/scoring_policy.yaml")
+    assert scenario.evidence_policy_path.endswith("config/scenarios/sales_recommendation/evidence_policy.yaml")
     assert scenario.prompt_paths["match_system"].endswith("prompts/match_system.md")
 
 
@@ -123,11 +127,15 @@ def test_config_loaders_accept_scenario_directory() -> None:
     dimensions = load_dimensions_config(SCENARIO_DIR)
     web_config = load_web_search_config(SCENARIO_DIR)
     extract_config = load_web_extract_llm_config(SCENARIO_DIR)
+    scoring_policy = load_scoring_policy(SCENARIO_DIR)
+    evidence_policy = load_evidence_policy(SCENARIO_DIR)
 
     assert products.products
     assert dimensions.dimensions
     assert web_config.cache_root.endswith("data/web/sales_recommendation")
     assert extract_config.prompt_file.endswith("prompts/extract_evidence_system.md")
+    assert scoring_policy.dimension_support["supported_score"] == 5
+    assert evidence_policy.web_planning.supported_facts_to_skip_web == 3
 
 
 @pytest.mark.asyncio
@@ -135,8 +143,8 @@ async def test_run_recommendation_accepts_scenario_bundle(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr("diligence.settings.settings.llm_api_key", "")
-    monkeypatch.setattr("diligence.settings.settings.minimax_api_key", "")
+    monkeypatch.setattr("xft.settings.settings.llm_api_key", "")
+    monkeypatch.setattr("xft.settings.settings.minimax_api_key", "")
     warehouse = _build_warehouse(tmp_path)
 
     result = await run_recommendation(

@@ -5,8 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from diligence.models import SearchItem, make_item_id
-from diligence.utils.fetch import (
+from xft.models import SearchItem, make_item_id
+from xft.utils.fetch import (
     _crawl_priority_key,
     _fetch_page_markdown,
     _is_unsafe_crawl_url,
@@ -141,7 +141,7 @@ async def test_enrich_items_empty_blocklist_collects_all() -> None:
 
     mock_crawler = MagicMock()
 
-    with patch("diligence.utils.fetch._fetch_page_markdown", new=AsyncMock(side_effect=fake_fetch)):
+    with patch("xft.utils.fetch._fetch_page_markdown", new=AsyncMock(side_effect=fake_fetch)):
         result = await enrich_items(items, blocked_domains=[], target=TARGET, crawler=mock_crawler)
 
     assert fetch_count == 2
@@ -173,7 +173,7 @@ async def test_enrich_items_snippet_match_fetched() -> None:
         fetch_count += 1
         return "full page content " * 50
 
-    with patch("diligence.utils.fetch._fetch_page_markdown", new=AsyncMock(side_effect=fake_fetch)):
+    with patch("xft.utils.fetch._fetch_page_markdown", new=AsyncMock(side_effect=fake_fetch)):
         result = await enrich_items(items, blocked_domains=[], target=TARGET, crawler=mock_crawler)
 
     assert fetch_count == 1
@@ -214,7 +214,7 @@ async def test_enrich_items_preserves_order() -> None:
     async def fake_fetch(url: str, crawler: object, timeout_ms: int = 25000, max_chars: int = 6900) -> str:
         return "full page content " * 50
 
-    with patch("diligence.utils.fetch._fetch_page_markdown", new=AsyncMock(side_effect=fake_fetch)):
+    with patch("xft.utils.fetch._fetch_page_markdown", new=AsyncMock(side_effect=fake_fetch)):
         result = await enrich_items(items, blocked_domains=[], target=TARGET, crawler=mock_crawler)
     assert [i.title for i in result] == [TARGET + " A", TARGET + " B", TARGET + " C"]
 
@@ -236,7 +236,7 @@ async def test_enrich_items_deduplicates_same_url() -> None:
 
     mock_crawler = MagicMock()
 
-    with patch("diligence.utils.fetch._fetch_page_markdown", new=AsyncMock(side_effect=fake_fetch)):
+    with patch("xft.utils.fetch._fetch_page_markdown", new=AsyncMock(side_effect=fake_fetch)):
         result = await enrich_items(items, blocked_domains=[], target=TARGET, crawler=mock_crawler)
 
     assert fetch_call_count == 1
@@ -289,7 +289,7 @@ async def test_enrich_items_returns_original_order_after_priority_crawl() -> Non
         fetch_urls.append(url)
         return "content " * 50
 
-    with patch("diligence.utils.fetch._fetch_page_markdown", new=AsyncMock(side_effect=record_fetch)):
+    with patch("xft.utils.fetch._fetch_page_markdown", new=AsyncMock(side_effect=record_fetch)):
         result = await enrich_items(items, blocked_domains=[], target=TARGET, crawler=mock_crawler)
 
     # Output order preserved
@@ -321,7 +321,7 @@ async def test_enrich_items_avoid_items_not_fetched_but_preserved() -> None:
         fetch_urls.append(url)
         return "content " * 50
 
-    with patch("diligence.utils.fetch._fetch_page_markdown", new=AsyncMock(side_effect=record_fetch)):
+    with patch("xft.utils.fetch._fetch_page_markdown", new=AsyncMock(side_effect=record_fetch)):
         result = await enrich_items(items, blocked_domains=[], target=TARGET, crawler=mock_crawler)
 
     assert len(result) == 3  # all items preserved
@@ -345,7 +345,7 @@ async def test_enrich_items_unsafe_items_not_fetched_but_preserved() -> None:
         fetch_urls.append(url)
         return "content " * 50
 
-    with patch("diligence.utils.fetch._fetch_page_markdown", new=AsyncMock(side_effect=record_fetch)):
+    with patch("xft.utils.fetch._fetch_page_markdown", new=AsyncMock(side_effect=record_fetch)):
         result = await enrich_items(items, blocked_domains=[], target=TARGET, crawler=mock_crawler)
 
     assert len(result) == 3

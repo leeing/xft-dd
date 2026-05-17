@@ -1,4 +1,4 @@
-# xft — 统一企业分析平台
+# 统一企业分析平台
 
 本项目已从早期"搜索 → 总结 → 合并报告"的单一脚本，演进为 **xft 统一企业分析平台**。平台以 DuckDB 事实层为中心，将通用能力（数据仓库、证据管理、Web 采集、规则评分、AI 调用、批量运行）下沉为共享基础设施，之上按业务场景搭建独立流水线。
 
@@ -530,11 +530,9 @@ src/xft/runtime/                   # 统一 pipeline request/result、质量报�
 src/xft/pipeline/recommender/      # 销售产品推荐场景
 src/xft/pipeline/diligence/        # 旧尽调流水线（已场景化）
 src/xft/nodes/                     # 兼容转发层 → xft.pipeline.diligence.nodes
-
-src/diligence/                     # 兼容期旧包名，转发到 xft.*
 ```
 
-所有入口脚本已使用 `xft.*` import；`diligence.*` 作为兼容转发层保留，新代码请统一使用 `xft.*`。
+所有入口脚本已使用 `xft.*` import；`src/diligence` 旧包名目录已经删除，新代码请统一使用 `xft.*`。
 
 ## 常用命令
 
@@ -616,6 +614,58 @@ uv run python run_calibration.py --limit 10 --batch-id calibration-run-01
 uv run python run_calibration.py --labels calibration_labels.csv --limit 30
 ```
 
+真实 Web / LLM 小批次校准：
+
+```bash
+uv run python run_calibration.py \
+  --scenario config/scenarios/sales_recommendation \
+  --company-list company.txt \
+  --limit 5 \
+  --with-web \
+  --with-llm \
+  --batch-id web-calibration-01
+```
+
+默认情况下，本地画像已经充足的维度会跳过 Web 搜索。若要专门压测搜索、抓取、LLM 抽取和入库链路，可加：
+
+```bash
+uv run python run_calibration.py \
+  --scenario config/scenarios/sales_recommendation \
+  --company-list company.txt \
+  --limit 1 \
+  --with-web \
+  --with-llm \
+  --force-web-dimensions \
+  --batch-id web-calibration-force-01
+```
+
+业务标注校准：
+
+```bash
+cp calibration_labels.example.csv calibration_labels.csv
+
+uv run python run_calibration.py \
+  --scenario config/scenarios/sales_recommendation \
+  --labels calibration_labels.csv \
+  --limit 30 \
+  --batch-id calibration-label-01
+```
+
+`calibration_labels.csv` 字段：
+
+```text
+company_name,expected_top_module,acceptable_modules,comment
+```
+
+- `company_name`：企业名称，需与 batch summary 中公司名一致。
+- `expected_top_module`：业务认为最理想的 Top1 产品模块 ID。
+- `acceptable_modules`：可接受模块列表，支持英文逗号、中文逗号、分号和竖线分隔。
+- `comment`：业务备注，会进入错配案例，便于复盘。
+
+校准输出位于 `recommendation_runs/calibration/{batch_id}/calibration_report.md` 和 `calibration_report.json`。
+Web/LLM 校准还会生成 `web_llm_review_samples.csv`，用于人工复核搜索证据是否属于目标公司、是否被正确过滤、是否与本地 JSON 冲突。
+重点看 `Top1 命中率`、`可接受命中率`、Web 证据覆盖率和错配案例，再调整 `products.yaml`、`scoring_policy.yaml`、`evidence_policy.yaml` 或 prompts。
+
 ## 配置
 
 兼容三种配置方式：
@@ -627,6 +677,8 @@ config/recommender/products.yaml
 config/recommender/analysis_dimensions.yaml
 config/recommender/web_search.yaml
 config/recommender/web_extract_llm.yaml
+config/scoring_policy.yaml
+config/evidence_policy.yaml
 config/recommender/prompts/
 ```
 
@@ -639,10 +691,40 @@ config/scenarios/sales_recommendation/
   analysis_dimensions.yaml
   web_search.yaml
   web_extract_llm.yaml
+  scoring_policy.yaml
+  evidence_policy.yaml
   prompts/
 ```
 
-`--scenario` 会同时切换产品、维度、prompt、Web 配置、推荐输出目录和 Web cache root。
+`--scenario` 是推荐给业务人员使用的主入口。它会同时切换产品、维度、prompt、Web 配置、评分策略、证据策略、推荐输出目录和 Web cache root。新增业务场景时，优先复制 `config/scenarios/sales_recommendation/` 并在该目录内修改配置。
+
+`scenario.yaml` 负责声明这一套配置文件的位置：
+
+```yaml
+id: sales_recommendation
+name: 销售产品推荐
+
+products_config: products.yaml
+dimensions_config: analysis_dimensions.yaml
+web_search_config: web_search.yaml
+web_extract_llm_config: web_extract_llm.yaml
+scoring_policy_config: scoring_policy.yaml
+evidence_policy_config: evidence_policy.yaml
+
+prompts:
+  match_system: prompts/match_system.md
+  recommend_system: prompts/recommend_system.md
+  web_extract_system: prompts/extract_evidence_system.md
+```
+
+如果只想审计解析后的路径，可以运行：
+
+```bash
+uv run python run_pipeline.py recommender \
+  --scenario config/scenarios/sales_recommendation \
+  --write-scenario-resolved \
+  "企业名称"
+```
 
 **3. 产品评分规则（在 products.yaml 中）：**
 
@@ -820,6 +902,72 @@ final_score = base_score
 
 修改 YAML 后重新跑推荐即可看到评分变化。`result.json` 中 `score_breakdown.matched_rules` / `penalty_rules` / `exclusion_rules` 会列出每条命中的规则及证据 ID，`report.md` 会展示分项得分和命中规则。修改规则不影响 LLM 匹配逻辑，但会影响最终排序和分数。
 
+### 评分策略 (`scoring_policy.yaml`)
+
+`scoring_policy.yaml` 控制推荐排序的通用分值，不需要改代码：
+
+```yaml
+dimension_support:
+  supported_score: 5
+  partial_score: 2
+
+evidence_support:
+  per_item: 1
+  cap: 8
+
+web_support:
+  confirmation_per_item: 2
+  confirmation_cap: 8
+  supplement_per_item: 1
+  supplement_cap: 5
+
+penalties:
+  conflict_per_item: 8
+  missing_evidence_cap: 15
+
+exclusion:
+  score_cap: 20
+```
+
+调这个文件会影响所有产品的基础排序逻辑；调 `products.yaml` 会影响某个产品自己的正向、负向和排除规则。
+
+### 证据策略 (`evidence_policy.yaml`)
+
+`evidence_policy.yaml` 控制 Web 是否补证、证据质量分、冲突消解和推荐状态阈值：
+
+```yaml
+web_planning:
+  supported_facts_to_skip_web: 3
+
+dimension_analysis:
+  supported_facts_threshold: 3
+
+resolver:
+  source_priority:
+    local_json: 0
+    manual: 1
+    rule: 2
+    web: 3
+    llm_extraction: 4
+  quality_score:
+    primary: 15
+    confirmation: 10
+    supplement: 5
+    inference: 3
+    conflict_penalty: 10
+
+recommender:
+  max_web_evidence_per_dimension: 5
+  supported_quality_threshold: 45
+  partial_quality_threshold: 15
+```
+
+典型改法：
+
+- 本地画像已经比较完整、想减少 Web 搜索：调低 `supported_facts_to_skip_web`。
+- 想让 Web 外部佐证更影响推荐状态：提高 `confirmation` 或降低 `supported_quality_threshold`。
+- 想更保守地处理冲突：提高 `conflict_penalty`。
+
 ## 输出文件
 
 每次推荐运行生成：
@@ -889,28 +1037,31 @@ needs_web_enrichment / profile_completeness
 - 复杂字段还没有全部从 47 类 JSON 中解析出来。
 - `company_profile` 是当前唯一稳定 Gold 接口，未来可以增加更多 Gold 表。
 - 当前报告是 Markdown 简报，不是最终商业交付版报告。
-- 评分参数（dimension/evidence/web/conflict 权重）仍写在代码常量中，尚未配置化到 `scoring_policy.yaml`。
-- Batch runner 尚未完全平台化到 `xft.runtime.batch`，recommender/diligence 各自维护批量执行逻辑。
+- Web provider 类型目前内置 `minimax` / `metaso`；业务人员可通过配置启停和调参，新增 provider adapter 仍需要开发。
+- Scenario bundle 已覆盖产品、维度、Web、LLM、评分、证据策略，但还没有对 `products.yaml` 内单个产品规则做结构化 patch。
 - Web/LLM 运行指标（搜索/抓取/抽取 执行与复用次数、LLM fallback 比例）尚未标准化接入质量报告。
 
 ## 后续计划
 
 已完成（详见 `NEXT.md`）：
 
-- **Sprint A**：包名迁移到 `xft`，保留 `diligence` 兼容转发层。
+- **Sprint A**：finished。
 - **Sprint B**：`xft.web` 与 `xft.scoring` 解耦对 `pipeline/recommender` 的反向依赖，下沉通用模型到 `xft.core`。
 - **Sprint C**：旧尽调流水线迁入 `xft.pipeline/diligence`。
 - **Sprint D**：统一 pipeline request/result 协议与 `run_pipeline.py` 入口。
 - **Sprint E**：质量报告、交付清单、失败清单平台化到 `xft.runtime.artifacts`。
 - **Sprint F**：Scenario bundle 继承与配置解析审计（`extends` / `overrides` / `scenario_resolved.json`）。
 - **Sprint G**：推荐规则批量校准工具（`run_calibration.py`）、评分饱和修复。
+- **Config Sprint**：`src/diligence` 旧目录删除；`scoring_policy.yaml` 和 `evidence_policy.yaml` 纳入 scenario bundle，业务策略可通过 YAML 调整。
+- **Sprint H**：业务标注校准 CLI 闭环，支持 `--labels calibration_labels.csv` 计算 Top1/可接受命中率和错配案例。
+- **Sprint K**：真实 Web / LLM 小批次校准闭环，支持 `--force-web-dimensions` 压测搜索/抓取/抽取链路，并输出 `web_llm_review_samples.csv`。
 
 当前优先事项（详见 `TECH_DEBT.md`）：
 
-- 兼容层瘦身：`src/diligence/*` 全部改为薄转发层，测试主线切到 `xft.*`。
-- 统一 batch runner：新增 `xft.runtime.batch`，让 recommender/diligence 批量运行共用执行协议。
-- 业务标注校准：给校准工具加 `calibration_labels.csv`，计算 Top1 命中率。
-- 评分参数配置化：将 dimension/evidence/web/conflict 权重迁入 `scoring_policy.yaml`。
+- 配置 patch：支持按 `module_id` 局部覆盖产品规则，减少场景复制。
+- 配置审计 manifest：报告交付时记录配置内容 hash，保证可复现。
+- 扩大真实校准样本：补业务标注 CSV 后跑 5-10 家，继续验证推荐命中率。
+- Provider 扩展：按 adapter 接口增加 Bing / Tavily / SerpAPI 等搜索源。
 - 增加第二个真实业务场景（如 `bank_marketing`），验证场景继承设计的完备性。
 - 增加 `.xlsx` 汇总交付和 `.zip` 交付包。
 - 增加 DuckDB schema version 和 migration 策略。

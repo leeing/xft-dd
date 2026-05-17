@@ -71,11 +71,11 @@ def test_cli_default_config_is_directory() -> None:
 def test_dry_run_no_external_calls(tmp_path: Path) -> None:
     cfg = _cfg_file(tmp_path)
     with patch("asyncio.create_subprocess_exec") as mock_exec:
-        with patch("diligence.nodes.summarize_node.get_ai_client") as mock_ai:
+        with patch("xft.nodes.summarize_node.get_ai_client") as mock_ai:
             import asyncio
 
             import main as main_module
-            from diligence.config import load_config
+            from xft.config import load_config
 
             config = load_config(str(cfg))
             exit_code = asyncio.run(
@@ -96,7 +96,7 @@ def test_dry_run_includes_metaso_queries(tmp_path: Path, capsys: pytest.CaptureF
     import asyncio
 
     import main as main_module
-    from diligence.config import load_config
+    from xft.config import load_config
 
     config = load_config(str(cfg))
     exit_code = asyncio.run(
@@ -115,7 +115,7 @@ def test_dry_run_includes_metaso_queries(tmp_path: Path, capsys: pytest.CaptureF
 
 
 def test_only_filter_limits_dimensions() -> None:
-    from diligence.config import AppConfig, Dimension
+    from xft.config import AppConfig, Dimension
 
     cfg = AppConfig(
         merge_prompt="x",
@@ -169,7 +169,7 @@ def test_validate_args_target_exactly_max_len() -> None:
 
 
 def test_skip_filter_removes_dimension() -> None:
-    from diligence.config import AppConfig, Dimension
+    from xft.config import AppConfig, Dimension
 
     cfg = AppConfig(
         merge_prompt="x",

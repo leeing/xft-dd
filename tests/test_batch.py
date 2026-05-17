@@ -7,8 +7,8 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-from diligence.batch import _check_concurrency_limit, _dry_run_preview, parse_input_file
-from diligence.config import AppConfig, BatchConfig, Dimension
+from xft.batch import _check_concurrency_limit, _dry_run_preview, parse_input_file
+from xft.config import AppConfig, BatchConfig, Dimension
 
 
 def _make_cfg(batch_runs_dir: str = "batch_runs") -> AppConfig:
@@ -120,7 +120,7 @@ def test_batch_dry_run_verbose_includes_metaso_queries(capsys: pytest.CaptureFix
 
 
 async def test_batch_company_failure_does_not_stop_others(tmp_path: Path) -> None:
-    from diligence.batch import run_batch
+    from xft.batch import run_batch
 
     batch_dir = str(tmp_path / "batch_runs")
     cfg = _make_cfg(batch_dir)
@@ -133,14 +133,14 @@ async def test_batch_company_failure_does_not_stop_others(tmp_path: Path) -> Non
     async def fake_run(target, config, output_dir, **kwargs):
         nonlocal call_count
         call_count += 1
-        from diligence.models import CompanyRunResult
+        from xft.models import CompanyRunResult
 
         if target == "公司A":
             msg = "公司A down"
             raise RuntimeError(msg)
         return CompanyRunResult(index=0, target=target, status="success", run_id="r")
 
-    with patch("diligence.batch.run_company_graph", side_effect=fake_run):
+    with patch("xft.pipeline.diligence.batch.run_company_graph", side_effect=fake_run):
         await run_batch(
             input_file=str(f),
             config=cfg,
@@ -161,8 +161,8 @@ async def test_batch_company_failure_does_not_stop_others(tmp_path: Path) -> Non
 async def test_batch_resume_skips_completed(tmp_path: Path) -> None:
     import hashlib
 
-    from diligence.batch import run_batch
-    from diligence.models import BatchRunMeta, RunMeta
+    from xft.batch import run_batch
+    from xft.models import BatchRunMeta, RunMeta
 
     batch_runs = tmp_path / "batch_runs"
     cfg = _make_cfg(str(batch_runs))
@@ -206,11 +206,11 @@ async def test_batch_resume_skips_completed(tmp_path: Path) -> None:
 
     async def fake_run(target, config, output_dir, **kwargs):
         call_targets.append(target)
-        from diligence.models import CompanyRunResult
+        from xft.models import CompanyRunResult
 
         return CompanyRunResult(index=0, target=target, status="success", run_id="r")
 
-    with patch("diligence.batch.run_company_graph", side_effect=fake_run):
+    with patch("xft.pipeline.diligence.batch.run_company_graph", side_effect=fake_run):
         await run_batch(
             input_file=str(f),
             config=cfg,
@@ -230,8 +230,8 @@ async def test_batch_resume_skips_completed(tmp_path: Path) -> None:
 
 
 async def test_batch_resume_mismatch_exits(tmp_path: Path) -> None:
-    from diligence.batch import run_batch
-    from diligence.models import BatchRunMeta
+    from xft.batch import run_batch
+    from xft.models import BatchRunMeta
 
     batch_runs = tmp_path / "batch_runs"
     cfg = _make_cfg(str(batch_runs))
@@ -271,7 +271,7 @@ async def test_batch_resume_mismatch_exits(tmp_path: Path) -> None:
 
 
 async def test_batch_produces_summary_files(tmp_path: Path) -> None:
-    from diligence.batch import run_batch
+    from xft.batch import run_batch
 
     batch_runs = tmp_path / "batch_runs"
     cfg = _make_cfg(str(batch_runs))
@@ -280,11 +280,11 @@ async def test_batch_produces_summary_files(tmp_path: Path) -> None:
     cfg_path = str(_cfg_file(tmp_path, str(batch_runs)))
 
     async def fake_run(target, config, output_dir, **kwargs):
-        from diligence.models import CompanyRunResult
+        from xft.models import CompanyRunResult
 
         return CompanyRunResult(index=0, target=target, status="success", run_id="r")
 
-    with patch("diligence.batch.run_company_graph", side_effect=fake_run):
+    with patch("xft.pipeline.diligence.batch.run_company_graph", side_effect=fake_run):
         await run_batch(
             input_file=str(f),
             config=cfg,
@@ -308,7 +308,7 @@ async def test_batch_produces_summary_files(tmp_path: Path) -> None:
 
 
 async def test_batch_dry_run_no_external_calls(tmp_path: Path) -> None:
-    from diligence.batch import run_batch
+    from xft.batch import run_batch
 
     batch_runs = tmp_path / "batch_runs"
     cfg = _make_cfg(str(batch_runs))
@@ -317,7 +317,7 @@ async def test_batch_dry_run_no_external_calls(tmp_path: Path) -> None:
     cfg_path = str(_cfg_file(tmp_path, str(batch_runs)))
 
     with patch("asyncio.create_subprocess_exec") as mock_exec:
-        with patch("diligence.batch.run_company_graph") as mock_run:
+        with patch("xft.pipeline.diligence.batch.run_company_graph") as mock_run:
             exit_code = await run_batch(
                 input_file=str(f),
                 config=cfg,

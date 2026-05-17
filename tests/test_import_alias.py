@@ -27,11 +27,3 @@ def test_xft_diligence_compat_imports() -> None:
     assert callable(make_run_id)
 
 
-def test_diligence_compat_imports() -> None:
-    from diligence.pipeline.recommender import run_recommendation
-    from diligence.web import run_web_enrichment
-    from diligence.warehouse import load_prophet_data
-
-    assert callable(load_prophet_data)
-    assert callable(run_web_enrichment)
-    assert callable(run_recommendation)

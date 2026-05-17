@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections.abc import Generator
 
 import pytest
-import diligence.nodes.summarize_node as sn
-from diligence.settings import settings
+import xft.nodes.summarize_node as sn
+from xft.settings import settings
 
 
 @pytest.fixture(autouse=True)

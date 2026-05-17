@@ -25,6 +25,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--web-config")
     parser.add_argument("--web-extract-llm-config")
     parser.add_argument("--dimensions-config")
+    parser.add_argument("--evidence-policy")
     parser.add_argument("--output-root")
     parser.add_argument("--only-dimensions", help="comma-separated dimension ids")
     parser.add_argument("--providers", help="comma-separated provider names")
@@ -80,6 +81,7 @@ async def _main() -> int:
         web_config_path=args.web_config,
         web_extract_llm_config_path=args.web_extract_llm_config,
         dimensions_config_path=args.dimensions_config,
+        evidence_policy_path=args.evidence_policy,
         output_root=args.output_root,
         only_dimensions=_csv(args.only_dimensions),
         providers=_csv(args.providers),

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import duckdb
 
-from diligence.warehouse.prophet_loader import discover_company_packages, load_prophet_data
+from xft.warehouse.prophet_loader import discover_company_packages, load_prophet_data
 
 
 def _write_json(path: Path, value: object) -> None:

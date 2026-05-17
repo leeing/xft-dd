@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from diligence.utils.source_registry import classify_source
+from xft.utils.source_registry import classify_source
 
 
 def test_classify_empty_url() -> None:

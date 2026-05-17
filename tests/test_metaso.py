@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 
-from diligence.utils.metaso import (
+from xft.utils.metaso import (
     _clean_answer,
     enrich_with_metaso,
     enrich_with_metaso_search,
@@ -117,7 +117,7 @@ async def test_fetch_metaso_items_returns_empty_when_no_queries() -> None:
 
 async def test_fetch_metaso_items_success() -> None:
     """Returns SearchItems and sums credits on success."""
-    with patch("diligence.utils.metaso.query_metaso", new_callable=AsyncMock) as mock_q:
+    with patch("xft.utils.metaso.query_metaso", new_callable=AsyncMock) as mock_q:
         mock_q.return_value = ("公司注册资本为人民币壹仟万元整，经营状态正常", [], 3)
         items, source_items, success, failed, credits = await fetch_metaso_items(
             "basic_info", ["某公司的注册资本是多少？"], api_key="key"
@@ -131,7 +131,7 @@ async def test_fetch_metaso_items_success() -> None:
 
 async def test_fetch_metaso_items_skips_short_answer() -> None:
     """Answers shorter than 20 chars are discarded (likely a non-answer)."""
-    with patch("diligence.utils.metaso.query_metaso", new_callable=AsyncMock) as mock_q:
+    with patch("xft.utils.metaso.query_metaso", new_callable=AsyncMock) as mock_q:
         mock_q.return_value = ("无", [], 1)  # too short
         items, source_items, success, failed, credits = await fetch_metaso_items("basic_info", ["query"], api_key="key")
     assert items == []
@@ -142,7 +142,7 @@ async def test_fetch_metaso_items_skips_short_answer() -> None:
 
 async def test_fetch_metaso_items_handles_timeout_gracefully() -> None:
     """Timeout exception is caught; returns empty list, zero credits."""
-    with patch("diligence.utils.metaso.query_metaso", new_callable=AsyncMock) as mock_q:
+    with patch("xft.utils.metaso.query_metaso", new_callable=AsyncMock) as mock_q:
         mock_q.side_effect = TimeoutError("timeout")
         items, source_items, success, failed, credits = await fetch_metaso_items("basic_info", ["query"], api_key="key")
     assert items == []
@@ -154,7 +154,7 @@ async def test_fetch_metaso_items_handles_timeout_gracefully() -> None:
 
 async def test_fetch_metaso_items_handles_http_error_gracefully() -> None:
     """HTTP error is caught; returns empty list."""
-    with patch("diligence.utils.metaso.query_metaso", new_callable=AsyncMock) as mock_q:
+    with patch("xft.utils.metaso.query_metaso", new_callable=AsyncMock) as mock_q:
         mock_q.side_effect = httpx.HTTPStatusError("403", request=MagicMock(), response=MagicMock())
         items, source_items, success, failed, credits = await fetch_metaso_items("basic_info", ["query"], api_key="key")
     assert items == []
@@ -165,7 +165,7 @@ async def test_fetch_metaso_items_handles_http_error_gracefully() -> None:
 
 async def test_fetch_metaso_items_multiple_queries_summed() -> None:
     """Credits from multiple queries are summed."""
-    with patch("diligence.utils.metaso.query_metaso", new_callable=AsyncMock) as mock_q:
+    with patch("xft.utils.metaso.query_metaso", new_callable=AsyncMock) as mock_q:
         mock_q.side_effect = [
             ("公司成立于2010年，注册资本为人民币壹仟万元整，经营状态正常", [], 2),
             ("法定代表人为张三，经营范围包括家具制造与销售，注册地址广东省佛山市", [], 3),
@@ -186,7 +186,7 @@ async def test_enrich_with_metaso_prepends_items() -> None:
     """Metaso items are prepended before existing search result items."""
     from datetime import UTC, datetime
 
-    from diligence.models import SearchItem, make_item_id
+    from xft.models import SearchItem, make_item_id
 
     existing = SearchItem(
         id=make_item_id(url="https://qcc.com/1", title="企查查结果", snippet="s"),
@@ -198,7 +198,7 @@ async def test_enrich_with_metaso_prepends_items() -> None:
         fetched_at=datetime.now(UTC),
     )
 
-    with patch("diligence.utils.metaso.query_metaso", new_callable=AsyncMock) as mock_q:
+    with patch("xft.utils.metaso.query_metaso", new_callable=AsyncMock) as mock_q:
         mock_q.return_value = ("秘塔AI的答案内容，超过20个字符的有效答案", [], 2)
         enriched, success, failed, credits = await enrich_with_metaso(
             items=[existing],
@@ -222,7 +222,7 @@ async def test_enrich_with_metaso_no_key_returns_original() -> None:
     """Empty API key → original items returned unchanged, zero credits."""
     from datetime import UTC, datetime
 
-    from diligence.models import SearchItem, make_item_id
+    from xft.models import SearchItem, make_item_id
 
     existing = SearchItem(
         id=make_item_id(url="https://qcc.com/1", title="t", snippet="s"),
@@ -301,7 +301,7 @@ async def test_fetch_metaso_items_includes_source_items() -> None:
         {"title": "来源1", "link": "https://example.com/1", "summary": "摘要1"},
         {"title": "来源2", "link": "https://example.com/2", "snippet": "片段2"},
     ]
-    with patch("diligence.utils.metaso.query_metaso", new_callable=AsyncMock) as mock_q:
+    with patch("xft.utils.metaso.query_metaso", new_callable=AsyncMock) as mock_q:
         mock_q.return_value = ("企业成立于2010年，注册资本为人民壹仟万元整，经营状态正常", mock_sources, 6)
         answer_items, source_items, success, failed, credits = await fetch_metaso_items(
             "basic_info", ["某公司信息"], api_key="key"
@@ -321,7 +321,7 @@ async def test_fetch_metaso_items_source_items_on_short_answer() -> None:
     mock_sources = [
         {"title": "来源1", "link": "https://example.com/1", "summary": "摘要1"},
     ]
-    with patch("diligence.utils.metaso.query_metaso", new_callable=AsyncMock) as mock_q:
+    with patch("xft.utils.metaso.query_metaso", new_callable=AsyncMock) as mock_q:
         mock_q.return_value = ("太短", mock_sources, 1)
         answer_items, source_items, success, failed, credits = await fetch_metaso_items(
             "basic_info", ["query"], api_key="key"
@@ -337,7 +337,7 @@ async def test_enrich_with_metaso_prepends_source_items_first() -> None:
     """Source items come before answer items, which come before existing items."""
     from datetime import UTC, datetime
 
-    from diligence.models import SearchItem, make_item_id
+    from xft.models import SearchItem, make_item_id
 
     existing = SearchItem(
         id=make_item_id(url="https://qcc.com/1", title="企查查结果", snippet="s"),
@@ -351,7 +351,7 @@ async def test_enrich_with_metaso_prepends_source_items_first() -> None:
     mock_sources = [
         {"title": "来源页", "link": "https://example.com/src", "summary": "源摘要"},
     ]
-    with patch("diligence.utils.metaso.query_metaso", new_callable=AsyncMock) as mock_q:
+    with patch("xft.utils.metaso.query_metaso", new_callable=AsyncMock) as mock_q:
         mock_q.return_value = ("秘塔AI的答案内容，超过20个字符的有效答案", mock_sources, 2)
         enriched, success, failed, credits = await enrich_with_metaso(
             items=[existing],
@@ -474,7 +474,7 @@ async def test_fetch_metaso_search_items_success() -> None:
             "content": "",
         },
     ]
-    with patch("diligence.utils.metaso.query_metaso_search", new_callable=AsyncMock) as mock_q:
+    with patch("xft.utils.metaso.query_metaso_search", new_callable=AsyncMock) as mock_q:
         mock_q.return_value = (mock_webpages, 12)
         items, success, failed, credits = await fetch_metaso_search_items("ip", ["某公司专利"], api_key="key", size=3)
     assert len(items) == 2
@@ -488,7 +488,7 @@ async def test_fetch_metaso_search_items_success() -> None:
 
 async def test_fetch_metaso_search_items_empty_webpages_counts_as_failed() -> None:
     """Empty webpages list from API counts as a failed query."""
-    with patch("diligence.utils.metaso.query_metaso_search", new_callable=AsyncMock) as mock_q:
+    with patch("xft.utils.metaso.query_metaso_search", new_callable=AsyncMock) as mock_q:
         mock_q.return_value = ([], 0)
         items, success, failed, credits = await fetch_metaso_search_items("ip", ["query"], api_key="key")
     assert items == []
@@ -498,7 +498,7 @@ async def test_fetch_metaso_search_items_empty_webpages_counts_as_failed() -> No
 
 
 async def test_fetch_metaso_search_items_handles_timeout() -> None:
-    with patch("diligence.utils.metaso.query_metaso_search", new_callable=AsyncMock) as mock_q:
+    with patch("xft.utils.metaso.query_metaso_search", new_callable=AsyncMock) as mock_q:
         mock_q.side_effect = TimeoutError("timeout")
         items, success, failed, credits = await fetch_metaso_search_items("ip", ["query"], api_key="key")
     assert items == []
@@ -516,7 +516,7 @@ async def test_fetch_metaso_search_items_interleaves_by_rank() -> None:
     q2_results = [
         {"title": "Q2-R0", "link": "https://b.com/1", "summary": "c"},
     ]
-    with patch("diligence.utils.metaso.query_metaso_search", new_callable=AsyncMock) as mock_q:
+    with patch("xft.utils.metaso.query_metaso_search", new_callable=AsyncMock) as mock_q:
         mock_q.side_effect = [(q1_results, 6), (q2_results, 6)]
         items, success, failed, credits = await fetch_metaso_search_items("ip", ["q1", "q2"], api_key="key", size=3)
     # Q1-R0, Q2-R0, Q1-R1 (rank 0s first, then rank 1s)
@@ -532,7 +532,7 @@ async def test_enrich_with_metaso_search_prepends_items() -> None:
     """Metaso search items are prepended before existing items."""
     from datetime import UTC, datetime
 
-    from diligence.models import SearchItem, make_item_id
+    from xft.models import SearchItem, make_item_id
 
     existing = SearchItem(
         id=make_item_id(url="https://qcc.com/1", title="企查查结果", snippet="s"),
@@ -547,7 +547,7 @@ async def test_enrich_with_metaso_search_prepends_items() -> None:
     mock_webpages = [
         {"title": "专利结果", "link": "https://patents.example.com/1", "summary": "专利摘要", "content": "专利正文"},
     ]
-    with patch("diligence.utils.metaso.query_metaso_search", new_callable=AsyncMock) as mock_q:
+    with patch("xft.utils.metaso.query_metaso_search", new_callable=AsyncMock) as mock_q:
         mock_q.return_value = (mock_webpages, 12)
         enriched, success, failed, credits = await enrich_with_metaso_search(
             items=[existing], dimension_id="ip", queries=["某公司专利"], api_key="key"
@@ -568,7 +568,7 @@ async def test_enrich_with_metaso_search_no_key_returns_original() -> None:
     """Empty API key → original items returned unchanged."""
     from datetime import UTC, datetime
 
-    from diligence.models import SearchItem, make_item_id
+    from xft.models import SearchItem, make_item_id
 
     existing = SearchItem(
         id=make_item_id(url="https://qcc.com/1", title="t", snippet="s"),
