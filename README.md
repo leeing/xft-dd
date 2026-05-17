@@ -1,89 +1,94 @@
-# xft-dd-craw4ai 当前架构
+# xft — 统一企业分析平台
 
-本项目已经从早期"搜索 -> 总结 -> 合并报告"的单一路线，重构为以 DuckDB 事实层为中心的企业画像与产品推荐架构。旧报告流水线仍保留，主要作为 MiniMax Search、Metaso、crawl4ai、LLM 结构化抽取等能力的复用来源；新的主链路以本地 JSON 和 Web evidence 入库后的结构化证据为基础。
-
-## 总体架构图
+本项目已从早期"搜索 → 总结 → 合并报告"的单一脚本，演进为 **xft 统一企业分析平台**。平台以 DuckDB 事实层为中心，将通用能力（数据仓库、证据管理、Web 采集、规则评分、AI 调用、批量运行）下沉为共享基础设施，之上按业务场景搭建独立流水线。
 
 ```mermaid
 flowchart TB
-  subgraph S["Source Layer"]
-    A["data/ Prophet & NewEnt JSON"]
-    B["data/web Web Cache"]
+  subgraph Sources["Data Sources"]
+    A["Prophet / NewEnt JSON"]
+    B["Web Search & Crawl"]
+    C["Manual Evidence"]
   end
 
-  subgraph I["Ingestion Layer"]
+  subgraph Ingestion["Ingestion"]
     D["etl_json_to_duckdb.py"]
     E["run_web_enrichment.py"]
     F["etl_web_to_duckdb.py"]
   end
 
-  subgraph W["DuckDB Warehouse"]
-    G["Bronze: raw_company_json"]
-    H["Silver: normalized fact tables"]
-    J["Gold: company_profile"]
-    K["Evidence: web_evidence"]
-    L["Evidence: unified_evidence"]
+  subgraph Warehouse["DuckDB Warehouse"]
+    G["Bronze → Silver → Gold"]
+    H["company_profile"]
+    I["unified_evidence"]
   end
 
-  subgraph EV["Evidence Layer"]
-    EV1["EvidenceRepository"]
-    EV2["EvidenceResolver"]
-    EV3["RuleEvaluator"]
+  subgraph Platform["xft Platform Core"]
+    J["warehouse<br/>企业画像读取"]
+    K["evidence<br/>证据仓库 & 冲突消解"]
+    L["web<br/>搜索/抓取/抽取/缓存"]
+    M["scoring<br/>规则评分引擎"]
+    N["ai<br/>LLM 客户端"]
+    O["core<br/>通用模型 & 场景配置"]
+    P["runtime<br/>批量运行/质量/校准/交付"]
   end
 
-  subgraph SC["Scoring Layer"]
-    SC1["ScoreEngine"]
-    SC2["ScoreBreakdown"]
-    SC3["EvidenceTrace"]
+  subgraph Pipelines["Scenario Pipelines"]
+    Q["pipeline/recommender<br/>销售产品推荐"]
+    R["pipeline/diligence<br/>企业尽调报告"]
   end
 
-  subgraph R["Recommendation Pipeline"]
-    M["data_gather"]
-    N["dimension_analyze"]
-    O["web_evidence merge"]
-    P["llm_match"]
-    Q["llm_recommend"]
+  subgraph Outputs["Outputs"]
+    S["result.json"]
+    T["report.md"]
+    U["batch_quality_report"]
+    V["delivery_manifest"]
   end
 
-  subgraph O2["Output Layer"]
-    X["result.json"]
-    Y["report.md"]
-    Z["batch_quality_report"]
-  end
-
-  A --> D --> G --> H --> J
-  D --> L
-  E --> B --> F --> K --> L
-  J --> M --> N --> O --> P --> Q
-  L --> EV1 --> EV2 --> O
-  EV2 --> EV3 --> SC1
-  SC1 --> SC2 --> Q
-  SC1 --> SC3 --> X
-  M --> X
-  Q --> X
-  Q --> Y
-  X --> Z
+  A --> D --> G
+  B --> E --> F --> I
+  C --> I
+  G --> H --> I
+  H --> Pipelines
+  I --> K --> Pipelines
+  J --> Pipelines
+  L --> Pipelines
+  M --> Pipelines
+  N --> Pipelines
+  O --> Pipelines
+  P --> Pipelines
+  Pipelines --> Outputs
 ```
 
-核心原则：
+**平台分层原则：**
 
-- `DuckDB` 是事实中心，推荐流程不直接读取零散 JSON 或临时搜索结果。
-- `company_profile` 提供快速企业画像，适合推荐和筛选。
-- `unified_evidence` 承接本地 JSON 证据、Web 补证和后续人工证据，是长期证据接口。
-- `EvidenceRepository` + `EvidenceResolver` 提供统一的证据查询、去重、冲突解决和质量评分。
-- `ScoreEngine` 基于配置规则（positive/negative/exclusion）对产品做可追溯评分。
-- Web 搜索结果必须先缓存到 `data/web/`，再经过抽取和 ETL 入库，最后才进入推荐。
-- 旧报告流水线不再是新主线，但其中搜索、抓取、结构化抽取、来源判断能力会继续复用。
+| 层 | 职责 | 不关心 |
+|----|------|--------|
+| `warehouse` | 企业事实入库与画像读取 | 推荐、尽调、营销 |
+| `evidence` | 证据建模、去重、冲突、置信度 | 产品模块 |
+| `web` | 搜索、抓取、LLM 抽取、缓存 | 推荐维度模型 |
+| `scoring` | 规则评分、可追溯打分 | 具体产品定义 |
+| `ai` | LLM 客户端、JSON 提取 | 业务 prompt |
+| `core` | 通用模型、场景配置、维度分析 | 场景专有逻辑 |
+| `runtime` | 批量执行、质量报告、校准、交付 | 场景专有指标 |
+| `pipeline/*` | 场景编排、场景模型、prompt、报告 | — |
+
+当前已落地两条流水线：
+
+- **`pipeline/recommender`** — 销售产品推荐场景（主力）。
+- **`pipeline/diligence`** — 旧尽调报告流水线（已场景化，能力复用）。
 
 ## 当前主链路
 
+平台提供两条主链路，共享同一套基础设施：
+
+### 链路 1：产品推荐（主力场景）
+
 ```text
 data/ Prophet/NewEnt JSON
-  -> etl_json_to_duckdb.py
-  -> DuckDB warehouse
-  -> company_profile / unified_evidence
-  -> run_recommender.py
-  -> recommendation_runs/.../report.md
+  → etl_json_to_duckdb.py          # 本地 JSON 分层入库
+  → DuckDB warehouse               # Bronze → Silver → Gold → unified_evidence
+  → run_recommender.py             # 推荐流水线
+  → recommendation_runs/.../report.md
 ```
 
 推荐流水线（6 节点）：
@@ -95,28 +100,91 @@ data_gather → dimension_analyze → web_evidence → llm_match → llm_recomme
 可选 Web 补证链路：
 
 ```text
-run_web_enrichment.py
-  -> data/web 原始响应、页面正文、中间抽取文件、web_evidence.jsonl
-  -> etl_web_to_duckdb.py
-  -> web_* tables / unified_evidence
-  -> run_recommender.py --with-web-evidence
+run_web_enrichment.py              # 搜索 → 抓取 → LLM 抽取 → 缓存
+  → etl_web_to_duckdb.py           # Web 证据入库
+  → run_recommender.py --with-web-evidence
 ```
 
-也可以让推荐流程在缺少 Web 证据时自动补证：
+自动补证（缓存缺失时触发搜索）：
 
 ```bash
 uv run python run_recommender.py --with-web "企业名称"
-```
-
-默认会复用已有 `data/web/` 缓存；如需强制刷新：
-
-```bash
 uv run python run_recommender.py --with-web --refresh-web "企业名称"
 ```
 
-## 核心原理
+### 链路 2：企业尽调报告
 
-### 1. Bronze / Silver / Gold
+```text
+data/ Prophet/NewEnt JSON
+  → DuckDB warehouse
+  → run_pipeline.py diligence "企业名称"
+  → runtime_runs/.../report.md
+```
+
+### 统一入口
+
+```bash
+# 推荐场景
+uv run python run_pipeline.py recommender --scenario config/scenarios/sales_recommendation "企业名称"
+
+# 尽调场景
+uv run python run_pipeline.py diligence --config config "企业名称"
+
+# 批量校准
+uv run python run_calibration.py --limit 30 --batch-id cal-01
+```
+
+## 平台架构
+
+`xft` 采用分层设计，每层有明确的向上接口和边界约束：
+
+```text
+┌──────────────────────────────────────────────────┐
+│                 Pipeline Layer                    │
+│  pipeline/recommender  │  pipeline/diligence      │
+│  场景模型 · prompt · 报告 · 编排                    │
+└────────────────────────┬─────────────────────────┘
+                         │ 依赖
+┌────────────────────────┴─────────────────────────┐
+│                 Platform Core                      │
+│  warehouse  │ evidence │ web │ scoring │ ai       │
+│  企业画像    证据管理    Web   规则评分   LLM       │
+│                         │                          │
+│  core       │ runtime                             │
+│  通用模型    批量 · 质量 · 校准 · 交付               │
+└────────────────────────┬─────────────────────────┘
+                         │ 依赖
+┌────────────────────────┴─────────────────────────┐
+│                 Data Layer                         │
+│  DuckDB Warehouse (Bronze → Silver → Gold)         │
+│  data/web Cache                                   │
+└──────────────────────────────────────────────────┘
+```
+
+**依赖规则：**
+- Pipeline → Core：场景可以调用任何平台能力。
+- Core ↔ Core：`warehouse`、`evidence`、`web`、`scoring`、`ai` 互不依赖，各自独立。
+- `core` 提供跨层共享的通用模型（`AnalysisDimension`、`ScoreBreakdown`、`ScenarioConfig`）。
+- `runtime` 提供统一的批量执行、质量报告、校准和交付协议，不绑定具体场景。
+- Core → Data：平台层只依赖 DuckDB 和数据文件，不依赖具体 JSON 格式。
+
+**当前模块清单：**
+
+| 模块 | 包路径 | 说明 |
+|------|--------|------|
+| 数据仓库 | `xft.warehouse` | DuckDB 管理、Prophet JSON 入库、企业画像读取 |
+| 证据管理 | `xft.evidence` | 统一证据模型、证据仓库、去重、冲突消解 |
+| Web 采集 | `xft.web` | 搜索、抓取、LLM 抽取、多级缓存 |
+| 规则评分 | `xft.scoring` | 配置驱动 positive/negative/exclusion 评分 |
+| AI 工具 | `xft.ai` | LLM 客户端、JSON 提取、置信度工具 |
+| 通用核心 | `xft.core` | 通用模型、场景配置、维度分析、配置读取 |
+| 运行时 | `xft.runtime` | 统一 pipeline 协议、批量执行、质量报告、校准、交付 |
+| 推荐场景 | `xft.pipeline.recommender` | 销售产品推荐 |
+| 尽调场景 | `xft.pipeline.diligence` | 企业尽调报告 |
+
+## 核心能力
+
+### 1. 数据分层 (Bronze / Silver / Gold)
 
 `etl_json_to_duckdb.py` 对 `data/` 做分层入库：
 
@@ -448,19 +516,25 @@ etl_json_to_duckdb.py              # data/ JSON -> DuckDB
 run_web_enrichment.py              # Web 搜索、抓取、抽取、缓存
 etl_web_to_duckdb.py               # data/web -> DuckDB Web 表
 run_recommender.py                 # 推荐主入口
+run_pipeline.py                    # 统一流水线入口 (recommender / diligence)
+run_calibration.py                 # 推荐规则批量校准
 
-src/xft/warehouse/                 # DuckDB 本地仓库
+src/xft/                           # 平台根包（规范包名）
+src/xft/core/                      # 通用模型、scenario bundle、维度分析、配置读取
+src/xft/warehouse/                 # DuckDB 本地仓库与企业画像
 src/xft/evidence/                  # 统一证据模型、仓库、冲突解决
 src/xft/ai/                        # 公共 LLM client / JSON 抽取工具
 src/xft/web/                       # Web enrichment 服务与缓存
 src/xft/scoring/                   # 配置驱动评分引擎
-src/xft/pipeline/recommender/      # 推荐图、维度分析、报告渲染
-src/xft/nodes/                     # legacy 报告流水线节点（待迁入 pipeline/diligence）
+src/xft/runtime/                   # 统一 pipeline request/result、质量报告、交付清单、校准
+src/xft/pipeline/recommender/      # 销售产品推荐场景
+src/xft/pipeline/diligence/        # 旧尽调流水线（已场景化）
+src/xft/nodes/                     # 兼容转发层 → xft.pipeline.diligence.nodes
 
-src/diligence/                     # 兼容期旧包名，暂时保留
+src/diligence/                     # 兼容期旧包名，转发到 xft.*
 ```
 
-当前新入口脚本已经使用 `xft.*` import；`diligence.*` 仍作为兼容路径保留，后续会逐步迁移到 `xft.pipeline.diligence`。
+所有入口脚本已使用 `xft.*` import；`diligence.*` 作为兼容转发层保留，新代码请统一使用 `xft.*`。
 
 ## 常用命令
 
@@ -526,6 +600,20 @@ uv run python run_recommender.py \
   --batch-id batch_sales_demo \
   --batch-output recommendation_runs/batches \
   --skip-existing
+```
+
+统一流水线入口（支持 recommender / diligence）：
+
+```bash
+uv run python run_pipeline.py recommender --scenario config/scenarios/sales_recommendation "企业名称"
+uv run python run_pipeline.py diligence --config config "企业名称"
+```
+
+批量校准推荐规则：
+
+```bash
+uv run python run_calibration.py --limit 10 --batch-id calibration-run-01
+uv run python run_calibration.py --labels calibration_labels.csv --limit 30
 ```
 
 ## 配置
@@ -775,14 +863,24 @@ needs_web_enrichment / profile_completeness
 
 ## 设计原则
 
+**数据原则：**
 - 本地事实层优先，Web search 后补。
-- 原始数据完整保留，结构化解析逐步推进。
-- 推荐模块只依赖稳定 Gold 层，不直接绑定 JSON 文件形状。
+- 原始数据完整保留（Bronze），结构化解析逐步推进（Silver → Gold）。
+- 所有场景只依赖稳定 Gold 层和 unified_evidence，不直接绑定 JSON 文件形状。
+
+**平台原则：**
+- 分层隔离：`warehouse`、`evidence`、`web`、`scoring`、`ai` 互不依赖，各自独立。
+- 场景独立：每个 pipeline 拥有独立的产品、维度、prompt、报告，互不干扰。
+- 运行时无关：`runtime` 不绑定具体场景，通过统一协议（`PipelineRunRequest` / `PipelineRunResult`）驱动任意流水线。
+
+**质量原则：**
+- 证据不足显式表达（`insufficient_evidence`），不用模型想象补齐。
+- 评分可追溯：每条推荐可追溯到具体证据 ID 和命中规则。
+- 批量可交付：一次运行产出报告、质量指标、交付清单和校准数据。
+
+**配置原则：**
 - 配置优先：产品规则、维度、评分策略全部外置到 YAML。
-- 证据不足要显式表达，不用模型想象补齐。
-- 评分可追溯：每条推荐可追溯到具体证据和规则。
-- 场景隔离：不同业务场景的产品、维度、prompt 独立配置。
-- 批量可交付：一次运行产出报告、质量指标和交付清单。
+- 场景可继承：`extends` / `overrides` 减少跨场景复制，`scenario_resolved.json` 可审计。
 
 ## 当前限制
 
@@ -791,16 +889,29 @@ needs_web_enrichment / profile_completeness
 - 复杂字段还没有全部从 47 类 JSON 中解析出来。
 - `company_profile` 是当前唯一稳定 Gold 接口，未来可以增加更多 Gold 表。
 - 当前报告是 Markdown 简报，不是最终商业交付版报告。
-- 场景继承和 overlay 尚未支持，每个场景需独立维护完整配置。
+- 评分参数（dimension/evidence/web/conflict 权重）仍写在代码常量中，尚未配置化到 `scoring_policy.yaml`。
+- Batch runner 尚未完全平台化到 `xft.runtime.batch`，recommender/diligence 各自维护批量执行逻辑。
+- Web/LLM 运行指标（搜索/抓取/抽取 执行与复用次数、LLM fallback 比例）尚未标准化接入质量报告。
 
 ## 后续计划
 
-- 增加第二个真实业务场景（如 `bank_marketing`），验证场景隔离设计的完备性。
-- 支持场景配置继承或 overlay，减少跨场景复制。
-- 将 `score_levels`、报告结构也纳入场景配置。
+已完成（详见 `NEXT.md`）：
+
+- **Sprint A**：包名迁移到 `xft`，保留 `diligence` 兼容转发层。
+- **Sprint B**：`xft.web` 与 `xft.scoring` 解耦对 `pipeline/recommender` 的反向依赖，下沉通用模型到 `xft.core`。
+- **Sprint C**：旧尽调流水线迁入 `xft.pipeline/diligence`。
+- **Sprint D**：统一 pipeline request/result 协议与 `run_pipeline.py` 入口。
+- **Sprint E**：质量报告、交付清单、失败清单平台化到 `xft.runtime.artifacts`。
+- **Sprint F**：Scenario bundle 继承与配置解析审计（`extends` / `overrides` / `scenario_resolved.json`）。
+- **Sprint G**：推荐规则批量校准工具（`run_calibration.py`）、评分饱和修复。
+
+当前优先事项（详见 `TECH_DEBT.md`）：
+
+- 兼容层瘦身：`src/diligence/*` 全部改为薄转发层，测试主线切到 `xft.*`。
+- 统一 batch runner：新增 `xft.runtime.batch`，让 recommender/diligence 批量运行共用执行协议。
+- 业务标注校准：给校准工具加 `calibration_labels.csv`，计算 Top1 命中率。
+- 评分参数配置化：将 dimension/evidence/web/conflict 权重迁入 `scoring_policy.yaml`。
+- 增加第二个真实业务场景（如 `bank_marketing`），验证场景继承设计的完备性。
 - 增加 `.xlsx` 汇总交付和 `.zip` 交付包。
-- 扩展更多 JSON 文件到 Silver 表。
 - 增加 DuckDB schema version 和 migration 策略。
 - 增加 `--rerun-failed` 直接读取上一批 `failed_companies.txt`。
-
-更详细的技术文档见 `DUCK.md`，Prophet 数据字段参考见 `docs/prophet-data-catalog.md`。
