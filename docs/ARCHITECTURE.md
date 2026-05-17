@@ -121,7 +121,7 @@ uv run xft recommend --with-web --refresh-web "企业名称"
 ```text
 data/ Prophet/NewEnt JSON
   → DuckDB warehouse
-  → xft pipeline diligence "企业名称"
+  → xft diligence "企业名称"
   → runtime_runs/.../report.md
 ```
 
@@ -132,7 +132,7 @@ data/ Prophet/NewEnt JSON
 uv run xft recommend --scenario config/scenarios/sales_recommendation "企业名称"
 
 # 尽调场景
-uv run xft pipeline diligence --config config "企业名称"
+uv run xft diligence --config config "企业名称"
 
 # 批量校准
 uv run xft calibrate --limit 30 --batch-id cal-01
@@ -525,7 +525,8 @@ uv run xft web enrich              # Web 搜索、抓取、抽取、缓存
 uv run xft web import              # data/web -> DuckDB Web 表
 uv run xft recommend               # 推荐主入口
 uv run xft diligence               # 企业尽调入口
-uv run xft pipeline                # 统一流水线入口 (recommender / diligence)
+uv run xft recommend               # 推荐主入口
+uv run xft diligence               # 企业尽调入口
 uv run xft calibrate               # 推荐规则批量校准
 uv run xft scenario validate       # 校验场景配置
 uv run xft scenario inspect        # 输出场景解析结果
@@ -546,7 +547,7 @@ src/xft/pipeline/diligence/        # 旧尽调流水线（已场景化）
 src/xft/nodes/                     # 兼容转发层 → xft.pipeline.diligence.nodes
 ```
 
-根目录不再保留业务 `.py` 入口。旧脚本已移到 `scripts/compat/` 作为过渡兼容 wrapper，新代码和文档主入口请统一使用 `uv run xft ...`。`src/diligence` 旧包名目录已经删除，新代码请统一使用 `xft.*`。
+根目录不再保留业务 `.py` 入口，统一使用 `uv run xft ...`。`src/diligence` 旧包名目录已经删除，新代码请统一使用 `xft.*`。
 
 ## 常用命令
 
@@ -614,12 +615,6 @@ uv run xft recommend \
   --skip-existing
 ```
 
-统一流水线入口（支持 recommender / diligence）：
-
-```bash
-uv run xft pipeline recommender --scenario config/scenarios/sales_recommendation "企业名称"
-uv run xft pipeline diligence --config config "企业名称"
-```
 
 批量校准推荐规则：
 
@@ -1097,7 +1092,7 @@ needs_web_enrichment / profile_completeness
 - **Sprint H**：业务标注校准 CLI 闭环，支持 `--labels calibration_labels.csv` 计算 Top1/可接受命中率和错配案例。
 - **Sprint K**：真实 Web / LLM 小批次校准闭环，支持 `--force-web-dimensions` 压测搜索/抓取/抽取链路，并输出 `web_llm_review_samples.csv`。
 - **Sprint J**：Scenario 产品规则 patch，支持按 `module_id` 局部 set/append/replace/remove 产品规则，并新增 `bank_marketing` 示例场景。
-- **CLI Sprint**：新增 `uv run xft <subcommand>` 统一入口，根目录 `.py` 脚本已收敛到 `src/xft/cli`，旧入口移入 `scripts/compat/`。
+- **CLI Sprint**：新增 `uv run xft <subcommand>` 统一入口，根目录 `.py` 脚本已收敛到 `src/xft/cli`。
 
 当前优先事项（详见 [TECH_DEBT.md](TECH_DEBT.md)）：
 

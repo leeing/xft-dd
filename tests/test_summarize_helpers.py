@@ -7,9 +7,9 @@ from datetime import UTC, datetime
 
 import pytest
 
-from xft.config import ExtractField
-from xft.models import DimensionSearchResult, SearchItem, make_item_id
-from xft.nodes.summarize_node import (
+from xft.core.search_models import DimensionSearchResult, SearchItem, make_item_id
+from xft.pipeline.diligence.config import ExtractField
+from xft.pipeline.diligence.nodes.summarize_node import (
     _ExtractionSource,
     _FieldExtraction,
     _ExtractionsResult,
@@ -31,7 +31,7 @@ from xft.nodes.summarize_node import (
     _validate_extractions,
     _validate_url,
 )
-from xft.nodes.search_node import _normalize_target
+from xft.pipeline.diligence.nodes.search_node import _normalize_target
 
 
 def _make_item(url: str | None, title: str = "t", snippet: str = "s") -> SearchItem:

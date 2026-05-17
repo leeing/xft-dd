@@ -1,16 +1,11 @@
 from __future__ import annotations
 
 import json
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
 
 from xft.cli.main import main as xft_main
-
-
-ROOT = Path(__file__).parent.parent
 
 
 def test_xft_top_level_help(capsys: pytest.CaptureFixture[str]) -> None:
@@ -48,16 +43,8 @@ def test_xft_scenario_inspect_writes_output(tmp_path: Path) -> None:
     assert len(payload["products_effective_hash"]) == 64
 
 
-def test_compatibility_wrapper_help() -> None:
-    result = subprocess.run(
-        [sys.executable, str(ROOT / "scripts/compat/run_recommender.py"), "--help"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.returncode == 0
-    assert "--scenario" in result.stdout
+def test_recommend_help() -> None:
+    assert xft_main(["recommend", "--help"]) == 0
 
 
 def test_xft_runs_help(capsys: pytest.CaptureFixture[str]) -> None:

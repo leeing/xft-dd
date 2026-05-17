@@ -10,9 +10,10 @@ from pathlib import Path
 
 import pytest
 
-from xft.config import AppConfig, Dimension, load_config
-from xft.models import CostRecord, DimensionSearchResult, DimensionSummary, SearchItem, make_item_id
-from xft.state import DiligenceState
+from xft.pipeline.diligence.config import AppConfig, Dimension, load_config
+from xft.core.search_models import DimensionSearchResult, SearchItem, make_item_id
+from xft.pipeline.diligence.models import CostRecord, DimensionSummary
+from xft.pipeline.diligence.state import DiligenceState
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -75,7 +76,7 @@ def _base_state(cfg: AppConfig, tmp_path: Path) -> DiligenceState:
 
 def test_make_run_id_format() -> None:
     """run_id follows YYYYMMDD-HHMMSS-{6hex} format."""
-    from xft.nodes.init_node import make_run_id
+    from xft.pipeline.diligence.nodes.init_node import make_run_id
 
     run_id = make_run_id("某公司")
     assert re.match(r"^\d{8}-\d{6}-[0-9a-f]{6}$", run_id)
@@ -83,7 +84,7 @@ def test_make_run_id_format() -> None:
 
 def test_make_run_id_deterministic_hash() -> None:
     """Same target produces the same hash suffix (only timestamp differs)."""
-    from xft.nodes.init_node import make_run_id
+    from xft.pipeline.diligence.nodes.init_node import make_run_id
 
     id1 = make_run_id("固定公司名")
     id2 = make_run_id("固定公司名")
@@ -93,14 +94,14 @@ def test_make_run_id_deterministic_hash() -> None:
 
 def test_make_run_id_different_targets_different_hash() -> None:
     """Different targets produce different hash suffixes."""
-    from xft.nodes.init_node import make_run_id
+    from xft.pipeline.diligence.nodes.init_node import make_run_id
 
     assert make_run_id("公司A")[-6:] != make_run_id("公司B")[-6:]
 
 
 def test_init_node_filters_disabled_dimensions(tmp_path: Path) -> None:
     """Disabled dimensions are excluded from active_dimensions."""
-    from xft.nodes.init_node import init_node
+    from xft.pipeline.diligence.nodes.init_node import init_node
 
     disabled = Dimension(
         id="industry",
@@ -121,7 +122,7 @@ def test_init_node_filters_disabled_dimensions(tmp_path: Path) -> None:
 
 def test_init_node_creates_output_dir(tmp_path: Path) -> None:
     """init_node creates the output directory on disk."""
-    from xft.nodes.init_node import init_node
+    from xft.pipeline.diligence.nodes.init_node import init_node
 
     cfg = _make_cfg()
     state = _base_state(cfg, tmp_path)
@@ -135,7 +136,7 @@ def test_init_node_creates_output_dir(tmp_path: Path) -> None:
 
 def test_collect_node_missing_dimension_produces_error(tmp_path: Path) -> None:
     """A dimension present in active_dimensions but absent from summaries triggers an error."""
-    from xft.nodes.collect_node import collect_node
+    from xft.pipeline.diligence.nodes.collect_node import collect_node
 
     extra = Dimension(
         id="industry",
@@ -169,7 +170,7 @@ def test_collect_node_missing_dimension_produces_error(tmp_path: Path) -> None:
 
 def test_collect_node_partial_on_required_dimension_is_flagged(tmp_path: Path) -> None:
     """A 'partial' status on a required dimension IS treated as a required-fail error."""
-    from xft.nodes.collect_node import collect_node
+    from xft.pipeline.diligence.nodes.collect_node import collect_node
 
     cfg = _make_cfg()
     partial_summary = DimensionSummary(
@@ -219,7 +220,7 @@ def _make_save_state(cfg: AppConfig, tmp_path: Path, *, status: str = "success")
 
 def test_save_node_creates_all_four_artifacts(tmp_path: Path) -> None:
     """save_node writes all four required artifact files."""
-    from xft.nodes.save_node import save_node
+    from xft.pipeline.diligence.nodes.save_node import save_node
 
     cfg = _make_cfg()
     state = _make_save_state(cfg, tmp_path)
@@ -233,7 +234,7 @@ def test_save_node_creates_all_four_artifacts(tmp_path: Path) -> None:
 
 def test_save_node_run_meta_status_success(tmp_path: Path) -> None:
     """run_meta.json contains status=success when no dimensions failed."""
-    from xft.nodes.save_node import save_node
+    from xft.pipeline.diligence.nodes.save_node import save_node
 
     cfg = _make_cfg()
     state = _make_save_state(cfg, tmp_path, status="success")
@@ -245,7 +246,7 @@ def test_save_node_run_meta_status_success(tmp_path: Path) -> None:
 
 def test_save_node_run_meta_status_partial_on_failed_dim(tmp_path: Path) -> None:
     """run_meta.json contains status=partial when a non-required dim fails but report exists."""
-    from xft.nodes.save_node import save_node
+    from xft.pipeline.diligence.nodes.save_node import save_node
 
     extra = Dimension(
         id="industry",
@@ -285,7 +286,7 @@ def test_save_node_run_meta_status_partial_on_failed_dim(tmp_path: Path) -> None
 
 def test_save_node_metaso_cost_printed(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
     """When metaso_calls > 0, the Metaso cost line appears in stderr."""
-    from xft.nodes.save_node import save_node
+    from xft.pipeline.diligence.nodes.save_node import save_node
 
     cfg = _make_cfg()
     state = _make_save_state(cfg, tmp_path)
@@ -299,7 +300,7 @@ def test_save_node_metaso_cost_printed(tmp_path: Path, capsys: pytest.CaptureFix
 
 def test_save_node_no_metaso_line_when_zero(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
     """When metaso_calls == 0, the Metaso line is NOT printed."""
-    from xft.nodes.save_node import save_node
+    from xft.pipeline.diligence.nodes.save_node import save_node
 
     cfg = _make_cfg()
     state = _make_save_state(cfg, tmp_path)

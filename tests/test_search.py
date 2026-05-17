@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from xft.models import SearchItem, make_item_id
+from xft.core.search_models import SearchItem, make_item_id
 from xft.utils.minimax_search import dedup_items, normalize_url, run_search
 
 

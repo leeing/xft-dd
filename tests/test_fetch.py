@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from xft.models import SearchItem, make_item_id
+from xft.core.search_models import SearchItem, make_item_id
 from xft.utils.fetch import (
     _crawl_priority_key,
     _fetch_page_markdown,

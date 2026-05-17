@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from xft.pipeline.recommender.profile_repository import CompanyProfileRepository
 from xft.pipeline.recommender.state import RecommenderState
 from xft.progress import display
+from xft.warehouse.profile_repository import CompanyProfileRepository
 
 MIN_PROFILE_COMPLETENESS = 0.6
 

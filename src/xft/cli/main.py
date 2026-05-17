@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from collections.abc import Callable
 
-from xft.cli import cache, calibrate, diligence, pipeline, recommend, runs, scenario, warehouse, web
+from xft.cli import cache, calibrate, diligence, recommend, runs, scenario, warehouse, web
 
 Command = Callable[[list[str] | None], int]
 
@@ -18,7 +18,6 @@ COMMANDS: dict[str, Command] = {
     "scenario": scenario.main,
     "runs": runs.main,
     "cache": cache.main,
-    "pipeline": pipeline.main,
 }
 
 
@@ -37,7 +36,6 @@ def _print_help() -> None:
                 "  scenario     inspect or validate scenario bundles",
                 "  runs         inspect generated run outputs",
                 "  cache        sync or manage remote/local cache data",
-                "  pipeline     run generic pipeline runtime",
                 "",
                 "examples:",
                 '  xft recommend "企业名称"',

@@ -71,10 +71,10 @@ def test_cli_default_config_is_directory() -> None:
 def test_dry_run_no_external_calls(tmp_path: Path) -> None:
     cfg = _cfg_file(tmp_path)
     with patch("asyncio.create_subprocess_exec") as mock_exec:
-        with patch("xft.nodes.summarize_node.get_ai_client") as mock_ai:
+        with patch("xft.pipeline.diligence.nodes.summarize_node.get_ai_client") as mock_ai:
             import asyncio
 
-            from xft.config import load_config
+            from xft.pipeline.diligence.config import load_config
             from xft.cli import diligence as diligence_cli
 
             config = load_config(str(cfg))
@@ -95,7 +95,7 @@ def test_dry_run_includes_metaso_queries(tmp_path: Path, capsys: pytest.CaptureF
     cfg = _cfg_file(tmp_path)
     import asyncio
 
-    from xft.config import load_config
+    from xft.pipeline.diligence.config import load_config
     from xft.cli import diligence as diligence_cli
 
     config = load_config(str(cfg))
@@ -115,7 +115,7 @@ def test_dry_run_includes_metaso_queries(tmp_path: Path, capsys: pytest.CaptureF
 
 
 def test_only_filter_limits_dimensions() -> None:
-    from xft.config import AppConfig, Dimension
+    from xft.pipeline.diligence.config import AppConfig, Dimension
 
     cfg = AppConfig(
         merge_prompt="x",
@@ -169,7 +169,7 @@ def test_validate_args_target_exactly_max_len() -> None:
 
 
 def test_skip_filter_removes_dimension() -> None:
-    from xft.config import AppConfig, Dimension
+    from xft.pipeline.diligence.config import AppConfig, Dimension
 
     cfg = AppConfig(
         merge_prompt="x",
