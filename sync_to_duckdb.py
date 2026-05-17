@@ -4,6 +4,8 @@ Usage:
     uv run python sync_to_duckdb.py
 """
 
+from __future__ import annotations
+
 import asyncio
 import os
 import sys
@@ -12,23 +14,27 @@ from pathlib import Path
 import asyncpg
 import dotenv
 import duckdb
+import structlog
 
 # Load .env file
 dotenv.load_dotenv()
+
+log = structlog.get_logger(__name__)
+
+PG_URL_PARTS = 2
 
 
 # PostgreSQL connection from .env
 PG_URL = os.getenv("CACHE_DATABASE_URL", "")
 if "postgresql" not in PG_URL:
-    print("ERROR: CACHE_DATABASE_URL does not point to PostgreSQL")
-    print(f"Current: {PG_URL}")
+    log.error("CACHE_DATABASE_URL does not point to PostgreSQL", url=PG_URL)
     sys.exit(1)
 
 # Parse PG URL
 # Format: postgresql+asyncpg://user:password@host:port/dbname?ssl=true
 pg_url = PG_URL.replace("postgresql+asyncpg://", "").split("@")
-if len(pg_url) != 2:
-    print(f"ERROR: Cannot parse PostgreSQL URL: {PG_URL}")
+if len(pg_url) != PG_URL_PARTS:
+    log.error("Cannot parse PostgreSQL URL", url=PG_URL)
     sys.exit(1)
 
 user_pass, host_db = pg_url
@@ -111,103 +117,125 @@ def create_duckdb_tables(conn: duckdb.DuckDBPyConnection) -> None:
     """)
 
 
+_SEARCH_CACHE_COLUMNS = [
+    "id",
+    "provider",
+    "query_text",
+    "query_hash",
+    "params_hash",
+    "policy_version",
+    "status",
+    "raw_response_json",
+    "result_count",
+    "error",
+    "created_at",
+    "expires_at",
+]
+
+
+def _naive_row(row: dict, columns: list[str]) -> list:
+    record: list = []
+    for col in columns:
+        val = row[col]
+        if hasattr(val, "tzinfo") and val.tzinfo is not None:
+            val = val.replace(tzinfo=None)
+        record.append(val)
+    return record
+
+
 async def sync_search_cache(pg_conn: asyncpg.Connection, duck_conn: duckdb.DuckDBPyConnection) -> int:
     """Sync search_cache table."""
     rows = await pg_conn.fetch("SELECT * FROM search_cache")
     if not rows:
-        print("  search_cache: 0 rows (skip)")
+        log.info("sync_search_cache: 0 rows (skip)")
         return 0
 
-    columns = [
-        desc[0]
-        for desc in await pg_conn.fetch(
-            "SELECT column_name FROM information_schema.columns WHERE table_name = 'search_cache'"
-        )
-    ]
-    data = []
-    for row in rows:
-        # Convert timezone-aware timestamps to naive for DuckDB
-        record = []
-        for col in columns:
-            val = row[col]
-            if hasattr(val, "tzinfo") and val.tzinfo is not None:
-                val = val.replace(tzinfo=None)
-            record.append(val)
-        data.append(record)
-
+    columns = _SEARCH_CACHE_COLUMNS
+    data = [_naive_row(dict(row), columns) for row in rows]
+    placeholders = ", ".join(["?" for _ in columns])
     duck_conn.executemany(
-        f"INSERT INTO search_cache ({', '.join(columns)}) VALUES ({', '.join(['?' for _ in columns])})", data
+        f"INSERT INTO search_cache ({', '.join(columns)}) VALUES ({placeholders})",  # noqa: S608
+        data,
     )
     count = len(data)
-    print(f"  search_cache: {count} rows")
+    log.info("sync_search_cache", rows=count)
     return count
+
+
+_SEARCH_RESULT_URL_COLUMNS = [
+    "id",
+    "search_cache_id",
+    "normalized_url",
+    "original_url",
+    "title",
+    "snippet",
+    "rank",
+    "raw_item_json",
+    "created_at",
+]
 
 
 async def sync_search_result_url(pg_conn: asyncpg.Connection, duck_conn: duckdb.DuckDBPyConnection) -> int:
     """Sync search_result_url table."""
     rows = await pg_conn.fetch("SELECT * FROM search_result_url")
     if not rows:
-        print("  search_result_url: 0 rows (skip)")
+        log.info("sync_search_result_url: 0 rows (skip)")
         return 0
 
-    columns = [
-        desc[0]
-        for desc in await pg_conn.fetch(
-            "SELECT column_name FROM information_schema.columns WHERE table_name = 'search_result_url'"
-        )
-    ]
-    data = []
-    for row in rows:
-        record = []
-        for col in columns:
-            val = row[col]
-            if hasattr(val, "tzinfo") and val.tzinfo is not None:
-                val = val.replace(tzinfo=None)
-            record.append(val)
-        data.append(record)
-
+    columns = _SEARCH_RESULT_URL_COLUMNS
+    data = [_naive_row(dict(row), columns) for row in rows]
+    placeholders = ", ".join(["?" for _ in columns])
     duck_conn.executemany(
-        f"INSERT INTO search_result_url ({', '.join(columns)}) VALUES ({', '.join(['?' for _ in columns])})", data
+        f"INSERT INTO search_result_url ({', '.join(columns)}) VALUES ({placeholders})",  # noqa: S608
+        data,
     )
     count = len(data)
-    print(f"  search_result_url: {count} rows")
+    log.info("sync_search_result_url", rows=count)
     return count
+
+
+_FETCH_CACHE_COLUMNS = [
+    "normalized_url",
+    "original_url",
+    "final_url",
+    "source_type",
+    "authority_level",
+    "should_fetch_bias",
+    "status",
+    "markdown",
+    "content_hash",
+    "error",
+    "fetched_at",
+    "expires_at",
+    "retry_count",
+    "locked_by",
+    "locked_until",
+    "policy_version",
+    "updated_at",
+]
 
 
 async def sync_fetch_cache(pg_conn: asyncpg.Connection, duck_conn: duckdb.DuckDBPyConnection) -> int:
     """Sync fetch_cache table."""
     rows = await pg_conn.fetch("SELECT * FROM fetch_cache")
     if not rows:
-        print("  fetch_cache: 0 rows (skip)")
+        log.info("sync_fetch_cache: 0 rows (skip)")
         return 0
 
-    columns = [
-        desc[0]
-        for desc in await pg_conn.fetch(
-            "SELECT column_name FROM information_schema.columns WHERE table_name = 'fetch_cache'"
-        )
-    ]
-    data = []
-    for row in rows:
-        record = []
-        for col in columns:
-            val = row[col]
-            if hasattr(val, "tzinfo") and val.tzinfo is not None:
-                val = val.replace(tzinfo=None)
-            record.append(val)
-        data.append(record)
-
+    columns = _FETCH_CACHE_COLUMNS
+    data = [_naive_row(dict(row), columns) for row in rows]
+    placeholders = ", ".join(["?" for _ in columns])
     duck_conn.executemany(
-        f"INSERT INTO fetch_cache ({', '.join(columns)}) VALUES ({', '.join(['?' for _ in columns])})", data
+        f"INSERT INTO fetch_cache ({', '.join(columns)}) VALUES ({placeholders})",  # noqa: S608
+        data,
     )
     count = len(data)
-    print(f"  fetch_cache: {count} rows")
+    log.info("sync_fetch_cache", rows=count)
     return count
 
 
 async def main() -> None:
-    print(f"Connecting to PostgreSQL: {host_port}/{db_name}")
-    print(f"Target DuckDB: {LOCAL_DUCKDB_PATH}")
+    log.info("connecting", pg_host=host_port, pg_db=db_name, duckdb=str(LOCAL_DUCKDB_PATH))
 
     # Connect to PostgreSQL
     pg_conn = await asyncpg.connect(
@@ -224,17 +252,17 @@ async def main() -> None:
     duck_conn = duckdb.connect(str(LOCAL_DUCKDB_PATH))
     create_duckdb_tables(duck_conn)
 
-    print("\nSyncing tables...")
+    log.info("syncing_tables")
     total = 0
     total += await sync_search_cache(pg_conn, duck_conn)
     total += await sync_search_result_url(pg_conn, duck_conn)
     total += await sync_fetch_cache(pg_conn, duck_conn)
 
-    print(f"\nTotal rows synced: {total}")
+    log.info("sync_complete", total_rows=total)
 
     await pg_conn.close()
     duck_conn.close()
-    print(f"\nDone! Local DuckDB: {LOCAL_DUCKDB_PATH}")
+    log.info("done", duckdb=str(LOCAL_DUCKDB_PATH))
 
 
 if __name__ == "__main__":
