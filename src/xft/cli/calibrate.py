@@ -1,4 +1,4 @@
-"""Run a recommendation calibration batch and write calibration reports."""
+"""CLI for recommendation calibration."""
 
 from __future__ import annotations
 
@@ -10,13 +10,16 @@ from pathlib import Path
 import duckdb
 from dotenv import load_dotenv
 
+from xft.cli.common import csv
 from xft.runtime.calibration import run_recommendation_calibration
 
+DEFAULT_SCENARIO = "config/scenarios/sales_recommendation"
 
-def _parse_args() -> argparse.Namespace:
+
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="run recommendation rule calibration")
     parser.add_argument("--warehouse", default="cache/company_warehouse.duckdb")
-    parser.add_argument("--scenario", default="config/scenarios/sales_recommendation")
+    parser.add_argument("--scenario", default=DEFAULT_SCENARIO)
     parser.add_argument("--company-list", help="text file with one company name per line")
     parser.add_argument("--batch-id")
     parser.add_argument("--batch-output", default="recommendation_runs/calibration")
@@ -24,18 +27,14 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--labels", help="CSV file with business expected/acceptable modules")
     parser.add_argument("--with-llm", action="store_true")
     parser.add_argument("--with-web", action="store_true")
-    parser.add_argument("--refresh-web", action="store_true", help="ignore cached web_evidence and search Web again")
+    parser.add_argument("--refresh-web", action="store_true")
     parser.add_argument("--web-config")
     parser.add_argument("--web-extract-llm-config")
     parser.add_argument("--web-providers", help="comma-separated web provider names")
-    parser.add_argument("--no-web-fetch", action="store_true", help="do not crawl pages during --with-web")
-    parser.add_argument(
-        "--force-web-dimensions",
-        action="store_true",
-        help="search even when local JSON already supports a dimension",
-    )
-    parser.add_argument("--no-web-llm-extraction", action="store_true", help="use fallback Web evidence extraction")
-    return parser.parse_args()
+    parser.add_argument("--no-web-fetch", action="store_true")
+    parser.add_argument("--force-web-dimensions", action="store_true")
+    parser.add_argument("--no-web-llm-extraction", action="store_true")
+    return parser
 
 
 def _load_company_names(args: argparse.Namespace) -> list[str]:
@@ -59,15 +58,9 @@ def _load_company_names(args: argparse.Namespace) -> list[str]:
     return [str(row[0]) for row in rows]
 
 
-def _csv(value: str | None) -> list[str] | None:
-    if not value:
-        return None
-    return [item.strip() for item in value.split(",") if item.strip()]
-
-
-async def _main() -> int:
+async def _main_async(argv: list[str] | None = None) -> int:
     load_dotenv()
-    args = _parse_args()
+    args = build_parser().parse_args(argv)
     try:
         company_names = _load_company_names(args)
     except (OSError, duckdb.Error) as exc:
@@ -89,7 +82,7 @@ async def _main() -> int:
             refresh_web=args.refresh_web,
             web_config_path=args.web_config,
             web_extract_llm_config_path=args.web_extract_llm_config,
-            web_providers=_csv(args.web_providers),
+            web_providers=csv(args.web_providers),
             web_fetch_pages=False if args.no_web_fetch else None,
             web_force_dimensions=args.force_web_dimensions,
             web_use_llm_extraction=not args.no_web_llm_extraction,
@@ -126,5 +119,5 @@ async def _main() -> int:
     return 0 if batch.status in ("success", "partial") else 1
 
 
-if __name__ == "__main__":
-    raise SystemExit(asyncio.run(_main()))
+def main(argv: list[str] | None = None) -> int:
+    return asyncio.run(_main_async(argv))

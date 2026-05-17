@@ -5,8 +5,8 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
-import yaml
 import pytest
+import yaml
 
 
 def _cfg_file(tmp_path: Path) -> Path:
@@ -37,7 +37,7 @@ def _cfg_file(tmp_path: Path) -> Path:
 def _run_main(args: list[str]) -> subprocess.CompletedProcess:
     root = Path(__file__).parent.parent
     return subprocess.run(
-        [sys.executable, str(root / "main.py"), *args],
+        [sys.executable, "-m", "xft.cli.main", "diligence", *args],
         cwd=str(root),
         capture_output=True,
         text=True,
@@ -62,8 +62,8 @@ def test_cli_default_config_is_directory() -> None:
     if root not in _sys.path:
         _sys.path.insert(0, root)
 
-    main_module = importlib.import_module("main")
-    with patch.object(sys, "argv", ["main.py", "某公司"]):
+    main_module = importlib.import_module("xft.cli.diligence")
+    with patch.object(sys, "argv", ["xft diligence", "某公司"]):
         args = main_module._parse_args()
     assert args.config == "config"
 
@@ -74,12 +74,12 @@ def test_dry_run_no_external_calls(tmp_path: Path) -> None:
         with patch("xft.nodes.summarize_node.get_ai_client") as mock_ai:
             import asyncio
 
-            import main as main_module
             from xft.config import load_config
+            from xft.cli import diligence as diligence_cli
 
             config = load_config(str(cfg))
             exit_code = asyncio.run(
-                main_module.run_dry_run(
+                diligence_cli.run_dry_run(
                     target="某公司",
                     config=config,
                     only=None,
@@ -95,12 +95,12 @@ def test_dry_run_includes_metaso_queries(tmp_path: Path, capsys: pytest.CaptureF
     cfg = _cfg_file(tmp_path)
     import asyncio
 
-    import main as main_module
     from xft.config import load_config
+    from xft.cli import diligence as diligence_cli
 
     config = load_config(str(cfg))
     exit_code = asyncio.run(
-        main_module.run_dry_run(
+        diligence_cli.run_dry_run(
             target="某公司",
             config=config,
             only=None,
@@ -163,7 +163,7 @@ def test_validate_args_target_exactly_max_len() -> None:
     if root not in _sys.path:
         _sys.path.insert(0, root)
 
-    main_module = importlib.import_module("main")
+    main_module = importlib.import_module("xft.cli.diligence")
     args = argparse.Namespace(batch=None, target="A" * 200)
     assert main_module._validate_args(args) is None
 

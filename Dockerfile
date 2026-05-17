@@ -28,7 +28,7 @@ RUN playwright install-deps chromium \
     && chmod -R a+rX /opt/playwright-browsers
 
 WORKDIR /app
-COPY main.py pyproject.toml uv.lock .env.example ./
+COPY pyproject.toml uv.lock .env.example ./
 COPY src/ ./src/
 COPY config/ ./config/
 
@@ -39,5 +39,5 @@ USER app
 
 ENV PLAYWRIGHT_CHROMIUM_HEADLESS=1
 
-ENTRYPOINT ["python", "main.py"]
+ENTRYPOINT ["xft"]
 CMD ["--help"]

@@ -19,6 +19,9 @@ dependencies = [
     "asyncpg>=0.30",
 ]
 
+[project.scripts]
+xft = "xft.cli.main:main"
+
 [dependency-groups]
 dev = [
     "ruff",

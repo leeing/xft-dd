@@ -12,7 +12,11 @@ import structlog
 from langgraph.graph import END, START, StateGraph
 
 from xft.evidence.policy import load_evidence_policy
-from xft.pipeline.recommender.config_loader import load_dimensions_config, load_products_config
+from xft.pipeline.recommender.config_loader import (
+    load_dimensions_config,
+    load_products_config,
+    write_products_resolved_config,
+)
 from xft.pipeline.recommender.models import RecommendationRunResult
 from xft.pipeline.recommender.nodes.data_gather_node import data_gather_node
 from xft.pipeline.recommender.nodes.dimension_analyze_node import dimension_analyze_node
@@ -23,6 +27,7 @@ from xft.pipeline.recommender.nodes.web_evidence_node import web_evidence_node
 from xft.pipeline.recommender.scenario import DEFAULT_PROMPTS, load_scenario
 from xft.pipeline.recommender.state import RecommenderState
 from xft.progress import display
+from xft.runtime.config_manifest import ConfigManifest, file_ref, model_hash, write_config_manifest
 from xft.scoring.policy_loader import load_scoring_policy
 from xft.web import run_web_enrichment
 from xft.web.models import WebRunMetrics
@@ -102,6 +107,37 @@ async def run_recommendation(  # noqa: PLR0913
     evidence_policy = load_evidence_policy(evidence_path)
     root = output_dir or (scenario.output_dir if scenario else None) or products_config.output_dir
     rid = run_id or make_recommendation_run_id(company_name)
+    out_dir = Path(root) / rid
+    scenario_resolved_path: Path | None = None
+    if scenario:
+        scenario_out = out_dir / "scenario_resolved.json"
+        scenario_out.parent.mkdir(parents=True, exist_ok=True)
+        scenario_resolved_path = write_products_resolved_config(scenario, products_config, scenario_out)
+    _write_config_manifest(
+        out_dir=out_dir,
+        company_name=company_name,
+        run_id=rid,
+        warehouse_db=warehouse_db,
+        scenario=scenario,
+        scenario_resolved_path=scenario_resolved_path,
+        products_path=products_path,
+        dimensions_path=dimensions_path,
+        web_search_path=web_search_path,
+        web_extract_path=web_extract_path,
+        scoring_path=scoring_path,
+        evidence_path=evidence_path,
+        prompt_paths=prompt_paths,
+        products_config=products_config,
+        dimensions_config=dimensions_config,
+        scoring_policy=scoring_policy,
+        evidence_policy=evidence_policy,
+        use_llm=use_llm,
+        use_web_evidence=use_web_evidence,
+        with_web=with_web,
+        refresh_web=refresh_web,
+        web_force_dimensions=web_force_dimensions,
+        web_use_llm_extraction=web_use_llm_extraction,
+    )
     has_cached = _has_web_evidence(warehouse_db, company_name)
     if with_web and (refresh_web or not has_cached):
         reason = "refresh" if refresh_web else "no_cached_web_evidence"
@@ -203,6 +239,72 @@ def _write_web_metrics(output_root: str | None, run_id: str, metrics: WebRunMetr
         json.dumps(metrics.model_dump(mode="json"), ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+
+
+def _write_config_manifest(  # noqa: PLR0913
+    *,
+    out_dir: Path,
+    company_name: str,
+    run_id: str,
+    warehouse_db: str,
+    scenario: Any,
+    scenario_resolved_path: Path | None,
+    products_path: str,
+    dimensions_path: str,
+    web_search_path: str,
+    web_extract_path: str,
+    scoring_path: str,
+    evidence_path: str,
+    prompt_paths: dict[str, str],
+    products_config: Any,
+    dimensions_config: Any,
+    scoring_policy: Any,
+    evidence_policy: Any,
+    use_llm: bool,
+    use_web_evidence: bool,
+    with_web: bool,
+    refresh_web: bool,
+    web_force_dimensions: bool,
+    web_use_llm_extraction: bool,
+) -> Path:
+    files = {
+        "products": file_ref(products_path),
+        "dimensions": file_ref(dimensions_path),
+        "web_search": file_ref(web_search_path),
+        "web_extract_llm": file_ref(web_extract_path),
+        "scoring_policy": file_ref(scoring_path),
+        "evidence_policy": file_ref(evidence_path),
+    }
+    if scenario is not None:
+        files["scenario"] = file_ref(Path(scenario.root) / "scenario.yaml")
+    for key, path in sorted(prompt_paths.items()):
+        files[f"prompt:{key}"] = file_ref(path)
+    manifest = ConfigManifest(
+        pipeline="recommender",
+        run_id=run_id,
+        target=company_name,
+        scenario_id=scenario.config.id if scenario else None,
+        scenario_name=scenario.config.name if scenario else None,
+        scenario_root=str(scenario.root) if scenario else None,
+        scenario_resolved_path=str(scenario_resolved_path) if scenario_resolved_path else None,
+        warehouse_db=warehouse_db,
+        mode={
+            "use_llm": use_llm,
+            "use_web_evidence": use_web_evidence,
+            "with_web": with_web,
+            "refresh_web": refresh_web,
+            "web_force_dimensions": web_force_dimensions,
+            "web_use_llm_extraction": web_use_llm_extraction,
+        },
+        files=files,
+        effective_hashes={
+            "products": model_hash(products_config),
+            "dimensions": model_hash(dimensions_config),
+            "scoring_policy": model_hash(scoring_policy),
+            "evidence_policy": model_hash(evidence_policy),
+        },
+    )
+    return write_config_manifest(out_dir / "config_manifest.json", manifest)
 
 
 def _has_web_evidence(warehouse_db: str, company_name: str) -> bool:

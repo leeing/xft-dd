@@ -1,50 +1,72 @@
-"""Sync cache data from remote PostgreSQL to local DuckDB.
+"""CLI for cache maintenance tasks.
 
 Usage:
-    uv run python sync_to_duckdb.py
+    uv run xft cache sync-remote
 """
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import os
 import sys
 from pathlib import Path
+from typing import Any, NamedTuple
 
-import asyncpg
-import dotenv
+import asyncpg  # type: ignore[import-untyped]
 import duckdb
 import structlog
-
-# Load .env file
-dotenv.load_dotenv()
+from dotenv import load_dotenv
 
 log = structlog.get_logger(__name__)
 
 PG_URL_PARTS = 2
+DEFAULT_LOCAL_DUCKDB_PATH = Path("cache/diligence_local.duckdb")
 
 
-# PostgreSQL connection from .env
-PG_URL = os.getenv("CACHE_DATABASE_URL", "")
-if "postgresql" not in PG_URL:
-    log.error("CACHE_DATABASE_URL does not point to PostgreSQL", url=PG_URL)
-    sys.exit(1)
+class PgConnectionInfo(NamedTuple):
+    user: str
+    password: str
+    host: str
+    port: int
+    database: str
+    ssl: bool
 
-# Parse PG URL
-# Format: postgresql+asyncpg://user:password@host:port/dbname?ssl=true
-pg_url = PG_URL.replace("postgresql+asyncpg://", "").split("@")
-if len(pg_url) != PG_URL_PARTS:
-    log.error("Cannot parse PostgreSQL URL", url=PG_URL)
-    sys.exit(1)
 
-user_pass, host_db = pg_url
-user, password = user_pass.split(":")
-host_db_parts = host_db.split("/")
-host_port = host_db_parts[0]
-db_name = host_db_parts[1].split("?")[0] if "/" in host_db else "neondb"
-ssl_arg = "?".join(host_db_parts[1].split("?")[1:]) if "?" in host_db_parts[1] else ""
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="xft cache", description="manage XFT caches")
+    subparsers = parser.add_subparsers(dest="command")
+    sync_parser = subparsers.add_parser("sync-remote", help="sync remote PostgreSQL cache into local DuckDB")
+    sync_parser.add_argument("--database-url", help="PostgreSQL URL; defaults to CACHE_DATABASE_URL")
+    sync_parser.add_argument("--output", default=str(DEFAULT_LOCAL_DUCKDB_PATH), help="local DuckDB output path")
+    return parser
 
-LOCAL_DUCKDB_PATH = Path("cache/diligence_local.duckdb")
+
+def _parse_pg_url(pg_url: str) -> PgConnectionInfo:
+    if "postgresql" not in pg_url:
+        msg = "CACHE_DATABASE_URL does not point to PostgreSQL"
+        raise ValueError(msg)
+    normalized = pg_url.replace("postgresql+asyncpg://", "").replace("postgresql://", "")
+    parts = normalized.split("@")
+    if len(parts) != PG_URL_PARTS:
+        msg = "cannot parse PostgreSQL URL"
+        raise ValueError(msg)
+    user_pass, host_db = parts
+    user, password = user_pass.split(":", 1)
+    host_db_parts = host_db.split("/")
+    host_port = host_db_parts[0]
+    db_part = host_db_parts[1] if len(host_db_parts) > 1 else "neondb"
+    db_name = db_part.split("?")[0]
+    ssl_arg = "?".join(db_part.split("?")[1:]) if "?" in db_part else ""
+    host, raw_port = host_port.split(":", 1) if ":" in host_port else (host_port, "5432")
+    return PgConnectionInfo(
+        user=user,
+        password=password,
+        host=host,
+        port=int(raw_port),
+        database=db_name,
+        ssl=bool(ssl_arg),
+    )
 
 
 def create_duckdb_tables(conn: duckdb.DuckDBPyConnection) -> None:
@@ -133,8 +155,8 @@ _SEARCH_CACHE_COLUMNS = [
 ]
 
 
-def _naive_row(row: dict, columns: list[str]) -> list:
-    record: list = []
+def _naive_row(row: dict[str, Any], columns: list[str]) -> list[Any]:
+    record: list[Any] = []
     for col in columns:
         val = row[col]
         if hasattr(val, "tzinfo") and val.tzinfo is not None:
@@ -234,22 +256,29 @@ async def sync_fetch_cache(pg_conn: asyncpg.Connection, duck_conn: duckdb.DuckDB
     return count
 
 
-async def main() -> None:
-    log.info("connecting", pg_host=host_port, pg_db=db_name, duckdb=str(LOCAL_DUCKDB_PATH))
+async def _sync_remote(args: argparse.Namespace) -> int:
+    load_dotenv()
+    pg_url = args.database_url or os.getenv("CACHE_DATABASE_URL", "")
+    try:
+        pg = _parse_pg_url(pg_url)
+    except ValueError as exc:
+        sys.stderr.write(f"error: {exc}\n")
+        return 1
 
-    # Connect to PostgreSQL
+    local_duckdb_path = Path(args.output)
+    log.info("connecting", pg_host=f"{pg.host}:{pg.port}", pg_db=pg.database, duckdb=str(local_duckdb_path))
+
     pg_conn = await asyncpg.connect(
-        user=user,
-        password=password,
-        host=host_port.split(":")[0],
-        port=int(host_port.split(":")[1]) if ":" in host_port else 5432,
-        database=db_name,
-        ssl=bool(ssl_arg),
+        user=pg.user,
+        password=pg.password,
+        host=pg.host,
+        port=pg.port,
+        database=pg.database,
+        ssl=pg.ssl,
     )
 
-    # Create DuckDB
-    LOCAL_DUCKDB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    duck_conn = duckdb.connect(str(LOCAL_DUCKDB_PATH))
+    local_duckdb_path.parent.mkdir(parents=True, exist_ok=True)
+    duck_conn = duckdb.connect(str(local_duckdb_path))
     create_duckdb_tables(duck_conn)
 
     log.info("syncing_tables")
@@ -262,8 +291,24 @@ async def main() -> None:
 
     await pg_conn.close()
     duck_conn.close()
-    log.info("done", duckdb=str(LOCAL_DUCKDB_PATH))
+    log.info("done", duckdb=str(local_duckdb_path))
+    sys.stdout.write(f"synced_rows: {total}\n")
+    sys.stdout.write(f"duckdb: {local_duckdb_path}\n")
+    return 0
+
+
+async def _main_async(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.command == "sync-remote":
+        return await _sync_remote(args)
+    parser.print_help()
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    return asyncio.run(_main_async(argv))
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    raise SystemExit(main())

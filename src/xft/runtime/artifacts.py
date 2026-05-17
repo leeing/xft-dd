@@ -124,10 +124,18 @@ def write_delivery_manifest(  # noqa: PLR0913
         files.extend(extra_files)
     for row in rows:
         company_name = _row_company(row)
+        output_dir = Path(str(row.get("output_dir") or ""))
         if row.get("report_path"):
             files.append({"type": "company_report", "company_name": company_name, "path": row["report_path"]})
         if row.get("result_path"):
             files.append({"type": "company_result", "company_name": company_name, "path": row["result_path"]})
+        for file_type, filename in (
+            ("company_config_manifest", "config_manifest.json"),
+            ("company_scenario_resolved", "scenario_resolved.json"),
+        ):
+            path = output_dir / filename
+            if path.exists():
+                files.append({"type": file_type, "company_name": company_name, "path": str(path)})
     path = batch_dir / "delivery_manifest.json"
     write_json(
         path,

@@ -45,6 +45,8 @@ async def _fake_runner(**kwargs: Any) -> RecommendationRunResult:
         encoding="utf-8",
     )
     (output_dir / "report.md").write_text("# report", encoding="utf-8")
+    (output_dir / "config_manifest.json").write_text('{"pipeline":"recommender"}', encoding="utf-8")
+    (output_dir / "scenario_resolved.json").write_text('{"id":"sales_recommendation"}', encoding="utf-8")
     return RecommendationRunResult(
         company_name=company_name,
         status="success",
@@ -88,6 +90,8 @@ async def test_recommendation_batch_writes_delivery_artifacts(tmp_path: Path) ->
     assert quality["success_count"] == 2
     delivery = json.loads((batch_dir / "delivery_manifest.json").read_text(encoding="utf-8"))
     assert any(item["type"] == "company_report" for item in delivery["files"])
+    assert any(item["type"] == "company_config_manifest" for item in delivery["files"])
+    assert any(item["type"] == "company_scenario_resolved" for item in delivery["files"])
 
 
 @pytest.mark.asyncio

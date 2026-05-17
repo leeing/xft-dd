@@ -1,12 +1,12 @@
-"""CLI entry point for the enterprise due diligence tool.
+"""CLI for the enterprise due diligence pipeline.
 
 Usage:
-    uv run main.py "企业名"
-    uv run main.py "企业名" --only ip,tech_cert
-    uv run main.py "企业名" --skip listing
-    uv run main.py "企业名" --dry-run
-    uv run main.py --batch companies.txt
-    uv run main.py --batch companies.csv --name-column company_name
+    uv run xft diligence "企业名"
+    uv run xft diligence "企业名" --only ip,tech_cert
+    uv run xft diligence "企业名" --skip listing
+    uv run xft diligence "企业名" --dry-run
+    uv run xft diligence --batch companies.txt
+    uv run xft diligence --batch companies.csv --name-column company_name
 """
 
 from __future__ import annotations
@@ -134,8 +134,8 @@ async def run_single(
     return 0
 
 
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="enterprise due diligence tool")
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="xft diligence", description="enterprise due diligence tool")
     parser.add_argument("target", nargs="?", default=None, help="target company name")
     parser.add_argument("--config", default="config")
     parser.add_argument("--only", help="run only these dimensions (comma-separated)")
@@ -152,7 +152,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-dir")
     parser.add_argument("--force-high-concurrency", action="store_true")
     parser.add_argument("--verbose", action="store_true")
-    return parser.parse_args()
+    return parser
+
+
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    return build_parser().parse_args(argv)
 
 
 _MAX_TARGET_LEN = 200
@@ -213,9 +217,9 @@ async def _dispatch(args: argparse.Namespace, only: list[str] | None, skip: list
     return await run_single(target=args.target, config_path=args.config, only=only, skip=skip)
 
 
-async def main() -> int:
+async def _main_async(argv: list[str] | None = None) -> int:
     """Main async entry point."""
-    args = _parse_args()
+    args = _parse_args(argv)
 
     err = _validate_args(args)
     if err:
@@ -227,5 +231,9 @@ async def main() -> int:
     return await _dispatch(args, only, skip)
 
 
+def main(argv: list[str] | None = None) -> int:
+    return asyncio.run(_main_async(argv))
+
+
 if __name__ == "__main__":
-    sys.exit(asyncio.run(main()))
+    raise SystemExit(main())

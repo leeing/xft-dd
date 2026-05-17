@@ -1,4 +1,4 @@
-"""Inspect recommender run outputs and optionally export a CSV summary."""
+"""CLI for inspecting generated run outputs."""
 
 from __future__ import annotations
 
@@ -11,11 +11,17 @@ from pathlib import Path
 from typing import Any
 
 
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="inspect recommendation_runs output directories")
-    parser.add_argument("--runs-dir", default="recommendation_runs")
-    parser.add_argument("--output", help="optional CSV output path")
-    return parser.parse_args()
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="xft runs", description="inspect XFT run outputs")
+    subparsers = parser.add_subparsers(dest="command")
+    inspect_parser = subparsers.add_parser("inspect", help="inspect recommendation_runs output directories")
+    inspect_parser.add_argument("--runs-dir", default="recommendation_runs")
+    inspect_parser.add_argument("--output", help="optional CSV output path")
+    return parser
+
+
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    return build_parser().parse_args(argv)
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -93,8 +99,7 @@ def _print_summary(rows: list[dict[str, Any]]) -> None:
         )
 
 
-def main() -> int:
-    args = _parse_args()
+def _inspect(args: argparse.Namespace) -> int:
     runs_dir = Path(args.runs_dir)
     if not runs_dir.exists():
         sys.stderr.write(f"runs dir not found: {runs_dir}\n")
@@ -106,6 +111,15 @@ def main() -> int:
     if args.output:
         _write_csv(rows, Path(args.output))
         sys.stdout.write(f"csv: {args.output}\n")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.command == "inspect":
+        return _inspect(args)
+    parser.print_help()
     return 0
 
 
