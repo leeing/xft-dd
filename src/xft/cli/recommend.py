@@ -1,72 +1,52 @@
-"""Run the local DuckDB-backed product recommender."""
+"""CLI for product recommendation runs."""
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
 import sys
 from pathlib import Path
 
 import structlog
 from dotenv import load_dotenv
 
+from xft.cli.common import csv
 from xft.pipeline.recommender import run_recommendation
 from xft.pipeline.recommender.batch import BatchOptions, run_recommendation_batch
 
-
-def _csv(value: str | None) -> list[str] | None:
-    if not value:
-        return None
-    return [item.strip() for item in value.split(",") if item.strip()]
+DEFAULT_SCENARIO = "config/scenarios/sales_recommendation"
 
 
-def _parse_args() -> argparse.Namespace:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="run product recommendation from DuckDB company_profile")
     parser.add_argument("company_name", nargs="?")
     parser.add_argument("--company-list", help="text file with one company name per line")
     parser.add_argument("--warehouse", default="cache/company_warehouse.duckdb")
-    parser.add_argument("--scenario", help="scenario bundle directory or scenario.yaml")
-    parser.add_argument("--products-config")
-    parser.add_argument("--dimensions-config")
+    parser.add_argument("--scenario", default=DEFAULT_SCENARIO, help="scenario bundle directory or scenario.yaml")
+    parser.add_argument("--products-config", help="advanced override for products config")
+    parser.add_argument("--dimensions-config", help="advanced override for dimensions config")
     parser.add_argument("--output-dir")
     parser.add_argument("--batch-id", help="batch id for --company-list runs")
     parser.add_argument("--batch-output", help="directory that contains batch folders")
     parser.add_argument("--limit", type=int, help="only run the first N companies")
     parser.add_argument("--skip-existing", action="store_true", help="skip companies with an existing result.json")
-    parser.add_argument(
-        "--continue-on-error",
-        action="store_true",
-        default=True,
-        help="continue when one company fails in batch mode",
-    )
-    parser.add_argument(
-        "--stop-on-error",
-        action="store_false",
-        dest="continue_on_error",
-        help="stop batch after the first failed company",
-    )
+    parser.add_argument("--continue-on-error", action="store_true", default=True)
+    parser.add_argument("--stop-on-error", action="store_false", dest="continue_on_error")
     parser.add_argument("--no-llm", action="store_true", help="use deterministic fallback matching without calling LLM")
-    parser.add_argument(
-        "--with-web-evidence",
-        action="store_true",
-        help="merge cached DuckDB web_evidence into matching",
-    )
+    parser.add_argument("--with-web-evidence", action="store_true", help="merge cached DuckDB web_evidence")
     parser.add_argument("--with-web", action="store_true", help="search Web when cached web_evidence is missing")
     parser.add_argument("--refresh-web", action="store_true", help="ignore cached web_evidence and search Web again")
-    parser.add_argument("--web-config")
-    parser.add_argument("--web-extract-llm-config")
-    parser.add_argument("--scoring-policy")
-    parser.add_argument("--evidence-policy")
+    parser.add_argument("--web-config", help="advanced override for web search config")
+    parser.add_argument("--web-extract-llm-config", help="advanced override for web extraction LLM config")
+    parser.add_argument("--scoring-policy", help="advanced override for scoring policy")
+    parser.add_argument("--evidence-policy", help="advanced override for evidence policy")
     parser.add_argument("--web-providers", help="comma-separated web provider names")
     parser.add_argument("--no-web-fetch", action="store_true", help="do not crawl pages during --with-web")
-    parser.add_argument(
-        "--force-web-dimensions",
-        action="store_true",
-        help="search even when local JSON already supports a dimension",
-    )
-    parser.add_argument("--no-web-llm-extraction", action="store_true", help="use fallback Web evidence extraction")
+    parser.add_argument("--force-web-dimensions", action="store_true")
+    parser.add_argument("--no-web-llm-extraction", action="store_true")
     parser.add_argument("--verbose", action="store_true", help="show detailed structlog output")
-    return parser.parse_args()
+    return parser
 
 
 def _load_company_names(args: argparse.Namespace) -> list[str]:
@@ -83,13 +63,11 @@ def _load_company_names(args: argparse.Namespace) -> list[str]:
     return names
 
 
-async def _main() -> int:  # noqa: C901
+async def _main_async(argv: list[str] | None = None) -> int:  # noqa: C901
     load_dotenv()
-    args = _parse_args()
+    args = build_parser().parse_args(argv)
 
     if not args.verbose:
-        import logging
-
         logging.basicConfig(level=logging.CRITICAL)
         structlog.configure(
             processors=[structlog.dev.ConsoleRenderer()],
@@ -125,7 +103,7 @@ async def _main() -> int:  # noqa: C901
                 web_extract_llm_config_path=args.web_extract_llm_config,
                 scoring_policy_path=args.scoring_policy,
                 evidence_policy_path=args.evidence_policy,
-                web_providers=_csv(args.web_providers),
+                web_providers=csv(args.web_providers),
                 web_fetch_pages=False if args.no_web_fetch else None,
                 web_force_dimensions=args.force_web_dimensions,
                 web_use_llm_extraction=not args.no_web_llm_extraction,
@@ -163,7 +141,7 @@ async def _main() -> int:  # noqa: C901
             web_extract_llm_config_path=args.web_extract_llm_config,
             scoring_policy_path=args.scoring_policy,
             evidence_policy_path=args.evidence_policy,
-            web_providers=_csv(args.web_providers),
+            web_providers=csv(args.web_providers),
             web_fetch_pages=False if args.no_web_fetch else None,
             web_force_dimensions=args.force_web_dimensions,
             web_use_llm_extraction=not args.no_web_llm_extraction,
@@ -180,5 +158,5 @@ async def _main() -> int:  # noqa: C901
     return exit_code
 
 
-if __name__ == "__main__":
-    raise SystemExit(asyncio.run(_main()))
+def main(argv: list[str] | None = None) -> int:
+    return asyncio.run(_main_async(argv))
