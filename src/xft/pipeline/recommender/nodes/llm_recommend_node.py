@@ -34,6 +34,7 @@ from xft.settings import settings
 LLM_TIMEOUT_SECONDS = 60
 RECOMMEND_SCORE_THRESHOLD = 55
 
+
 class _RecommendationPayload(BaseModel):
     summary: str
     recommendations: list[RecommendationItem]

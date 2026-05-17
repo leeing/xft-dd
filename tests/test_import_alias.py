@@ -25,5 +25,3 @@ def test_xft_diligence_compat_imports() -> None:
     assert callable(run_company_graph)
     assert callable(run_batch)
     assert callable(make_run_id)
-
-
