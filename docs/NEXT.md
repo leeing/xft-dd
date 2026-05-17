@@ -35,7 +35,7 @@ src/xft/
 
 测试与质量状态：
 
-- 最近全量验证：`389 passed`。
+- 最近全量验证：`399 passed`。
 - `ruff` / `mypy` 对 `src` 与入口脚本通过。
 - 架构边界测试已覆盖 `xft.web` / `xft.scoring` 不反向依赖 recommender。
 
@@ -54,32 +54,32 @@ src/xft/
 - `evidence_policy.yaml` 配置化。
 - 推荐结果 `result.json` 中的评分解释、证据解释、冲突摘要。
 - Web cache 的 search/fetch/extraction 可复用与 cache report。
-- 业务标注校准 CLI 闭环，支持 `run_calibration.py --labels calibration_labels.csv`。
+- 业务标注校准 CLI 闭环，支持 `uv run xft calibrate --labels calibration_labels.csv`。
 - 搜索模型下沉到 `xft.core.search_models`，`web/cache/utils` 已解除对旧尽调模型的历史依赖。
+- Scenario 产品规则 patch，支持按 `module_id` 局部调整产品规则。
+- 配置审计 manifest，run/batch 产物可追溯配置 hash。
+- `uv run xft <subcommand>` 统一 CLI，根目录 `.py` 脚本已清空，旧入口移入 `scripts/compat/`。
 
 ## 仍然存在的关键问题
 
-### 1. Scenario 只能覆盖顶层文件，不能局部 patch 产品规则
-
-现在 scenario 可以通过 `extends/overrides` 覆盖顶层路径，但如果一个新场景只想调整某个产品的 `base_score`、新增一条 rule，仍需要复制整份 `products.yaml`。
-
-这会影响多场景产品化效率。当前单场景还可接受，第二个真实场景开始会变痛。
-
-### 2. `scenario_resolved.json` 只记录路径，不记录内容 hash
-
-当前 resolved config 方便看路径，但不能回答“这次报告到底用了哪版产品规则/维度/prompt/policy 内容”。
-
-后续一旦做交付或回溯，需要把 resolved products、dimensions、web config、scoring policy、evidence policy、prompt hash 一并写入。
-
-### 3. 真实 Web / LLM 校准样本仍偏少
+### 1. 真实 Web / LLM 校准样本仍偏少
 
 已完成 1 个强制 Web 维度真实样本，验证了 MiniMax 搜索、crawl4ai 抓取、LLM 抽取、DuckDB 入库和报告链路。
 
 当前仍缺业务标注后的 5-10 家样本，用来判断 Top1/可接受命中率是否满足业务预期。
 
+### 2. 第二个真实业务场景还没有业务验证
+
+`bank_marketing` 已作为产品 patch 示例落地，但还不是经过业务人员确认的真实场景。
+后续需要用真实银行营销规则、真实标注样本和真实输出报告验证场景继承设计。
+
+### 3. 交付形态仍偏工程产物
+
+当前已有 Markdown、JSON、CSV、manifest，但还没有 `.xlsx` 汇总、`.zip` 交付包和面向业务人员的交付目录规范。
+
 ## 下一步建议
 
-我建议接下来按“产品规则 patch、配置审计、扩大带标注校准样本”的顺序走。
+我建议接下来按“扩大带标注校准样本、真实业务场景验证、交付包增强”的顺序走。
 
 ### Sprint H：业务标注校准闭环
 
@@ -87,7 +87,7 @@ src/xft/
 
 已落地：
 
-- `run_calibration.py --labels calibration_labels.csv`
+- `uv run xft calibrate --labels calibration_labels.csv`
 - `calibration_labels.example.csv`
 - CSV 标注读取测试
 - Top1 命中率 / 可接受命中率 / 错配案例测试
@@ -113,6 +113,8 @@ src/xft/
 
 ### Sprint J：Scenario 产品规则 patch
 
+状态：**已完成。**
+
 目标：让新场景只声明差异，而不是复制整份产品配置。
 
 建议设计：
@@ -136,15 +138,15 @@ patches:
           reason: 银行高质量客户标签提示金融服务匹配度更高
 ```
 
-任务：
+已落地：
 
-1. 定义 patch schema。
-2. 在 products loader 中按 `module_id` 应用 patch。
-3. 处理规则追加、规则替换、规则删除。
-4. `scenario_resolved.json` 写入 patch 后的 products hash。
-5. 新增一个最小示例场景验证设计。
+- `ScenarioConfig.patches` 支持声明产品 patch。
+- `load_products_config()` 会按 `module_id` 应用 patch。
+- 支持 `set`、规则追加、规则替换、规则删除。
+- 推荐 run 目录写入 `scenario_resolved.json`，包含 patch 后的 `products_effective_hash`。
+- 新增 `config/scenarios/bank_marketing/scenario.yaml` 作为最小继承/patch 示例。
 
-优先级：中高。等 Sprint H 后做更合适。
+后续只需要在新增真实场景时扩展 patch 内容，不再复制整份产品配置。
 
 ### Sprint K：真实 Web / LLM 小批次校准
 
@@ -154,11 +156,11 @@ patches:
 
 已落地：
 
-- `run_calibration.py` 支持 `--with-web --with-llm` 统一跑推荐校准。
-- `run_calibration.py` 支持 `--force-web-dimensions`，可在本地画像充足时强制压测 Web 搜索链路。
+- `uv run xft calibrate` 支持 `--with-web --with-llm` 统一跑推荐校准。
+- `uv run xft calibrate` 支持 `--force-web-dimensions`，可在本地画像充足时强制压测 Web 搜索链路。
 - 校准报告新增 Web/LLM 模式、Web 证据覆盖率、搜索/抓取/抽取执行与复用指标。
 - 每个校准批次新增 `web_llm_review_samples.csv`，便于业务人员人工抽查 Web 证据。
-- `run_recommender.py` 同步支持 `--force-web-dimensions`。
+- `uv run xft recommend` 同步支持 `--force-web-dimensions`。
 - 已跑真实样本：
   - `recommendation_runs/calibration/web-calibration-20260517`
   - `recommendation_runs/calibration/web-calibration-force-20260517`
@@ -176,7 +178,7 @@ patches:
 2. 补 `calibration_labels.csv` 后跑：
 
 ```bash
-uv run python run_calibration.py \
+uv run xft calibrate \
   --scenario config/scenarios/sales_recommendation \
   --company-list company.txt \
   --labels calibration_labels.csv \
@@ -197,23 +199,19 @@ uv run python run_calibration.py \
 
 ### Sprint L：交付审计增强
 
+状态：**已完成。**
+
 目标：让每次报告都可追溯到完整配置版本。
 
-任务：
+已落地：
 
-1. `scenario_resolved.json` 增加内容 hash：
-   - products
-   - dimensions
-   - web_search
-   - web_extract_llm
-   - scoring_policy
-   - evidence_policy
-   - prompts
-2. 每次推荐 run 目录写入 `config_manifest.json`。
-3. batch delivery manifest 引用每个 run 的 config manifest。
-4. README 说明如何复现一次交付。
+- 每次 recommender run 写入 `config_manifest.json`。
+- manifest 记录 products、dimensions、web_search、web_extract_llm、scoring_policy、evidence_policy 和 prompts 的路径、存在状态、sha256 与字节数。
+- manifest 记录 patch 后的 products、dimensions、scoring_policy、evidence_policy effective hash。
+- batch `delivery_manifest.json` 自动引用每个 run 的 `config_manifest.json` 和 `scenario_resolved.json`。
+- README 已补充复现入口说明。
 
-优先级：中。
+下一步若继续做交付工程化，可以把 manifest 扩展到旧 diligence pipeline 和 Web enrichment 独立运行产物。
 
 ## 不建议现在做的事
 
@@ -231,8 +229,8 @@ Markdown 报告虽然不是最终商业版，但足够支撑校准。应先解�
 
 ## 推荐执行顺序
 
-1. Sprint J：Scenario 产品规则 patch。
-2. Sprint L：交付审计增强。
-3. 扩大 Sprint K：带业务标注的 5-10 家真实样本。
+1. 扩大 Sprint K：带业务标注的 5-10 家真实样本。
+2. 增加第二个真实业务场景并使用产品 patch 落地。
+3. 交付包增强：`.xlsx` 汇总和 `.zip` 交付包。
 
-如果只能做一件事，就做 Sprint J。真实链路已经能跑，下一步最容易卡住多场景扩展的是产品规则需要整文件复制。
+如果只能做一件事，就做带标注真实样本。CLI 和配置入口已经收敛，下一步需要业务质量反馈。
