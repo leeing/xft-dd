@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+import yaml
 
 from xft.cli.main import main as xft_main
 
@@ -57,3 +59,79 @@ def test_xft_cache_help(capsys: pytest.CaptureFixture[str]) -> None:
     assert xft_main(["cache", "--help"]) == 0
     captured = capsys.readouterr()
     assert "sync-remote" in captured.out
+
+
+def test_recommend_smoke_command_uses_offline_no_llm(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    async def fake_run_recommendation(**kwargs: object) -> SimpleNamespace:
+        captured.update(kwargs)
+        return SimpleNamespace(
+            status="success",
+            company_name=kwargs["company_name"],
+            output_dir="recommendation_runs/smoke",
+            report_path="recommendation_runs/smoke/report.md",
+            result_path="recommendation_runs/smoke/result.json",
+            error=None,
+        )
+
+    monkeypatch.setattr("xft.cli.recommend.run_recommendation", fake_run_recommendation)
+
+    assert (
+        xft_main(
+            [
+                "recommend",
+                "--no-llm",
+                "--warehouse",
+                "cache/company_warehouse.duckdb",
+                "--scenario",
+                "config/scenarios/sales_recommendation",
+                "烟测公司",
+            ]
+        )
+        == 0
+    )
+    assert captured["company_name"] == "烟测公司"
+    assert captured["use_llm"] is False
+    assert captured["with_web"] is False
+    assert captured["use_web_evidence"] is False
+
+
+def test_diligence_smoke_command_dry_run_no_external_calls(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": "1.0",
+                "model": "MiniMax-M2.7-Highspeed",
+                "merge_prompt": "综合{summaries}生成{target}的报告",
+                "dimensions": [
+                    {
+                        "id": "basic_info",
+                        "name": "工商基本信息",
+                        "order": 10,
+                        "enabled": True,
+                        "required": True,
+                        "minimax_queries": ["{target} 工商注册"],
+                        "summary_prompt": "{target}\n{results}",
+                    }
+                ],
+            },
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+
+    async def fail_external_call(*_args: object, **_kwargs: object) -> None:
+        message = "diligence smoke dry-run must not call external processes"
+        raise AssertionError(message)
+
+    monkeypatch.setattr("asyncio.create_subprocess_exec", fail_external_call)
+
+    assert xft_main(["diligence", "--config", str(config_path), "--dry-run", "烟测公司"]) == 0
+    captured = capsys.readouterr()
+    assert "dry-run complete" in captured.err
