@@ -1,0 +1,195 @@
+"""LangGraph assembly for the local DuckDB-backed recommender."""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+import duckdb
+import structlog
+from langgraph.graph import END, START, StateGraph
+
+from xft.pipeline.recommender.config_loader import load_dimensions_config, load_products_config
+from xft.pipeline.recommender.models import RecommendationRunResult
+from xft.pipeline.recommender.nodes.data_gather_node import data_gather_node
+from xft.pipeline.recommender.nodes.dimension_analyze_node import dimension_analyze_node
+from xft.pipeline.recommender.nodes.llm_match_node import llm_match_node
+from xft.pipeline.recommender.nodes.llm_recommend_node import llm_recommend_node
+from xft.pipeline.recommender.nodes.save_node import save_node
+from xft.pipeline.recommender.nodes.web_evidence_node import web_evidence_node
+from xft.pipeline.recommender.scenario import DEFAULT_PROMPTS, load_scenario
+from xft.pipeline.recommender.state import RecommenderState
+from xft.progress import display
+from xft.web import run_web_enrichment
+
+log = structlog.get_logger(__name__)
+
+_cache: dict[str, Any] = {}
+
+
+def _get_graph() -> Any:
+    if "graph" not in _cache:
+        graph = StateGraph(RecommenderState)
+        graph.add_node("data_gather", data_gather_node)
+        graph.add_node("dimension_analyze", dimension_analyze_node)
+        graph.add_node("web_evidence", web_evidence_node)
+        graph.add_node("llm_match", llm_match_node)
+        graph.add_node("llm_recommend", llm_recommend_node)
+        graph.add_node("save", save_node)
+        graph.add_edge(START, "data_gather")
+        graph.add_edge("data_gather", "dimension_analyze")
+        graph.add_edge("dimension_analyze", "web_evidence")
+        graph.add_edge("web_evidence", "llm_match")
+        graph.add_edge("llm_match", "llm_recommend")
+        graph.add_edge("llm_recommend", "save")
+        graph.add_edge("save", END)
+        _cache["graph"] = graph.compile()
+    return _cache["graph"]
+
+
+def make_recommendation_run_id(company_name: str) -> str:
+    safe = "".join(ch if ch.isalnum() else "_" for ch in company_name)[:40].strip("_") or "company"
+    return f"rec_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}_{safe}"
+
+
+async def run_recommendation(  # noqa: PLR0913
+    *,
+    company_name: str,
+    warehouse_db: str = "cache/company_warehouse.duckdb",
+    scenario_path: str | None = None,
+    products_config_path: str | None = None,
+    dimensions_config_path: str | None = None,
+    output_dir: str | None = None,
+    run_id: str | None = None,
+    use_llm: bool = True,
+    use_web_evidence: bool = False,
+    with_web: bool = False,
+    refresh_web: bool = False,
+    web_config_path: str | None = None,
+    web_extract_llm_config_path: str | None = None,
+    web_providers: list[str] | None = None,
+    web_fetch_pages: bool | None = None,
+    web_use_llm_extraction: bool = True,
+) -> RecommendationRunResult:
+    display.header(company_name)
+    scenario = load_scenario(scenario_path) if scenario_path else None
+    products_path = products_config_path or (scenario.products_path if scenario else "config/recommender/products.yaml")
+    dimensions_path = dimensions_config_path or (
+        scenario.dimensions_path if scenario else "config/recommender/analysis_dimensions.yaml"
+    )
+    web_search_path = web_config_path or (
+        scenario.web_search_path if scenario else "config/recommender/web_search.yaml"
+    )
+    web_extract_path = web_extract_llm_config_path or (
+        scenario.web_extract_llm_path if scenario else "config/recommender/web_extract_llm.yaml"
+    )
+    prompt_paths = scenario.prompt_paths if scenario else DEFAULT_PROMPTS.copy()
+    products_config = load_products_config(products_path)
+    dimensions_config = load_dimensions_config(dimensions_path)
+    root = output_dir or (scenario.output_dir if scenario else None) or products_config.output_dir
+    rid = run_id or make_recommendation_run_id(company_name)
+    has_cached = _has_web_evidence(warehouse_db, company_name)
+    if with_web and (refresh_web or not has_cached):
+        reason = "refresh" if refresh_web else "no_cached_web_evidence"
+        log.info(
+            "run_with_web_start_enrichment",
+            company_name=company_name,
+            reason=reason,
+            has_cached_web_evidence=has_cached,
+        )
+        display.info(f"Web 证据: 缓存{'' if has_cached else '不'}存在, 开始搜索")
+        await run_web_enrichment(
+            company_name=company_name,
+            warehouse_db=warehouse_db,
+            scenario_path=scenario_path,
+            web_config_path=web_search_path,
+            web_extract_llm_config_path=web_extract_path,
+            dimensions_config_path=dimensions_path,
+            providers=web_providers,
+            refresh=refresh_web,
+            load_to_duckdb=True,
+            use_llm_extraction=web_use_llm_extraction,
+            fetch_pages=web_fetch_pages,
+        )
+        use_web_evidence = True
+    elif with_web:
+        log.info(
+            "run_with_web_reuse_cache",
+            company_name=company_name,
+            reason="cached_web_evidence_exists",
+        )
+        display.info("Web 证据: 复用缓存")
+        use_web_evidence = True
+    elif use_web_evidence:
+        display.info("Web 证据: 复用已有 DuckDB 数据")
+    else:
+        log.info(
+            "run_no_web_evidence",
+            company_name=company_name,
+            use_llm=use_llm,
+        )
+        display.skip("Web 证据: 未启用 (使用 --with-web 或 --with-web-evidence 开启)")
+    initial: RecommenderState = {
+        "company_name": company_name,
+        "warehouse_db": warehouse_db,
+        "output_root": root,
+        "run_id": rid,
+        "use_llm": use_llm,
+        "use_web_evidence": use_web_evidence,
+        "scenario_id": scenario.config.id if scenario else products_config.scenario,
+        "scenario_name": scenario.config.name if scenario else None,
+        "prompt_paths": prompt_paths,
+        "products_config": products_config,
+        "dimensions_config": dimensions_config,
+        "products": products_config.products,
+        "profile": {},
+        "dimension_analysis": [],
+        "match_results": [],
+        "recommendation": None,
+        "needs_web_enrichment": False,
+        "errors": [],
+        "output_dir": "",
+        "report_path": "",
+        "result_path": "",
+    }
+    try:
+        final = await _get_graph().ainvoke(initial)
+    except (OSError, RuntimeError, ValueError, TypeError, KeyError) as exc:
+        return RecommendationRunResult(
+            company_name=company_name,
+            status="failed",
+            run_id=rid,
+            output_dir=str(Path(root) / rid),
+            error=str(exc),
+        )
+    status: str = "failed" if final.get("errors") else "partial" if final.get("needs_web_enrichment") else "success"
+    typed_status: Any = status
+    return RecommendationRunResult(
+        company_name=company_name,
+        status=typed_status,
+        run_id=rid,
+        output_dir=final.get("output_dir") or str(Path(root) / rid),
+        report_path=final.get("report_path"),
+        result_path=final.get("result_path"),
+        error="; ".join(final.get("errors", [])) or None,
+    )
+
+
+def _has_web_evidence(warehouse_db: str, company_name: str) -> bool:
+    try:
+        conn = duckdb.connect(warehouse_db, read_only=True)
+        try:
+            row = conn.execute(
+                """
+                SELECT count(*)
+                FROM web_evidence
+                WHERE company_name = ?
+                """,
+                [company_name],
+            ).fetchone()
+            return bool(row and row[0])
+        finally:
+            conn.close()
+    except duckdb.Error:
+        return False
