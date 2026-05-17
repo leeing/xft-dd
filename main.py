@@ -19,8 +19,8 @@ from pathlib import Path
 import structlog
 from dotenv import load_dotenv
 
-from diligence.config import AppConfig, load_config, validate_dimension_ids
-from diligence.nodes.init_node import make_run_id
+from xft.pipeline.diligence.config import AppConfig, Dimension, load_config, validate_dimension_ids
+from xft.pipeline.diligence.nodes.init_node import make_run_id
 
 load_dotenv()
 log = structlog.get_logger(__name__)
@@ -31,7 +31,7 @@ def _normalize_metaso_target(target: str) -> str:
     return target.replace("(", "（").replace(")", "）")
 
 
-def _write_dimension_query_preview(dim, target: str) -> None:
+def _write_dimension_query_preview(dim: Dimension, target: str) -> None:
     sys.stderr.write("    MiniMax Search:\n")
     for q in dim.minimax_queries:
         sys.stderr.write(f"      - {q.replace('{target}', target)}\n")
@@ -104,7 +104,7 @@ async def run_single(
         return 1
     config = config.model_copy(update={"dimensions": dims})
 
-    from diligence.graph import run_company_graph
+    from xft.pipeline.diligence.graph import run_company_graph
 
     run_id = make_run_id(target)
     output_dir = str(Path(config.runs_dir) / run_id)
@@ -141,6 +141,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--only", help="run only these dimensions (comma-separated)")
     parser.add_argument("--skip", help="skip these dimensions (comma-separated)")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--crawler-mode",
+        action="store_true",
+        help="build MiniMax/crawl4ai SQL cache only; no Metaso/LLM",
+    )
     parser.add_argument("--batch", metavar="INPUT_FILE")
     parser.add_argument("--name-column", default="name")
     parser.add_argument("--resume", action="store_true")
@@ -171,7 +176,7 @@ def _validate_args(args: argparse.Namespace) -> str | None:
 async def _dispatch(args: argparse.Namespace, only: list[str] | None, skip: list[str] | None) -> int:
     """Dispatch to batch or single-company pipeline."""
     if args.batch:
-        from diligence.batch import run_batch
+        from xft.pipeline.diligence.batch import run_batch
 
         try:
             config = load_config(args.config)
@@ -185,6 +190,7 @@ async def _dispatch(args: argparse.Namespace, only: list[str] | None, skip: list
             only=only,
             skip=skip,
             dry_run=args.dry_run,
+            crawler_mode=args.crawler_mode,
             resume=args.resume,
             batch_dir=args.batch_dir,
             force_high_concurrency=args.force_high_concurrency,
@@ -200,6 +206,10 @@ async def _dispatch(args: argparse.Namespace, only: list[str] | None, skip: list
 
     if args.dry_run:
         return await run_dry_run(target=args.target, config=config, only=only, skip=skip)
+    if args.crawler_mode:
+        from xft.pipeline.diligence.crawler_mode import run_crawler_mode
+
+        return await run_crawler_mode(target=args.target, config=config, only=only, skip=skip)
     return await run_single(target=args.target, config_path=args.config, only=only, skip=skip)
 
 

@@ -316,7 +316,6 @@ dimensions:
       - '"{target}" 所属行业'
       - '"{target}" 经营范围'
       - '"{target}" 主营业务'
-      - '"{target}" 主营产品'
     metaso_queries:
       - "{target}属于什么行业？国民经济行业分类是什么？主营业务和产品是什么？"
     summary_prompt: |
@@ -333,11 +332,9 @@ dimensions:
     enabled: true
     required: false
     minimax_queries:
-      - '"{target}" 参保人数'
-      - '"{target}" 员工人数'
-      - '"{target}" 员工规模'
+      - '"{target}" 人数'
       - '"{target}" 研发人员'
-      - '"{target}" 工程师 技术人员 招聘'
+      - '"{target}" 招聘'
     metaso_mode: search
     metaso_search_size: 1
     metaso_queries:
@@ -414,10 +411,6 @@ dimensions:
       - '"{target}" 专利'
       - '"{target}" 商标'
       - '"{target}" 软件著作权'
-      - '"{target}" 发明专利'
-      - '"{target}" 实用新型'
-      - '"{target}" 发明专利 实用新型 外观设计 分类 数量'
-      - '"{target}" 软件著作权 登记号'
     metaso_mode: search
     metaso_search_size: 1
     metaso_queries:
@@ -450,10 +443,8 @@ dimensions:
     required: false
     minimax_queries:
       - '"{target}" 主营产品'
-      - '"{target}" 核心产品'
       - '"{target}" 客户'
       - '"{target}" 供应商'
-      - "{target} site:1688.com"
     metaso_mode: search
     metaso_search_size: 1
     metaso_queries:
@@ -475,9 +466,6 @@ dimensions:
     minimax_queries:
       - '"{target}" 上市'
       - '"{target}" 股票代码'
-      - '"{target}" IPO'
-      - '"{target}" 港股'
-      - '"{target}" 纳斯达克'
     metaso_mode: search
     metaso_search_size: 1
     metaso_queries:

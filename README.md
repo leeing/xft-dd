@@ -1,657 +1,806 @@
-# xft-dd · 企业尽调自动化工具
+# xft-dd-craw4ai 当前架构
 
-基于多源检索、crawl4ai 全文抓取、结构化字段提取和 LLM 综合推理的企业尽调流水线。输入企业名称后，系统会按配置并行检索多个尽调维度，生成可审计的 Markdown 报告，并保存原始搜索结果、维度摘要、字段提取结果和运行成本。
+本项目已经从早期"搜索 -> 总结 -> 合并报告"的单一路线，重构为以 DuckDB 事实层为中心的企业画像与产品推荐架构。旧报告流水线仍保留，主要作为 MiniMax Search、Metaso、crawl4ai、LLM 结构化抽取等能力的复用来源；新的主链路以本地 JSON 和 Web evidence 入库后的结构化证据为基础。
 
-当前版本的核心目标不是“把数据模型一次设计到完美”，而是先把数据流做成 **可追溯、可降级、可验证、可迭代**。
-
----
-
-## 快速开始
-
-```bash
-# 安装依赖
-uv sync
-
-# 复制环境变量模板，填写 API 凭证
-cp .env.example .env
-
-# 单企业尽调
-uv run main.py "佛山市固特家居制品有限公司"
-
-# 仅处理指定维度
-uv run main.py "某公司" --only basic_info,tech_cert
-
-# 排除指定维度
-uv run main.py "某公司" --skip listing
-
-# 预览查询词，不发起网络/API 调用
-uv run main.py "某公司" --dry-run
-
-# 批量处理（支持 .txt 或 .csv）
-uv run main.py --batch companies.txt
-uv run main.py --batch companies.csv --name-column company_name
-
-# 批量续跑（跳过已完成企业）
-uv run main.py --batch companies.txt --resume --batch-dir batch_runs/20260510-...
-
-# 显式指定配置目录或兼容旧单文件配置
-uv run main.py "某公司" --config config/
-uv run main.py "某公司" --config config.yaml
-```
-
-常用开发命令：
-
-```bash
-uv run pytest
-uv run ruff check
-uv run ruff format
-```
-
-### Docker 部署
-
-如果不想安装 Python 3.12+ 和 Playwright 浏览器，可以直接用 Docker 一键运行：
-
-```bash
-# 构建镜像
-docker build -t xft .
-
-# 单企业尽调
-docker run --rm --env-file .env -v $(pwd)/runs:/app/runs xft "佛山市固特家居制品有限公司"
-
-# 仅处理指定维度
-docker run --rm --env-file .env -v $(pwd)/runs:/app/runs \
-  xft "某公司" --only basic_info,tech_cert
-
-# 批量处理
-docker run --rm --env-file .env \
-  -v $(pwd)/runs:/app/runs \
-  -v $(pwd)/batch_runs:/app/batch_runs \
-  -v $(pwd)/companies.csv:/data/companies.csv:ro \
-  xft --batch /data/companies.csv
-
-# 使用 docker-compose
-docker compose run --rm xft "佛山市固特家居制品有限公司"
-```
-
-镜像内置 Playwright Chromium 和默认配置，通过 volume 挂载 `runs/` 和 `batch_runs/` 输出产物。如需自定义配置，可挂载 `config/` 目录：
-
-```bash
-docker run --rm --env-file .env \
-  -v $(pwd)/runs:/app/runs \
-  -v $(pwd)/my-config:/app/config:ro \
-  xft "某公司"
-```
-
-> 注意：`.env` 不进镜像，必须在运行时通过 `--env-file` 注入。建议 ≥2GB 内存。
-
----
-
-## 环境变量
-
-复制 `.env.example` 后按需填写：
-
-```env
-# MiniMax Search：网页搜索召回
-MINIMAX_API_KEY=SM4:<加密后的密钥>
-MINIMAX_BASE_URL=https://api.minimax.io/v1
-
-# Metaso：可选增强源
-METASO_API_KEY=
-METASO_ENABLED=false
-METASO_VERIFY_TLS=true
-
-# LLM：OpenAI 兼容推理接口；为空时复用 MINIMAX_API_KEY
-LLM_API_KEY=
-LLM_BASE_URL=https://api.minimax.io/v1
-LLM_MODEL=MiniMax-M2.7-Highspeed
-```
-
-API key 支持 `SM4:` 前缀密文存储，相关工具在 `src/diligence/keys.py`。
-
----
-
-## 总体架构
-
-流水线由 LangGraph 组装，先初始化运行上下文，再按维度扇出执行 `search + summarize`，最后扇入合并报告并保存产物。
+## 总体架构图
 
 ```mermaid
-flowchart TD
-    A["CLI / Batch 输入企业名称"] --> B["load_config + 参数过滤"]
-    B --> C["init_node<br/>生成 run_id / active_dimensions / output_dir"]
-    C --> D{"route_node<br/>按维度 fan-out"}
-    D --> E1["search_summarize<br/>basic_info"]
-    D --> E2["search_summarize<br/>industry"]
-    D --> E3["search_summarize<br/>..."]
-    E1 --> F["collect_node<br/>完整性和 required 维度检查"]
-    E2 --> F
-    E3 --> F
-    F --> G["merge_node<br/>注入摘要 + 提取表 + 未执行维度"]
-    G --> H["save_node<br/>写 final_report / raw / summaries / run_meta"]
+flowchart TB
+  subgraph S["Source Layer"]
+    A["data/ Prophet & NewEnt JSON"]
+    B["data/web Web Cache"]
+  end
+
+  subgraph I["Ingestion Layer"]
+    D["etl_json_to_duckdb.py"]
+    E["run_web_enrichment.py"]
+    F["etl_web_to_duckdb.py"]
+  end
+
+  subgraph W["DuckDB Warehouse"]
+    G["Bronze: raw_company_json"]
+    H["Silver: normalized fact tables"]
+    J["Gold: company_profile"]
+    K["Evidence: web_evidence"]
+    L["Evidence: unified_evidence"]
+  end
+
+  subgraph EV["Evidence Layer"]
+    EV1["EvidenceRepository"]
+    EV2["EvidenceResolver"]
+    EV3["RuleEvaluator"]
+  end
+
+  subgraph SC["Scoring Layer"]
+    SC1["ScoreEngine"]
+    SC2["ScoreBreakdown"]
+    SC3["EvidenceTrace"]
+  end
+
+  subgraph R["Recommendation Pipeline"]
+    M["data_gather"]
+    N["dimension_analyze"]
+    O["web_evidence merge"]
+    P["llm_match"]
+    Q["llm_recommend"]
+  end
+
+  subgraph O2["Output Layer"]
+    X["result.json"]
+    Y["report.md"]
+    Z["batch_quality_report"]
+  end
+
+  A --> D --> G --> H --> J
+  D --> L
+  E --> B --> F --> K --> L
+  J --> M --> N --> O --> P --> Q
+  L --> EV1 --> EV2 --> O
+  EV2 --> EV3 --> SC1
+  SC1 --> SC2 --> Q
+  SC1 --> SC3 --> X
+  M --> X
+  Q --> X
+  Q --> Y
+  X --> Z
 ```
 
-每个维度分支内部：
+核心原则：
 
-```mermaid
-flowchart TD
-    A["MiniMax Search<br/>多 query 并发"] --> B["dedup_items<br/>URL 归一化去重"]
-    B --> C{"Metaso enabled?"}
-    C -- "否" --> E
-    C -- "是" --> D["Metaso chat/search<br/>prepend 高质量来源"]
-    D --> E["cross-provider dedup<br/>再次 URL 归一化去重"]
-    E --> F{"fetch_enabled?"}
-    F -- "否" --> H
-    F -- "是" --> G["crawl4ai enrichment<br/>source_registry 决定抓取偏好<br/>prefer → neutral → unknown → avoid"]
-    G --> H["DimensionSearchResult"]
-    H --> I{"extract_fields?"}
-    I -- "否" --> K["LLM summarize"]
-    I -- "是" --> J["structured extraction<br/>full_text + snippet fallback<br/>字段校验 + 置信度降级"]
-    J --> K
-    K --> L["DimensionSummary"]
-```
+- `DuckDB` 是事实中心，推荐流程不直接读取零散 JSON 或临时搜索结果。
+- `company_profile` 提供快速企业画像，适合推荐和筛选。
+- `unified_evidence` 承接本地 JSON 证据、Web 补证和后续人工证据，是长期证据接口。
+- `EvidenceRepository` + `EvidenceResolver` 提供统一的证据查询、去重、冲突解决和质量评分。
+- `ScoreEngine` 基于配置规则（positive/negative/exclusion）对产品做可追溯评分。
+- Web 搜索结果必须先缓存到 `data/web/`，再经过抽取和 ETL 入库，最后才进入推荐。
+- 旧报告流水线不再是新主线，但其中搜索、抓取、结构化抽取、来源判断能力会继续复用。
 
----
-
-## 数据流与关键决策
-
-### 1. 搜索召回：MiniMax Search
-
-实现：`src/diligence/utils/minimax_search.py`
-
-- 每个维度配置多条 `minimax_queries`。
-- 维度内查询并发由 `query_concurrency_per_dimension` 控制。
-- `max_results_per_query` 控制本地保留条数；设为 `0` 表示 MiniMax 返回几条就全部进入后续流程。
-- 返回 `SearchItem`：`title`、`url`、`snippet`、`source=minimax`、`rank`。
-- 搜索层只负责召回，通常没有网页全文。
-
-### 2. URL 归一化去重
-
-实现：`normalize_url()` / `dedup_items()`
-
-去重规则：
-
-- 优先按 URL 去重。
-- URL 会小写 scheme/host、去掉 `www.`、去掉尾部 `/`。
-- 删除跟踪参数：`utm_*`、`from`、`source`、`spm`。
-- 保留业务 query，例如 `id`、`q`。
-- 无 URL 时降级为 `title + snippet` 去重。
-
-数据流中有两次去重：
+## 当前主链路
 
 ```text
-MiniMax Search -> dedup -> Metaso prepend -> dedup -> crawl4ai -> summarize
+data/ Prophet/NewEnt JSON
+  -> etl_json_to_duckdb.py
+  -> DuckDB warehouse
+  -> company_profile / unified_evidence
+  -> run_recommender.py
+  -> recommendation_runs/.../report.md
 ```
 
-第二次去重用于处理 Metaso source items 与 MiniMax 裸搜索结果之间的重复 URL。
-
-### 3. Metaso 增强
-
-实现：`src/diligence/utils/metaso.py`
-
-启用条件：
-
-```env
-METASO_ENABLED=true
-METASO_API_KEY=...
-```
-
-维度通过 `metaso_queries` 和 `metaso_mode` 控制：
-
-| 模式 | 字段 | 产物 | 适用场景 |
-|------|------|------|----------|
-| `chat` | `metaso_mode: chat` | AI answer item + source items | 需要综合问答和来源引用 |
-| `search` | `metaso_mode: search` | 真实网页 URL + summary/rawContent | 需要更接近原始网页的数据 |
-
-chat 模式会把 AI 综合答案包装成 `metaso://` URL 的 `SearchItem`，同时把 API 返回的 sources 转成真实 URL 的 source items。search 模式直接返回真实 URL 的 `SearchItem`。Metaso 结果 prepend 到已有搜索结果前，随后再做跨 provider 去重。
-
-### 4. 来源识别：source_registry
-
-实现：`src/diligence/utils/source_registry.py`
-
-`classify_source(url, title)` 返回：
+推荐流水线（6 节点）：
 
 ```text
-source_type       来源类型
-authority_level   high / medium / low / unknown
-display_name      展示名称
-domain            归一化域名
-should_fetch_bias prefer / neutral / avoid
+data_gather → dimension_analyze → web_evidence → llm_match → llm_recommend → save
 ```
 
-目前覆盖的典型来源：
-
-| 来源 | 类型 | 权威级别 | 抓取偏好 |
-|------|------|:---:|:---:|
-| `gsxt.gov.cn` | government_registry | high | prefer |
-| `cnipa.gov.cn` | official_ip | high | prefer |
-| 未知 `.gov.cn` | government_notice | high | prefer |
-| 企查查 / 天眼查 / 爱企查 / 启信宝 | commercial_registry | high | avoid |
-| BOSS直聘 / 猎聘 / 前程无忧 | recruiting | medium | neutral |
-| 1688 | b2b_marketplace | medium | neutral |
-| 百度地图 / 高德地图 / 大众点评 | map_directory | low | neutral |
-| `metaso://` / metaso.cn | search_ai | medium | avoid |
-
-`source_registry` 的职责是提供稳定信号，不直接做事实裁决。冲突裁决仍交给 LLM，但 prompt 和提取表会显式带上来源名称、来源类型和权威等级。
-
-### 5. crawl4ai 抓取策略
-
-实现：`src/diligence/utils/fetch.py`
-
-维度设置 `fetch_enabled: true` 后启用。`_should_fetch()` 的主要条件：
-
-- URL 非空。
-- URL 不是 `metaso://`。
-- `title` 或 `snippet` 包含目标企业名称。
-- `source_registry.should_fetch_bias != "avoid"`。
-- URL 不命中 `fetch_blocked_domains`。
-
-抓取顺序会按优先级排序：
+可选 Web 补证链路：
 
 ```text
-prefer/high -> prefer/medium -> neutral/high -> neutral/medium -> unknown -> avoid(skip)
+run_web_enrichment.py
+  -> data/web 原始响应、页面正文、中间抽取文件、web_evidence.jsonl
+  -> etl_web_to_duckdb.py
+  -> web_* tables / unified_evidence
+  -> run_recommender.py --with-web-evidence
 ```
 
-这个排序只影响 crawl 调用顺序，不改变最终 `items` 的返回顺序。返回顺序仍保持搜索/增强后的排名语义。
+也可以让推荐流程在缺少 Web 证据时自动补证：
 
-抓取失败或被跳过时，item 会保留原始 snippet，后续仍可进入 snippet fallback。商业工商库等 `avoid` 域名通常不再用 crawl4ai 二次抓取，避免把时间花在登录墙、反爬页或无效详情页上。
+```bash
+uv run python run_recommender.py --with-web "企业名称"
+```
 
-### 6. 结构化字段提取
+默认会复用已有 `data/web/` 缓存；如需强制刷新：
 
-实现：`src/diligence/nodes/summarize_node.py`
+```bash
+uv run python run_recommender.py --with-web --refresh-web "企业名称"
+```
 
-维度配置 `extract_fields` 后，在主摘要前执行一次结构化提取：
+## 核心原理
 
-1. `_select_extraction_sources()` 先选择所有 `full_text`。
-2. 再补充最多 8 条 snippet fallback。
-3. snippet 少于 20 字会被过滤。
-4. 同 URL 已有 full_text 时，不再重复加入 snippet。
-5. 提取 prompt 为每个来源标注：
-   - 来源类型
-   - 权威等级
-   - 来源名称
-   - 内容类型：`full_text` / `snippet`
-   - 证据权重：`high` / `low`
-6. LLM 输出字段候选值、来源 ID、来源 URL、字段置信度。
-7. 代码过滤 hallucinated `source_item_id`，只允许引用进入 prompt 的 sources。
-8. 执行确定性字段校验。
-9. snippet-only 字段置信度封顶。
-10. 结果写入 `DimensionSearchResult.extractions` 并注入后续摘要和 merge prompt。
+### 1. Bronze / Silver / Gold
 
-字段提取失败会重试 1 次；仍失败则降级为直接使用网页正文/snippet 做摘要。
+`etl_json_to_duckdb.py` 对 `data/` 做分层入库：
 
-### 7. 字段格式校验与提取统计
+- Bronze：`raw_company_json` 保留每个原始 JSON 文件、文件 hash、抓取时间、解析状态。
+- Silver：把常用实体解析为结构化表，例如企业主体、股东、人员、风险、招聘、招投标、资质。
+- Gold：`company_profile` 把推荐常用字段压成一张宽表，作为推荐主入口。
 
-结构化提取后，`_validate_extractions()` 会做确定性清洗：
+原始数据永远可追溯；业务推荐不需要知道每个 Prophet/NewEnt JSON 的复杂路径；后续新增字段时可以先落 Bronze，再逐步提取到 Silver 或 Evidence。
 
-| 字段类型 | 处理 |
-|----------|------|
-| 统一社会信用代码 | 提取 18 位代码；无匹配则删除候选 |
-| 电子邮箱 | 提取邮箱地址；无匹配则删除候选 |
-| 来源URL | strict 模式下无 `http(s)` URL 则删除 |
-| 官网/网址 | 提取 `http(s)` URL；裸 `www.` 或无 URL 时保留但降级 |
-| 电话 | 不像手机号/座机/400 电话则降级 |
-| 日期/营业期限 | 不像日期、长期、至今则降级 |
-| 注册资本/实缴资本 | 不像金额则降级 |
-| 占位值 | `未找到`、`暂无`、`无`、`未披露` 等直接删除 |
-| 未知字段 | 保留，不做硬校验 |
+### 2. 统一证据层
 
-日志会输出字段清洗统计：
+`unified_evidence` 把不同来源的信息统一成标准形状：
 
 ```text
-[工商基本信息] structured extraction: 18/34 fields found (removed=3, fmt↓=2, snip↓=1, norm=4)
+evidence_id
+company_name / credit_code
+dimension_id
+source_type: local_json | web | manual | rule
+source_name / source_path / source_url / source_field
+claim / value
+confidence
+authority_level
+relation_to_profile: primary | supplement | confirmation | conflict | inference
+conflict_note / resolution
+raw_ref / created_at
 ```
 
-含义：
+本地 JSON 画像写成 `source_type=local_json`、`relation_to_profile=primary`；Web 抽取写成 `source_type=web`，并区分补充、佐证和冲突。推荐侧只需要理解 evidence，不需要关心底层来自 JSON、搜索摘要还是网页正文。
 
-- `removed`：删除无效候选或占位值。
-- `fmt↓`：格式校验导致置信度降级。
-- `snip↓`：snippet-only 证据导致高置信度封顶为低。
-- `norm`：字段值被归一化，例如信用代码、邮箱、URL。
+### 3. 证据仓库与冲突解决 (EvidenceRepository & Resolver)
 
-### 8. 维度摘要与可信度硬规则
+`EvidenceRepository` 提供按企业、维度、来源类型、冲突关系查询的统一入口。`EvidenceResolver` 在每次推荐运行时对证据做实时处理：
 
-主摘要阶段要求 LLM 输出 JSON：
+- **去重**：按 `(claim, source_type, source_field, source_url)` 去重。
+- **归并**：按 `source_field` 分组，同一字段上的多条证据合并比较。
+- **冲突解决**：Web 与本地 JSON 冲突时，默认 `resolution=use_local`（本地优先）。
+- **来源权威度 boost**：高权威来源（政府网站、官方备案）自动提升置信度一级。
+- **质量评分 (0-100)**：综合 primary、confirmation、supplement、inference、conflict 数量计算维度证据质量分。
+- **兜底提升**：当某维度无 primary 证据时，最好的 Web 证据自动提升为 primary。
 
-```json
-{
-  "summary": "500字以内的综合摘要",
-  "confidence": "高|中|低|待核实",
-  "uncertain_facts": ["..."],
-  "evidence_item_ids": ["..."]
-}
-```
+推荐报告和 `result.json` 会输出每条证据的归属（本地/Web）、冲突标注和解决策略。
 
-程序会执行硬性可信度上限：
+### 4. 配置驱动的产品评分引擎 (ScoreEngine)
 
-| 条件 | 最高可信度 |
-|------|:---:|
-| 维度搜索状态 `failed` | 待核实 |
-| 搜索结果数为 0 | 待核实 |
-| 仅 1 条搜索结果 | 低 |
-| 所有结果均无 URL | 低 |
-
-LLM 引用不存在的 `evidence_item_ids` 会被过滤。
-
-### 9. 合并报告与维度状态
-
-实现：`src/diligence/nodes/merge_node.py`
-
-merge 阶段会把每个维度的摘要和结构化提取表注入最终 prompt。提取表在 merge prompt 中被标注为“优先采信”。
-
-系统区分三种“没有数据”：
-
-| 状态 | 含义 | 报告表现 |
-|------|------|----------|
-| 未执行 | 维度因 `--only/--skip` 或配置过滤没有运行 | 写明“本维度未在本次运行中检索” |
-| 未找到 | 维度运行成功，但没有找到字段或事实 | 写“未找到” |
-| 执行失败 | active 维度未产出摘要或搜索/摘要异常 | 写“执行失败” |
-
-`main.py` 和 `batch.py` 会把过滤前的 enabled 维度名传入 `all_dimension_names`，因此最终报告能感知被跳过的维度，而不是让 LLM 自行脑补。
-
----
-
-## 配置说明
-
-默认配置已经改为目录化结构，CLI 默认读取 `config/`。旧的 `config.yaml` 仍可通过 `--config config.yaml` 加载，用于兼容或对照。
-
-```text
-config/
-├── app.yaml
-├── prompts/
-│   ├── merge.md
-│   ├── merge_system.md
-│   ├── summarize_system.md
-│   ├── extract_system.md
-│   ├── extract_user_template.md
-│   └── dimensions/
-│       ├── basic_info.md
-│       └── ...
-└── dimensions/
-    ├── 10_basic_info.yaml
-    ├── 20_industry.yaml
-    └── ...
-```
-
-`config/app.yaml` 存放全局运行参数：
+产品评分从硬编码规则升级为配置驱动。每个产品模块可在 `products.yaml` 中定义：
 
 ```yaml
-schema_version: "1.0"
-
-dimension_concurrency: 8
-query_concurrency_per_dimension: 5
-search_timeout_seconds: 30
-max_results_per_query: 0
-runs_dir: "runs"
-
-crawl_fetch_timeout: 25
-crawl_fetch_concurrency: 2
-max_full_text_chars: 6900
-
-fetch_blocked_domains:
-  - "qixin.com"
-  - "qcc.com"
-
-report_options:
-  include_sources: true
-  include_checklist: true
-  max_sources_per_dimension: 5
-
-batch:
-  company_concurrency: 1
-  continue_on_company_error: true
-  skip_existing: true
-  batch_runs_dir: "batch_runs"
+positive_rules:       # 命中加分
+  - id: procurement_signal
+    dimension_id: supply_chain_procurement
+    evidence_type: supported
+    weight: 20
+    reason: 供应链维度已有证据支持
+negative_rules:       # 命中扣分
+  - id: missing_amount
+    missing_evidence: 年采购金额
+    penalty: 8
+    reason: 缺少年采购金额
+exclusion_rules:      # 命中降权（分数封顶 20）
+  - id: inactive_company
+    source_field: reg_status
+    op: "!="
+    value: 存续
+    reason: 企业状态非存续
 ```
 
-`config/dimensions/*.yaml` 存放维度元数据、查询词和字段 schema：
+每条推荐输出完整的 `ScoreBreakdown`：
+
+```text
+base_priority         基础优先级分
+dimension_support     维度覆盖分
+evidence_support      本地证据分
+web_support           Web 补证分
+positive_score        命中正向规则加分
+negative_score        命中负向规则扣分
+missing_evidence_penalty  缺失证据扣分
+conflict_penalty      冲突扣分
+final_score           最终得分 (0-100)
+matched_rules         命中的正向规则及证据 ID
+penalty_rules         命中的扣分规则
+exclusion_rules       命中的排除规则
+```
+
+同时输出 `evidence_trace`，每条推荐可追溯到具体证据 ID、来源、声明和置信度。LLM 路径的输出也会被评分引擎重新校准（`_with_explainability`），确保排序稳定、分数可解释。
+
+### 5. 维度分析
+
+`dimension_analyze` 根据 `analysis_dimensions.yaml` 工作。每个维度定义：
+
+- 读取哪些本地字段。
+- 如何把字段格式化为事实证据。
+- 哪些证据不足需要 Web 或人工补充。
+- 本地规则如何产生弱推断（`support_rules`）。
+- Web 查询模板是什么。
+
+维度分析输出结构化 `DimensionAnalysis`，包含：
+
+```text
+facts                 人类可读事实
+inferences            规则推断
+local_evidence        本地 JSON 证据 (EvidenceRecord)
+inference_evidence    规则推断证据
+web_evidence          Web 补证/佐证
+conflicts             Web 与本地画像冲突
+missing_evidence      仍缺失的证据项
+status                supported | partial | insufficient
+confidence            高 | 中 | 低 | 待补充
+```
+
+### 6. 产品匹配与推荐
+
+推荐分两步：
+
+1. `llm_match`：判断每个产品模块是否匹配企业当前需求，输出分数、置信度、理由和缺失证据。fallback 使用结构化 evidence 和冲突数量调整分数。
+2. `llm_recommend`：基于匹配结果和评分引擎生成最终推荐列表、切入话术和报告摘要。LLM 输出会被评分引擎校准排序和分数。
+
+如果 LLM 不可用，系统走 deterministic fallback，仍能生成可运行的 MVP 报告。LLM prompt 明确要求基于证据，不允许把 `web_search_queries` 或缺失证据当成事实。
+
+### 7. Web 缓存与重放 (Multi-Level Cache)
+
+Web enrichment 实现了多级缓存，支持选择性失效和重放：
+
+```text
+cache_index.json (v1.1)
+  runs/{run_id}/
+    queries[]          cache_key, provider_params_hash, result_count
+    pages[]            url, content_hash, page_path
+    extractions[]      extraction_cache_key, prompt_hash, evidence_count
+```
+
+缓存策略：
+
+- **搜索缓存**：key 包含 provider 参数哈希、max_results、cache policy version。provider 配置变化自动失效。
+- **抓取缓存**：按 content hash 复用 `pages/*.md`。同一 URL 跨 run 命中时复制页面文件。
+- **抽取缓存**：key 包含结果指纹、prompt 版本、prompt 文件 hash、抽取模型、抽取配置 hash。prompt 或模型变化自动失效。
+
+CLI 支持细粒度刷新：
+
+```bash
+run_web_enrichment.py --refresh-search       # 仅重搜
+run_web_enrichment.py --refresh-fetch        # 仅重抓
+run_web_enrichment.py --refresh-extraction   # 仅重抽
+run_web_enrichment.py --extract-only --source-run-id web_xxx  # 从已有搜索结果重放抽取
+```
+
+每个 Web run 生成 `web_cache_report.json/md`，记录搜索/抓取/抽取的复用与重跑计数。
+
+### 8. 场景 Bundle (Scenario)
+
+支持不同业务场景拥有独立的产品、维度、prompt、Web provider 策略：
+
+```text
+config/scenarios/sales_recommendation/
+  scenario.yaml              # 场景入口（id, name, 路径配置）
+  products.yaml              # 场景专属产品
+  analysis_dimensions.yaml   # 场景专属维度
+  web_search.yaml            # 场景专属 Web 搜索
+  web_extract_llm.yaml       # 场景专属抽取配置
+  prompts/                   # 场景专属 prompt
+```
+
+CLI 使用：
+
+```bash
+run_recommender.py --scenario config/scenarios/sales_recommendation "企业名称"
+run_web_enrichment.py --scenario config/scenarios/sales_recommendation "企业名称"
+```
+
+场景会自动切换产品、维度、prompt、Web 配置、推荐输出目录和 Web cache root。旧配置路径继续兼容。
+
+### 9. 批量运行与质量报告 (Batch Runner)
+
+支持从企业列表批量运行推荐并生成交付产物：
+
+```bash
+uv run python run_recommender.py \
+  --scenario config/scenarios/sales_recommendation \
+  --company-list company.txt \
+  --with-web-evidence \
+  --batch-id batch_sales_demo \
+  --batch-output recommendation_runs/batches \
+  --skip-existing
+```
+
+批量模式产出：
+
+```text
+recommendation_runs/batches/{batch_id}/
+  batch_manifest.json         # 批次元信息
+  companies.txt               # 企业清单
+  runs/{company}/             # 每家企业独立目录
+    report.md
+    result.json
+  batch_summary.json          # 汇总表（含证据计数、评分规则、冲突数）
+  batch_summary.csv
+  batch_quality_report.json   # 质量指标
+  batch_quality_report.md     # 人类可读质量报告
+  failed_companies.txt        # 失败清单（可做 --rerun-failed）
+  delivery_manifest.json      # 交付文件清单
+```
+
+质量报告指标：
+
+- 成功/部分成功/失败/跳过数量。
+- 平均画像完整度、平均 Top 推荐分。
+- Top 产品分布。
+- 高冲突企业（冲突 ≥3 处）。
+- 低完整度企业（完整度 < 60%）。
+- 失败企业清单及错误原因。
+
+`--skip-existing` 按稳定的企业目录名判断，可安全中断和续跑。
+
+### 10. 人类可读进度输出
+
+CLI 默认输出结构化中文进度，显示流水线各阶段的关键决策：
+
+```text
+═══ 开始分析：广东信华电器有限公司 ═══
+
+📊 阶段 1/5: 加载企业画像
+  ✓ DuckDB → company_profile 表 → 命中 (行业: 制造业, 完整度: 87%)
+📊 阶段 2/5: 维度分析
+  ✓ 10 个维度, 28 条事实 (supported:7 partial:3)
+  ├─ hr_workforce: partial (需Web补充)
+📊 阶段 3/5: Web 证据采集
+  ✓ unified_evidence 表 → 22 条证据 → 3 个维度
+  ├─ hr_workforce: 5条Web → 质量 75 (high)
+📊 阶段 4/5: 产品匹配
+  ✓ LLM 分析完成 → 8 个候选产品
+📊 阶段 5/5: 生成报告
+  ✓ report.md
+```
+
+Web 搜索时展示搜索查询、结果数、页面抓取状态、LLM 提取统计和相关性过滤。使用 `--verbose` 可同时输出 structlog 详细日志。
+
+### 11. Web 证据相关性过滤
+
+三层公司验证，确保 Web 证据确实关于目标企业：
+
+1. **LLM prompt**：在 `extract_evidence_system.md` 中明确要求"先判断每个 Web 来源是否确实关于该目标企业"，不相关的返回空 claims。
+2. **抓取前过滤** (`_should_fetch`)：提取公司核心名称（如"广东信华电器有限公司" → "信华电器"），页面标题或摘要不含核心名称的跳过抓取。
+3. **抽取后过滤** (`_is_relevant_claim`)：claim 中必须出现公司全名或核心名称，否则丢弃。
+
+同一 URL 只抓取一次（按 URL 去重）。
+
+## 数据流向图
+
+### 本地 JSON 到推荐报告
+
+```mermaid
+sequenceDiagram
+  participant JSON as data/ JSON
+  participant ETL as etl_json_to_duckdb.py
+  participant DB as DuckDB
+  participant Repo as EvidenceRepository
+  participant Resolver as EvidenceResolver
+  participant Engine as ScoreEngine
+  participant Rec as run_recommender.py
+  participant Out as recommendation_runs/
+
+  JSON->>ETL: 读取企业目录和 *.json
+  ETL->>DB: 写 raw_company_json
+  ETL->>DB: 写 Silver fact tables
+  ETL->>DB: 生成 company_profile
+  ETL->>DB: 生成 unified_evidence(local_json)
+  Rec->>DB: 读取 company_profile
+  Rec->>Repo: 查询 unified_evidence
+  Repo->>Resolver: 去重、归并、冲突解决、质量评分
+  Resolver->>Rec: ResolvedDimensionEvidence
+  Rec->>Engine: 评分上下文 (profile + analyses)
+  Engine->>Rec: ScoringRunResult (per product)
+  Rec->>Rec: 维度分析、产品匹配、推荐排序
+  Rec->>Out: 写 profile.json / result.json / report.md
+```
+
+### Web 补证到 DuckDB
+
+```mermaid
+sequenceDiagram
+  participant CLI as run_web_enrichment.py
+  participant DB as DuckDB
+  participant Plan as Web Planner
+  participant Provider as MiniMax/Metaso
+  participant Fetch as crawl4ai
+  participant LLM as Evidence Extractor
+  participant Cache as data/web
+
+  CLI->>DB: 读取 company_profile
+  CLI->>Plan: 根据维度证据判断是否需要搜索
+  Plan-->>CLI: planned / skipped queries
+  CLI->>Provider: 执行搜索查询
+  Provider-->>Cache: 保存 provider_responses/*.json
+  CLI->>Fetch: 抓取搜索结果页面（含公司名匹配过滤）
+  Fetch-->>Cache: 保存 pages/*.md 和 fetched_pages.jsonl
+  CLI->>LLM: 抽取证据（含公司相关性校验）
+  LLM-->>Cache: 保存 extraction_requests/results 和 web_evidence.jsonl
+  CLI->>DB: 可选自动导入 web_* tables 和 unified_evidence(web)
+```
+
+Web 补证遵循"本地 JSON 优先"：
+
+- 如果本地画像已经覆盖某个维度，planner 默认跳过该维度的 Web 搜索。
+- 如果 Web 信息与 JSON 信息冲突，`relation_to_profile=conflict`，并默认 `resolution=use_local`。
+- 原始响应、页面正文、中间抽取请求和抽取结果都会保留在 `data/web/`，便于审计和重放。
+
+## DuckDB 分层
+
+```text
+Bronze
+  raw_company_json
+  company_import_status
+
+Silver
+  companies / company_labels / key_personnel / shareholders
+  ip_summary / risk_features / recruitments / bidding_summary
+  qualifications / branches / financing_events / outbound_investments
+
+Gold / Evidence
+  company_profile
+  web_search_runs / web_search_queries / web_search_results
+  web_pages / web_evidence
+  unified_evidence
+```
+
+## 关键入口
+
+```text
+etl_json_to_duckdb.py              # data/ JSON -> DuckDB
+run_web_enrichment.py              # Web 搜索、抓取、抽取、缓存
+etl_web_to_duckdb.py               # data/web -> DuckDB Web 表
+run_recommender.py                 # 推荐主入口
+
+src/xft/warehouse/                 # DuckDB 本地仓库
+src/xft/evidence/                  # 统一证据模型、仓库、冲突解决
+src/xft/ai/                        # 公共 LLM client / JSON 抽取工具
+src/xft/web/                       # Web enrichment 服务与缓存
+src/xft/scoring/                   # 配置驱动评分引擎
+src/xft/pipeline/recommender/      # 推荐图、维度分析、报告渲染
+src/xft/nodes/                     # legacy 报告流水线节点（待迁入 pipeline/diligence）
+
+src/diligence/                     # 兼容期旧包名，暂时保留
+```
+
+当前新入口脚本已经使用 `xft.*` import；`diligence.*` 仍作为兼容路径保留，后续会逐步迁移到 `xft.pipeline.diligence`。
+
+## 常用命令
+
+初始化或重建本地 JSON 仓库：
+
+```bash
+uv run python etl_json_to_duckdb.py --input data --output cache/company_warehouse.duckdb
+```
+
+离线跑推荐：
+
+```bash
+uv run python run_recommender.py --no-llm "企业名称"
+```
+
+单独准备 Web 缓存但不入库：
+
+```bash
+uv run python run_web_enrichment.py --no-etl "企业名称"
+```
+
+选择性重跑 Web enrichment：
+
+```bash
+uv run python run_web_enrichment.py --refresh-search "企业名称"
+uv run python run_web_enrichment.py --refresh-extraction "企业名称"
+uv run python run_web_enrichment.py --extract-only --source-run-id web_xxx "企业名称"
+```
+
+从 Web 缓存重建 DuckDB Web 表：
+
+```bash
+uv run python etl_web_to_duckdb.py --input data/web --warehouse cache/company_warehouse.duckdb --rebuild
+```
+
+读取已有 Web 证据生成推荐：
+
+```bash
+uv run python run_recommender.py --with-web-evidence "企业名称"
+```
+
+自动补证并推荐（缓存缺失时触发搜索）：
+
+```bash
+uv run python run_recommender.py --with-web "企业名称"
+```
+
+按场景运行推荐：
+
+```bash
+uv run python run_recommender.py \
+  --scenario config/scenarios/sales_recommendation \
+  "企业名称"
+```
+
+批量运行并生成交付产物：
+
+```bash
+uv run python run_recommender.py \
+  --scenario config/scenarios/sales_recommendation \
+  --company-list company.txt \
+  --with-web-evidence \
+  --batch-id batch_sales_demo \
+  --batch-output recommendation_runs/batches \
+  --skip-existing
+```
+
+## 配置
+
+兼容三种配置方式：
+
+**1. 传统平铺配置：**
+
+```text
+config/recommender/products.yaml
+config/recommender/analysis_dimensions.yaml
+config/recommender/web_search.yaml
+config/recommender/web_extract_llm.yaml
+config/recommender/prompts/
+```
+
+**2. 场景 Bundle：**
+
+```text
+config/scenarios/sales_recommendation/
+  scenario.yaml
+  products.yaml
+  analysis_dimensions.yaml
+  web_search.yaml
+  web_extract_llm.yaml
+  prompts/
+```
+
+`--scenario` 会同时切换产品、维度、prompt、Web 配置、推荐输出目录和 Web cache root。
+
+**3. 产品评分规则（在 products.yaml 中）：**
+
+```yaml
+- module_id: procurement_srm
+  module_name: 供应商关系管理(SRM)
+  priority: 90
+  base_score: 45
+  target_needs: [supply_chain_procurement, business_product]
+  match_rule: 制造业、采购链条较长的企业...
+  positive_rules:
+    - id: procurement_signal
+      dimension_id: supply_chain_procurement
+      evidence_type: supported
+      weight: 20
+      reason: 供应链维度已有证据支持
+  negative_rules:
+    - id: missing_amount
+      missing_evidence: 年采购金额
+      penalty: 8
+      reason: 缺少年采购金额
+  exclusion_rules:
+    - id: inactive_company
+      source_field: reg_status
+      op: "!="
+      value: 存续
+      reason: 企业状态非存续
+```
+
+### 维度配置 (`analysis_dimensions.yaml`)
+
+每个维度是一个独立条目，完整字段如下：
 
 ```yaml
 dimensions:
-  - id: basic_info
-    name: 工商基本信息
-    order: 10
-    enabled: true
-    required: true
-    fetch_enabled: true
-    minimax_queries:
-      - '"{target}"'
-    metaso_queries:
-      - "{target} 工商注册信息 统一社会信用代码 法定代表人 注册资本"
-    metaso_mode: search
-    metaso_search_size: 1
-    extract_fields:
-      - field_name: 统一社会信用代码
-        description: "18位字母数字组合，企业唯一识别码"
-      - field_name: 法定代表人
-        description: "法定代表人姓名"
-      - field_name: 注册资本
-        description: "金额+币种，如1000万元人民币"
-    summary_prompt: |
-      请从以下搜索结果中提取"{target}"的工商基本信息。
-      {results}
+  - id: supply_chain_procurement     # 唯一标识 (snake_case)
+    level1: 供应链与采购管理          # 一级分类
+    level2: 采购规模与特征            # 二级分类
+    level3: 供应链复杂度              # 三级分类
+    role: 供应链管理与商业调研专家     # LLM 角色描述
+    local_fields:                    # 从 company_profile 读取的字段
+      - industry
+      - employee_count
+      - business_scope
+      - bidding_total
+      - qualification_count
+    evidence_templates:              # 报告中展示的证据项 (字段→中文标签)
+      - field: industry
+        label: 行业
+      - field: employee_count
+        label: 员工规模
+      - field: bidding_total
+        label: 招投标数量
+    insufficient_evidence:           # 预期但缺失的证据，报告标记为"数据缺口"
+      - 供应商数量
+      - 前五大供应商集中度
+      - 年采购金额
+    analysis_prompt: |               # LLM 维度分析系统提示词
+      判断企业是否存在采购协同、供应商准入、供应商绩效等数字化需求。
+      只能基于已提供证据分析，不得编造供应商数量、采购金额。
+    evidence_policy: |               # 证据强度说明
+      直接采购数据优先于行业和规模推断。制造业、员工规模只能作为间接线索。
+    support_rules:                   # 可选：本地自动推断规则
+      - field: employee_count
+        op: ">="
+        value: 200
+        claim: 员工规模较大，可能存在采购流程协同与供应商管理需求。
+        confidence: 低
+      - field: bidding_total
+        op: ">"
+        value: 0
+        claim: 存在招投标记录，可作为项目型采购管理复杂度线索。
+        confidence: 低
+    web_search_queries:              # 可选：Web 搜索查询模板
+      - "{company_name} 供应商"       # {company_name} 运行时自动替换
+      - "{company_name} 采购"
+      - "{company_name} 招投标"
 ```
 
-实际目录配置里推荐把长 prompt 放到 `config/prompts/dimensions/{id}.md`，维度文件只引用：
+**字段说明：**
+
+| 字段 | 必填 | 说明 |
+|------|:----:|------|
+| `id` | ✓ | 唯一标识，被 `products.yaml` 的 `target_needs` 和 `dimension_id` 引用 |
+| `level1/2/3` | ✓ | 三级分类，用于报告分组展示 |
+| `local_fields` | ✓ | 必须与 `company_profile` 表列名一致，支持嵌套路径如 `ip_counts.patent` |
+| `evidence_templates` | | 字段到中文标签的映射，报告展示用 |
+| `insufficient_evidence` | | 缺失证据列表，报告会输出为"建议进一步核实" |
+| `support_rules` | | 本地规则推断，fallback 模式下自动执行，LLM 模式作为参考上下文 |
+| `web_search_queries` | | 使用 `{company_name}` 占位符，同时支持 `{industry}` 和 `{industry_big}` |
+
+**`op` 操作符：** `==` `!=` `>` `>=` `<` `<=` `contains` `exists`
+
+**`confidence` 取值：** `高` `中` `低`
+
+新增维度只需在 YAML 中添加一个条目，无需改代码。维度会自动出现在报告和 `result.json` 中。
+
+### 产品规则配置 (`products.yaml`)
+
+每个产品模块支持三种规则：
 
 ```yaml
-summary_prompt_file: ../prompts/dimensions/basic_info.md
+products:
+  - module_id: procurement_srm             # 唯一标识
+    module_name: 供应商关系管理(SRM)        # 展示名称
+    priority: 90                           # 基础优先级 (0-100)
+    base_score: 50                         # 基础分
+    target_needs:                          # 关联维度 (引用 dimension.id)
+      - supply_chain_procurement
+      - business_product
+    match_rule: 制造业、采购链条较长的企业...  # LLM 匹配规则描述
+
+    # ── 正向规则：命中加分 ──
+    positive_rules:
+      # 维度状态匹配
+      - id: procurement_dimension_supported
+        dimension_id: supply_chain_procurement
+        evidence_type: supported            # supported | partial | insufficient
+        weight: 18                          # 加分值
+        reason: 供应链维度已有证据支持
+      # 画像字段条件
+      - id: bidding_signal
+        source_field: bidding_total          # company_profile 字段名
+        op: ">"                              # 操作符
+        value: 0                             # 阈值
+        weight: 10
+        reason: 存在招投标记录
+
+    # ── 负向规则：命中扣分 ──
+    negative_rules:
+      # 证据缺失
+      - id: missing_supplier_count
+        missing_evidence: 供应商数量
+        penalty: 5                           # 扣分值
+        reason: 缺少供应商数量
+      # 存在冲突
+      - id: conflict_penalty
+        relation_to_profile: conflict
+        penalty: 8
+        reason: 存在 Web 与本地画像冲突
+
+    # ── 排除规则：命中排除该产品 ──
+    exclusion_rules:
+      - id: inactive_company
+        source_field: reg_status
+        op: "!="
+        value: 存续
+        reason: 企业状态非存续
 ```
 
-`summary_prompt_file` 路径相对当前维度 YAML 文件解析。新增维度时，新增一个 `config/dimensions/{order}_{id}.yaml` 和对应 prompt 文件即可。`id` 全局唯一，`order` 控制输出顺序，`required=true` 表示该维度失败会影响进程退出码。
+**规则类型一览：**
 
-日常 review 建议直接看拆分文件：
+| 规则类型 | 触发条件 | 效果 |
+|----------|----------|------|
+| `positive_rules` | `dimension_id` + `evidence_type` 匹配 | 加 `weight` 分 |
+| `positive_rules` | `source_field` + `op` + `value` 匹配 | 加 `weight` 分 |
+| `negative_rules` | `missing_evidence` 命中 | 扣 `penalty` 分 |
+| `negative_rules` | `relation_to_profile: conflict` 存在冲突 | 扣 `penalty` 分 |
+| `exclusion_rules` | `source_field` + `op` + `value` 匹配 | 产品被排除 (`excluded: true`) |
 
-```bash
-git diff config/dimensions/10_basic_info.yaml
-git diff config/prompts/dimensions/basic_info.md
-git diff config/prompts/merge.md
-```
+**`source_field` 支持嵌套路径**，例如 `ip_counts.patent`、`bank_flags.high_quality_customer`、`risk_counts.self`、`cross_border_flags.labels`。
 
----
-
-## 内置尽调维度
-
-当前默认覆盖 8 个维度：
-
-| 维度 ID | 名称 | 是否必需 |
-|---------|------|:---:|
-| `basic_info` | 工商基本信息 | 是 |
-| `industry` | 行业与细分 | 否 |
-| `scale` | 员工规模 | 否 |
-| `background` | 企业背景 | 否 |
-| `tech_cert` | 科技属性资质 | 否 |
-| `ip` | 知识产权 | 否 |
-| `product` | 产品与定位 | 否 |
-| `listing` | 上市情况 | 否 |
-
----
-
-## 产物文件
-
-单企业运行产物位于 `runs/{run_id}/`：
-
-| 文件 | 内容 |
-|------|------|
-| `final_report.md` | 最终 Markdown 尽调报告 |
-| `dimension_summaries.json` | 各维度摘要、可信度、待核实项、证据 ID |
-| `raw_search_results.json` | 每维度原始搜索结果、抓取正文、结构化提取结果 |
-| `run_meta.json` | run_id、状态、失败维度、active 维度、成本、开始/结束时间 |
-
-`raw_search_results.json` 中结构化提取示例：
-
-```json
-{
-  "basic_info": {
-    "items": [],
-    "extractions": {
-      "extractions": {
-        "统一社会信用代码": [
-          {
-            "source_item_id": "b71f82f6ae32",
-            "source_url": "https://example.com/company",
-            "value": "91440605682473330H",
-            "confidence": "高"
-          }
-        ]
-      }
-    }
-  }
-}
-```
-
-批量运行额外生成：
-
-| 文件 | 内容 |
-|------|------|
-| `batch_summary.md` | 批量运行摘要 |
-| `batch_summary.csv` | 每家公司状态和产物路径 |
-| `batch_meta.json` | 批次元数据 |
-
----
-
-## 成本计量
-
-`save_node` 会在 stderr 输出并写入 `run_meta.json`：
+**评分公式：**
 
 ```text
-本次调用成本：
-   MiniMax Search: 8 次
-   LLM 推理: 12 次，tokens: 42,284
-   Metaso: 2 次成功，0 次失败，credits: 12
+final_score = base_score
+            + dimension_support      # 关联维度覆盖分
+            + evidence_support       # 本地证据分
+            + web_support            # Web 补证分
+            + positive_score         # 命中 positive_rules 加分总和
+            - negative_score         # 命中 negative_rules 扣分总和
+            - missing_evidence_penalty  # 缺失证据扣分
+            - conflict_penalty       # 冲突扣分
 ```
 
-| API | 计量方式 |
-|-----|----------|
-| MiniMax Search | 成功搜索请求次数 |
-| Metaso chat | 6 credits / query |
-| Metaso search | 6 × size credits / query |
-| LLM | completions 调用次数与 total_tokens |
+修改 YAML 后重新跑推荐即可看到评分变化。`result.json` 中 `score_breakdown.matched_rules` / `penalty_rules` / `exclusion_rules` 会列出每条命中的规则及证据 ID，`report.md` 会展示分项得分和命中规则。修改规则不影响 LLM 匹配逻辑，但会影响最终排序和分数。
 
----
+## 输出文件
 
-## 容错与降级
-
-| 故障场景 | 降级策略 |
-|----------|----------|
-| 单条 MiniMax 查询超时 | 维度状态变为 `partial`，继续处理成功查询结果 |
-| 全部 MiniMax 查询失败 | 维度状态 `failed`，摘要可信度封顶为待核实 |
-| Metaso 不可用 | 回退到 MiniMax-only |
-| crawl4ai 抓取失败 | 保留原 snippet，不中断后续摘要 |
-| 商业库/登录墙来源 | 默认 `avoid`，跳过 crawl，保留 item 用于 snippet fallback |
-| 结构化提取 JSON 解析失败 | 自动重试 1 次，仍失败则跳过提取表 |
-| summarize JSON 解析失败 | 自动重试 1 次，仍失败则 fallback 为原始 snippet 摘要 |
-| LLM 编造 evidence ID | 代码过滤不存在的 ID |
-| active 维度没有摘要 | collect/merge/save 均视为失败维度 |
-| required 维度失败 | `required_failed=true`，CLI 退出码为 2 |
-
----
-
-## 退出码
-
-| 退出码 | 含义 |
-|:---:|------|
-| 0 | 成功，或只有非 required 维度部分失败 |
-| 1 | 参数错误、配置错误或管道整体失败 |
-| 2 | required 维度失败，报告不完整 |
-
----
-
-## 项目结构
+每次推荐运行生成：
 
 ```text
-main.py                          CLI 入口
-Dockerfile                       多阶段 Docker 构建
-docker-compose.yml               一键运行服务定义
-config/                          默认目录化配置
-config.yaml                      兼容旧单文件配置
-src/diligence/
-├── config.py                    Pydantic 配置模型
-├── models.py                    SearchItem / DimensionSearchResult / RunMeta 等
-├── settings.py                  .env 加载与密钥解密
-├── keys.py                      SM4 key 工具
-├── state.py                     LangGraph State 与 reducer
-├── graph.py                     LangGraph 组装与 run_company_graph()
-├── batch.py                     批量处理与续跑
-├── nodes/
-│   ├── init_node.py             初始化 run_id、active_dimensions、输出目录
-│   ├── route_node.py            LangGraph Send fan-out
-│   ├── search_node.py           MiniMax + Metaso + dedup + crawl4ai
-│   ├── summarize_node.py        结构化提取、字段校验、维度摘要
-│   ├── collect_node.py          fan-in 完整性检查
-│   ├── merge_node.py            最终报告合并
-│   └── save_node.py             产物写入与成本打印
-└── utils/
-    ├── minimax_search.py        MiniMax Search 封装、URL 归一化去重
-    ├── metaso.py                Metaso chat/search 客户端
-    ├── fetch.py                 crawl4ai 抓取、抓取排序与过滤
-    └── source_registry.py       来源识别、权威等级、抓取偏好
-tests/
-├── test_fetch.py
-├── test_source_registry.py
-├── test_search.py
-├── test_summarize_helpers.py
-├── test_nodes.py
-├── test_graph.py
-├── test_batch.py
-└── ...
+recommendation_runs/{run_id}/
+  profile.json               # 企业画像
+  dimension_analysis.json    # 维度分析（含 evidence）
+  match_results.json         # 产品匹配结果
+  result.json                # 结构化推荐结果
+  report.md                  # Markdown 推荐报告
 ```
 
----
-
-## 架构模式
-
-### LangGraph fan-out / fan-in
-
-`route_node` 为每个 active dimension 发送一个 `search_summarize_node` 分支。`state.py` 中的 reducer 负责合并字典、成本和错误。
-
-### 配置驱动维度
-
-新增、删除、停用维度通常只改 `config/dimensions/*.yaml` 和对应 prompt 文件。代码不绑定固定 8 个维度；默认配置只是当前尽调模板。
-
-### 来源信号代码化，事实裁决仍由 LLM 执行
-
-`source_registry` 负责稳定识别来源和权威等级，结构化提取和 merge prompt 使用这些信号。代码不直接按权重裁决事实，避免把冲突处理做得过死。
-
-### 先审计，后重构
-
-当前版本没有引入完整 Fact / ResolvedFact / EvidenceChunk 三层事实模型。字段候选仍保存在 `DimensionSearchResult.extractions`，报告合并时注入提取表。等真实样本暴露出跨运行比较、人工复核数据库、复杂冲突裁决需求后，再考虑事实层重构。
-
----
-
-## 当前冻结测试建议
-
-P2 crawl priority ordering 已具备冻版测试条件。建议用真实样本先观察，而不是继续堆抽象：
+`result.json` 结构：
 
 ```text
-10-20 家企业
-覆盖：制造业、科技公司、小企业、上市公司、政府公告多的企业、商业库结果多的企业
-观察：字段命中率、错误字段、crawl 成功率、snippet fallback 贡献、报告是否误导
+company_name / scenario / scenario_name
+summary
+recommendations[]
+  rank / module_id / module_name / score / priority
+  business_need / reason / suggested_pitch
+  evidence_dimensions / data_gaps
+  score_breakdown            # 完整分项得分
+    base_priority / dimension_support / evidence_support
+    web_support / positive_score / negative_score
+    missing_evidence_penalty / conflict_penalty
+    final_score / excluded
+    matched_rules[] / penalty_rules[] / exclusion_rules[]
+  evidence_trace[]           # 每条推荐的证据溯源
+    evidence_id / dimension_id / source_type
+    source_name / source_url / source_field
+    claim / confidence / relation_to_profile
+evidence_summary             # 全局证据统计
+  local_evidence_count / web_evidence_count
+  conflict_count / missing_evidence_count
+  by_dimension[]
+conflict_summary[]           # 冲突清单
+scoring_summary              # 评分运行统计
+needs_web_enrichment / profile_completeness
 ```
 
-后续优化触发条件：
+## 设计原则
 
-| 观察到的问题 | 下一步 |
-|--------------|--------|
-| crawl 慢或波动大 | 做 URL fetch cache，30 天 TTL |
-| 字段冲突频繁且报告裁决不稳 | 引入轻量事实层或独立 conflict resolver |
-| snippet 贡献高但误报多 | 做 source-aware confidence policy |
-| 字段校验误杀 | 细化 validator 和字段类型映射 |
-| 报告仍混淆未执行/未找到/失败 | 强化 merge prompt 和状态契约 |
+- 本地事实层优先，Web search 后补。
+- 原始数据完整保留，结构化解析逐步推进。
+- 推荐模块只依赖稳定 Gold 层，不直接绑定 JSON 文件形状。
+- 配置优先：产品规则、维度、评分策略全部外置到 YAML。
+- 证据不足要显式表达，不用模型想象补齐。
+- 评分可追溯：每条推荐可追溯到具体证据和规则。
+- 场景隔离：不同业务场景的产品、维度、prompt 独立配置。
+- 批量可交付：一次运行产出报告、质量指标和交付清单。
 
----
+## 当前限制
 
-## 技术栈
+- Web 抽取 LLM 底层 client 暂时复用项目现有 OpenAI-compatible client。
+- `dimension_analyze` 的本地推断规则较轻量，适合作为 MVP，不等于完整专家判断。
+- 复杂字段还没有全部从 47 类 JSON 中解析出来。
+- `company_profile` 是当前唯一稳定 Gold 接口，未来可以增加更多 Gold 表。
+- 当前报告是 Markdown 简报，不是最终商业交付版报告。
+- 场景继承和 overlay 尚未支持，每个场景需独立维护完整配置。
 
-| 组件 | 用途 |
-|------|------|
-| Python 3.12+ | 运行时 |
-| LangGraph | 管道编排 |
-| Pydantic v2 | 配置和数据模型 |
-| pydantic-settings | 环境变量加载 |
-| httpx | 异步 HTTP |
-| crawl4ai | 页面抓取与 Markdown 提取 |
-| OpenAI SDK | OpenAI 兼容 LLM 调用 |
-| structlog | 结构化日志 |
-| PyYAML | 配置解析 |
-| uv | 依赖与虚拟环境 |
-| pytest | 测试 |
-| Ruff | lint / format |
+## 后续计划
+
+- 增加第二个真实业务场景（如 `bank_marketing`），验证场景隔离设计的完备性。
+- 支持场景配置继承或 overlay，减少跨场景复制。
+- 将 `score_levels`、报告结构也纳入场景配置。
+- 增加 `.xlsx` 汇总交付和 `.zip` 交付包。
+- 扩展更多 JSON 文件到 Silver 表。
+- 增加 DuckDB schema version 和 migration 策略。
+- 增加 `--rerun-failed` 直接读取上一批 `failed_companies.txt`。
+
+更详细的技术文档见 `DUCK.md`，Prophet 数据字段参考见 `docs/prophet-data-catalog.md`。

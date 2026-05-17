@@ -1,0 +1,9 @@
+"""Compatibility alias for `xft.cache.db`."""
+
+from __future__ import annotations
+
+import importlib as _importlib
+import sys as _sys
+
+_module = _importlib.import_module("xft.cache.db")
+_sys.modules[__name__] = _module

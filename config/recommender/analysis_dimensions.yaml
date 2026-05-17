@@ -1,0 +1,476 @@
+version: "1.0"
+dimensions:
+  - id: basic_profile
+    level1: 企业基础信息与股权结构
+    level2: 基础特征与控股关系
+    level3: 主体规模与属性
+    role: 企业尽职调查与资质验证专家
+    local_fields:
+      - company_name
+      - industry
+      - industry_big
+      - employee_count
+      - company_org_type
+      - is_listed
+      - stock_code
+      - shareholder_summary
+      - branch_count
+    evidence_templates:
+      - field: industry
+        label: 行业
+      - field: employee_count
+        label: 员工规模
+      - field: company_org_type
+        label: 企业类型
+      - field: is_listed
+        label: 上市状态
+      - field: shareholder_summary
+        label: 股东结构
+    insufficient_evidence:
+      - 股权穿透层级
+      - 实际控制人
+      - 国资/外资持股比例
+    analysis_prompt: |
+      判断企业主体规模、组织属性、上市状态和股权复杂度，为后续产品匹配提供基础画像。
+      只能基于工商、股东和本地画像字段分析，不得编造实际控制人或持股比例。
+    evidence_policy: |
+      企业名称、行业、员工规模、上市状态和股东摘要属于直接画像证据。
+      股权穿透、实际控制人、国资或外资比例缺失时，只能标记为待补充证据。
+    support_rules:
+      - field: is_listed
+        op: "=="
+        value: true
+        claim: 上市状态为是，企业治理、合规披露和多系统协同要求通常更高。
+        confidence: 中
+      - field: branch_count
+        op: ">="
+        value: 3
+        claim: 分支机构较多，可能存在多组织管理和权限协同需求。
+        confidence: 低
+    web_search_queries:
+      - "{company_name} 实际控制人"
+      - "{company_name} 股权结构"
+      - "{company_name} 年报"
+
+  - id: business_product
+    level1: 业务模式与产品特征
+    level2: 行业与产业链定位
+    level3: 主营业务与产品属性
+    role: C端业务多维度分析师
+    local_fields:
+      - industry
+      - industry_big
+      - industry_small
+      - business_scope
+      - labels
+      - ip_counts
+    evidence_templates:
+      - field: industry_big
+        label: 细分行业
+      - field: business_scope
+        label: 经营范围
+      - field: labels
+        label: 标签
+      - field: ip_counts
+        label: 知识产权
+    insufficient_evidence:
+      - 官网产品线
+      - 产品型号与技术规格
+      - 目标客群
+    analysis_prompt: |
+      判断企业主营业务、产品属性、产业链位置和目标客群线索。
+      本地经营范围和标签只能作为业务范围线索，不能替代官网产品或实际销售资料。
+    evidence_policy: |
+      经营范围、行业分类和知识产权是间接证据；官网产品线、产品型号、客户案例是更强证据。
+      如果缺少产品明细，需要明确保留数据缺口。
+    support_rules:
+      - field: business_scope
+        op: "exists"
+        claim: 经营范围可作为主营业务和产品方向的基础线索。
+        confidence: 低
+      - field: ip_counts.patent
+        op: ">"
+        value: 0
+        claim: 存在专利记录，可作为产品或技术资产线索。
+        confidence: 低
+    web_search_queries:
+      - "{company_name} 官网 产品"
+      - "{company_name} 主营产品"
+      - "{company_name} 客户案例"
+
+  - id: supply_chain_procurement
+    level1: 供应链与采购管理
+    level2: 采购规模与特征
+    level3: 供应链复杂度
+    role: 供应链管理与商业调研专家
+    local_fields:
+      - industry
+      - employee_count
+      - business_scope
+      - bidding_total
+      - qualification_count
+    evidence_templates:
+      - field: industry
+        label: 行业
+      - field: employee_count
+        label: 员工规模
+      - field: bidding_total
+        label: 招投标数量
+      - field: qualification_count
+        label: 资质数量
+    insufficient_evidence:
+      - 供应商数量
+      - 前五大供应商集中度
+      - 年采购金额
+      - 采购物料类型
+    analysis_prompt: |
+      判断企业是否存在采购协同、供应商准入、供应商绩效、采购合规等数字化需求。
+      只能基于已提供证据分析，不得编造供应商数量、采购金额或采购品类。
+    evidence_policy: |
+      直接采购数据优先于行业和规模推断。制造业、员工规模、资质和招投标只能作为间接线索。
+      没有供应商和采购金额证据时，不得给出高置信结论。
+    support_rules:
+      - field: employee_count
+        op: ">="
+        value: 200
+        claim: 员工规模较大，可能存在采购流程协同与供应商管理需求。
+        confidence: 低
+      - field: bidding_total
+        op: ">"
+        value: 0
+        claim: 存在招投标记录，可作为项目型采购或销售管理复杂度线索。
+        confidence: 低
+      - field: industry
+        op: "contains"
+        value: 制造
+        claim: 制造业属性提示可能存在原材料、零部件或设备采购管理场景。
+        confidence: 低
+    web_search_queries:
+      - "{company_name} 供应商"
+      - "{company_name} 采购"
+      - "{company_name} 招投标"
+
+  - id: sales_channel
+    level1: 销售与市场覆盖
+    level2: 销售模式与网络
+    level3: 渠道与市场覆盖
+    role: C端业务多维度分析师
+    local_fields:
+      - labels
+      - branch_count
+      - recruitment_count
+      - recent_recruitment_titles
+      - cross_border_flags
+    evidence_templates:
+      - field: branch_count
+        label: 分支机构数量
+      - field: recruitment_count
+        label: 招聘数量
+      - field: recent_recruitment_titles
+        label: 近期招聘岗位
+      - field: cross_border_flags
+        label: 跨境标签
+    insufficient_evidence:
+      - 经销商数量
+      - 渠道收入占比
+      - 电商平台覆盖
+    analysis_prompt: |
+      判断企业销售模式、渠道覆盖、跨区域经营和客户触达复杂度。
+      招聘、分支机构、跨境标签只能作为销售网络线索，不能替代渠道收入和客户结构证据。
+    evidence_policy: |
+      分支机构、招聘岗位和跨境标签属于间接证据；经销商、门店、电商平台和客户案例属于直接证据。
+      缺少渠道明细时，应保留渠道收入和经销商数量等缺口。
+    support_rules:
+      - field: branch_count
+        op: ">="
+        value: 2
+        claim: 分支机构数量提示可能存在跨区域销售或服务网络。
+        confidence: 低
+      - field: cross_border_flags.labels
+        op: "exists"
+        claim: 存在跨境标签，可能涉及海外客户或跨境业务协同。
+        confidence: 低
+    web_search_queries:
+      - "{company_name} 经销商"
+      - "{company_name} 销售网络"
+      - "{company_name} 电商"
+
+  - id: hr_workforce
+    level1: 人力资源与用工特征
+    level2: 用工与考勤特征
+    level3: 用工规模与岗位结构
+    role: 企业运营与人力资源分析师
+    local_fields:
+      - employee_count
+      - recruitment_count
+      - recent_recruitment_titles
+    evidence_templates:
+      - field: employee_count
+        label: 员工规模
+      - field: recruitment_count
+        label: 招聘数量
+      - field: recent_recruitment_titles
+        label: 近期招聘岗位
+    insufficient_evidence:
+      - 倒班/排班制度
+      - 考勤打卡要求
+      - 劳动争议情况
+    analysis_prompt: |
+      判断企业是否存在组织人事、招聘、考勤、排班、薪酬绩效和用工合规需求。
+      员工规模和招聘数量只能支持初步判断，不能直接推断具体排班制度。
+    evidence_policy: |
+      员工规模、招聘岗位是用工复杂度线索；考勤制度、排班制度和劳动争议是更强证据。
+      证据不足时建议补充招聘详情、厂区班制和劳动关系记录。
+    support_rules:
+      - field: employee_count
+        op: ">="
+        value: 100
+        claim: 员工规模较大，可能存在组织人事、考勤和薪酬管理需求。
+        confidence: 低
+      - field: recruitment_count
+        op: ">"
+        value: 0
+        claim: 存在招聘记录，可作为组织扩张或岗位管理需求线索。
+        confidence: 低
+    web_search_queries:
+      - "{company_name} 招聘"
+      - "{company_name} 普工 招聘"
+      - "{company_name} 劳动争议"
+
+  - id: finance_tax
+    level1: 财务与税务特征
+    level2: 财税数字化水平
+    level3: 财务管理复杂度
+    role: 财税数字化专家
+    local_fields:
+      - employee_count
+      - branch_count
+      - shareholder_summary
+      - risk_counts
+      - bank_flags
+    evidence_templates:
+      - field: employee_count
+        label: 员工规模
+      - field: branch_count
+        label: 分支机构数量
+      - field: shareholder_summary
+        label: 股东结构
+      - field: bank_flags
+        label: 银行标签
+    insufficient_evidence:
+      - 财务系统使用情况
+      - 全电票试点情况
+      - 财务共享或业财一体化线索
+    analysis_prompt: |
+      判断企业财务核算、预算、合并报表、业财一体化、税务合规和票据管理复杂度。
+      不能仅凭规模直接断定已使用或需要某一具体系统。
+    evidence_policy: |
+      上市、多组织、股东结构和银行标签可作为财务复杂度线索；财务系统、发票、税务和报表披露是直接证据。
+      没有系统使用证据时，推荐理由需保留“待核实”。
+    support_rules:
+      - field: employee_count
+        op: ">="
+        value: 300
+        claim: 员工规模较大，可能存在财务核算、费用和预算管理复杂度。
+        confidence: 低
+      - field: branch_count
+        op: ">="
+        value: 3
+        claim: 多分支机构提示可能存在多组织财务和合并管理需求。
+        confidence: 低
+      - field: bank_flags.high_quality_customer
+        op: "=="
+        value: true
+        claim: 银行高质量客户标签可作为金融服务和财务管理成熟度线索。
+        confidence: 低
+    web_search_queries:
+      - "{company_name} 年报 财务"
+      - "{company_name} 全电票"
+      - "{company_name} 财务系统"
+
+  - id: tech_innovation
+    level1: 科技创新与研发能力
+    level2: 研发投入与资质
+    level3: 资质与知识产权
+    role: 企业尽职调查与资质验证专家
+    local_fields:
+      - ip_counts
+      - qualification_count
+      - labels
+      - recent_recruitment_titles
+    evidence_templates:
+      - field: ip_counts
+        label: 知识产权数量
+      - field: qualification_count
+        label: 资质数量
+      - field: labels
+        label: 科技资质标签
+    insufficient_evidence:
+      - 发明专利明细
+      - 研发费用占比
+      - 研发人员占比
+    analysis_prompt: |
+      判断企业科技资质、研发投入、知识产权资产和研发管理复杂度。
+      知识产权数量可作为技术资产线索，但不能直接等同于研发投入强度。
+    evidence_policy: |
+      专利、软著、商标、科技资质属于直接资产线索；研发费用和研发人员占比需要年报或专项资料支撑。
+      缺少明细时应保留发明专利、研发费用和研发团队缺口。
+    support_rules:
+      - field: ip_counts.patent
+        op: ">="
+        value: 20
+        claim: 专利数量较多，推断企业具备一定研发或技术资产管理需求。
+        confidence: 中
+      - field: qualification_count
+        op: ">"
+        value: 0
+        claim: 存在资质记录，可能需要资质维护和研发资产台账管理。
+        confidence: 低
+    web_search_queries:
+      - "{company_name} 高新技术企业"
+      - "{company_name} 专利"
+      - "{company_name} 研发费用"
+
+  - id: compliance_risk
+    level1: 合规与风险评估
+    level2: 法律风险排查
+    level3: 风险与合规信号
+    role: 复合型商业尽调专家团队
+    local_fields:
+      - risk_counts
+      - reg_status
+      - is_listed
+      - bidding_total
+      - qualification_count
+    evidence_templates:
+      - field: risk_counts
+        label: 风险计数
+      - field: reg_status
+        label: 登记状态
+      - field: is_listed
+        label: 上市状态
+      - field: qualification_count
+        label: 资质数量
+    insufficient_evidence:
+      - 股权质押风险
+      - 关联交易风险
+      - 验厂记录
+    analysis_prompt: |
+      判断企业法律、经营、资质、上市披露和合规管理风险。
+      风险计数只说明记录数量，不代表风险性质或严重程度，必须结合具体风险类型解释。
+    evidence_policy: |
+      风险计数、登记状态、资质数量是风险排查线索；案件详情、处罚文书和披露公告是更强证据。
+      不得把工商变更数量直接等同于负面风险。
+    support_rules:
+      - field: risk_counts.self
+        op: ">="
+        value: 20
+        claim: 自身风险记录较多，建议建立风险台账和合规跟踪机制。
+        confidence: 中
+      - field: risk_counts.judgement_doc
+        op: ">"
+        value: 0
+        claim: 存在裁判文书记录，需进一步核实案由、金额和责任主体。
+        confidence: 中
+      - field: risk_counts.change
+        op: ">="
+        value: 20
+        claim: 工商变更记录较多，提示主体治理和历史沿革需要进一步核查。
+        confidence: 低
+    web_search_queries:
+      - "{company_name} 行政处罚"
+      - "{company_name} 裁判文书"
+      - "{company_name} 合规 风险"
+
+  - id: overseas_business
+    level1: 海外业务与全球化
+    level2: 海外收入与布局
+    level3: 跨境业务线索
+    role: 企业出海业务分析师
+    local_fields:
+      - cross_border_flags
+      - registered_capital
+      - company_org_type
+      - labels
+    evidence_templates:
+      - field: cross_border_flags
+        label: 跨境业务标签
+      - field: registered_capital
+        label: 注册资本
+      - field: company_org_type
+        label: 企业类型
+    insufficient_evidence:
+      - 海外收入占比
+      - 海外团队岗位
+      - 海外产能布局
+    analysis_prompt: |
+      判断企业是否存在出口、跨境服务、海外客户、海外团队或海外产能布局线索。
+      跨境标签只能作为线索，不得直接编造海外收入和海外客户。
+    evidence_policy: |
+      跨境标签、进出口相关经营范围是间接证据；海关、官网、年报和海外招聘信息是更强证据。
+      缺少海外收入和布局信息时，必须标记为待补充。
+    support_rules:
+      - field: cross_border_flags.labels
+        op: "exists"
+        claim: 存在跨境业务标签，可能涉及出口、服务贸易或海外客户管理。
+        confidence: 低
+      - field: business_scope
+        op: "contains"
+        value: 进出口
+        claim: 经营范围包含进出口相关表述，可作为海外业务线索。
+        confidence: 低
+    web_search_queries:
+      - "{company_name} 出口"
+      - "{company_name} 海外"
+      - "{company_name} import export"
+
+  - id: digitalization
+    level1: 数字化与信息化水平
+    level2: 信息化系统应用
+    level3: 数字化建设与系统痛点
+    role: 企业运营与人力资源分析师
+    local_fields:
+      - employee_count
+      - branch_count
+      - recent_recruitment_titles
+      - ip_counts
+      - labels
+    evidence_templates:
+      - field: employee_count
+        label: 员工规模
+      - field: branch_count
+        label: 多组织程度
+      - field: recent_recruitment_titles
+        label: 招聘岗位
+      - field: labels
+        label: 企业标签
+    insufficient_evidence:
+      - ERP/CRM/MES/PLM系统使用情况
+      - 系统孤岛与数据治理情况
+      - 协同办公痛点
+    analysis_prompt: |
+      判断企业在 ERP、CRM、MES、PLM、数据分析、协同办公等方面的数字化建设和潜在痛点。
+      规模、多组织和招聘岗位只能作为数字化复杂度线索，不能替代系统使用证据。
+    evidence_policy: |
+      员工规模、分支机构、知识产权和招聘岗位是间接线索；系统招标、招聘 JD、官网案例和公开项目是直接证据。
+      未发现系统证据时，应建议通过 Web search 或访谈补充。
+    support_rules:
+      - field: employee_count
+        op: ">="
+        value: 300
+        claim: 员工规模较大，弱推测存在系统协同和经营数据整合需求。
+        confidence: 低
+      - field: branch_count
+        op: ">="
+        value: 3
+        claim: 多组织特征提示可能存在权限、流程和数据口径统一需求。
+        confidence: 低
+      - field: recent_recruitment_titles
+        op: "contains"
+        value: IT
+        claim: 招聘岗位出现 IT 相关线索，可能存在信息化建设需求。
+        confidence: 低
+    web_search_queries:
+      - "{company_name} ERP"
+      - "{company_name} MES"
+      - "{company_name} 数字化"

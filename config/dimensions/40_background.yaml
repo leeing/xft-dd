@@ -4,7 +4,7 @@ order: 40
 enabled: true
 required: false
 minimax_queries:
-- '"{target}" 官方网页'
+  - '"{target}" 官方网页'
 metaso_queries:
 - '{target} 企业性质 股东 实际控制人 股权结构'
 - '{target} 公司背景 注册资本 成立时间 行政处罚 失信记录'

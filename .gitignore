@@ -3,6 +3,7 @@ __pycache__/
 *.pyo
 .venv/
 .env
+db.env
 *.egg-info/
 dist/
 build/
@@ -14,3 +15,12 @@ runs/
 batch_runs/
 .DS_Store
 .codex/
+# Local DuckDB
+cache/diligence_local.duckdb
+
+company.txt
+enquery.xlsx
+
+/data/
+/cache/
+recommendation_runs/

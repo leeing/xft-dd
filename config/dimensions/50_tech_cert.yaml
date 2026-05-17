@@ -7,8 +7,6 @@ minimax_queries:
 - '"{target}" 高新技术企业'
 - '"{target}" 专精特新'
 - '"{target}" 小巨人'
-- '"{target}" 隐形冠军'
-- '"{target}" 资质认证'
 metaso_queries:
 - '{target}是否是国家高新技术企业？证书编号是什么？认定年份是哪年？'
 - '{target}是否获得专精特新中小企业或专精特新小巨人认定？是否有双软认证或ISO认证？'

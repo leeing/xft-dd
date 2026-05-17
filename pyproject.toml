@@ -13,6 +13,10 @@ dependencies = [
     "httpx>=0.28.1",
     "keyring>=25.7.0",
     "crawl4ai>=0.8.5",
+    "duckdb>=1.0",
+    "sqlalchemy>=2.0",
+    "aiosqlite>=0.20",
+    "asyncpg>=0.30",
 ]
 
 [dependency-groups]
@@ -32,7 +36,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/diligence"]
+packages = ["src/diligence", "src/xft"]
 
 [tool.ruff]
 target-version = "py312"
@@ -50,6 +54,7 @@ unfixable = ["S307", "S609", "S301", "S302", "S105", "S106", "S107"]
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["S101", "PLR2004", "ARG001", "S324", "S603", "PLW1510", "FBT001", "FBT002", "N802", "SIM117", "I001"]
 "src/diligence/utils/minimax_search.py" = ["S603", "S607"]
+"src/xft/utils/minimax_search.py" = ["S603", "S607"]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 10

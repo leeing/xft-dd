@@ -6,7 +6,13 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from diligence.models import SearchItem, make_item_id
-from diligence.utils.fetch import _crawl_priority_key, _should_fetch, enrich_items
+from diligence.utils.fetch import (
+    _crawl_priority_key,
+    _fetch_page_markdown,
+    _is_unsafe_crawl_url,
+    _should_fetch,
+    enrich_items,
+)
 
 
 def _make_item(
@@ -63,6 +69,18 @@ def test_should_fetch_none_url_returns_false() -> None:
 
 def test_should_fetch_metaso_url_always_skipped() -> None:
     assert _sf("metaso://search?q=test", TARGET) is False
+
+
+def test_should_fetch_known_unsafe_domain_skipped() -> None:
+    assert _sf("https://www.smeok.com/h-pd-24790.html?m1139pageno=2", TARGET) is False
+
+
+def test_should_fetch_download_file_skipped() -> None:
+    assert _sf("https://example.com/report.xlsx?from=search", TARGET) is False
+
+
+def test_is_unsafe_crawl_url_handles_encoded_download_path() -> None:
+    assert _is_unsafe_crawl_url("https://example.com/%E6%8A%A5%E5%91%8A.pdf") is True
 
 
 def test_should_fetch_title_mismatch_snippet_match_allowed() -> None:
@@ -280,6 +298,15 @@ async def test_enrich_items_returns_original_order_after_priority_crawl() -> Non
     assert fetch_urls[0] == "https://gsxt.gov.cn/1"
 
 
+async def test_fetch_page_markdown_catches_driver_error() -> None:
+    class BrokenCrawler:
+        async def arun(self, _url: str) -> object:
+            msg = "Connection closed while reading from the driver"
+            raise RuntimeError(msg)
+
+    assert await _fetch_page_markdown("https://example.com", BrokenCrawler()) == ""
+
+
 async def test_enrich_items_avoid_items_not_fetched_but_preserved() -> None:
     """Avoid-bias items skip crawl but remain in the output for snippet fallback."""
     items = [
@@ -302,3 +329,27 @@ async def test_enrich_items_avoid_items_not_fetched_but_preserved() -> None:
     assert result[0].full_text != ""  # fetched
     assert result[2].full_text != ""  # fetched
     assert "qcc.com" not in fetch_urls
+
+
+async def test_enrich_items_unsafe_items_not_fetched_but_preserved() -> None:
+    """Unsafe crawl URLs skip crawl but remain available for snippet fallback."""
+    items = [
+        _make_item("https://example.com/1", title=TARGET + " A"),
+        _make_item("https://www.smeok.com/h-pd-24790.html?m1139pageno=2", title=TARGET + " B"),
+        _make_item("https://example.com/report.pdf", title=TARGET + " C"),
+    ]
+    fetch_urls: list[str] = []
+    mock_crawler = MagicMock()
+
+    async def record_fetch(url: str, crawler: object, timeout_ms: int = 25000, max_chars: int = 6900) -> str:
+        fetch_urls.append(url)
+        return "content " * 50
+
+    with patch("diligence.utils.fetch._fetch_page_markdown", new=AsyncMock(side_effect=record_fetch)):
+        result = await enrich_items(items, blocked_domains=[], target=TARGET, crawler=mock_crawler)
+
+    assert len(result) == 3
+    assert result[0].full_text != ""
+    assert result[1].full_text == ""
+    assert result[2].full_text == ""
+    assert fetch_urls == ["https://example.com/1"]
