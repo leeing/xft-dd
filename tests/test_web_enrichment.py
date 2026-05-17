@@ -10,11 +10,11 @@ import pytest
 import yaml
 
 from diligence.models import SearchItem, make_item_id
-from diligence.recommender.web.config_loader import load_web_search_config
-from diligence.recommender.web.models import ProviderSearchResponse
-from diligence.recommender.web.planner import plan_web_search
-from diligence.recommender.web.runner import run_web_enrichment
-from diligence.recommender.web.web_loader import load_web_cache_to_duckdb
+from diligence.web.config_loader import load_web_search_config
+from diligence.web.models import ProviderSearchResponse
+from diligence.web.planner import plan_web_search
+from diligence.web.runner import run_web_enrichment
+from diligence.web.web_loader import load_web_cache_to_duckdb
 from diligence.warehouse.prophet_loader import load_prophet_data
 
 
@@ -187,7 +187,7 @@ def test_default_web_search_config_uses_minimax() -> None:
 
 
 def test_planner_skips_supported_dimensions() -> None:
-    from diligence.recommender.models import DimensionAnalysis, EvidenceFact
+    from diligence.pipeline.recommender.models import DimensionAnalysis, EvidenceFact
 
     analysis = DimensionAnalysis(
         dimension_id="basic_profile",
@@ -222,7 +222,7 @@ async def test_run_web_enrichment_writes_cache_and_loads_duckdb(
     def fake_build_provider(_name: str, _config: Any) -> _FakeProvider:
         return _FakeProvider()
 
-    monkeypatch.setattr("diligence.recommender.web.runner.build_provider", fake_build_provider)
+    monkeypatch.setattr("diligence.web.runner.build_provider", fake_build_provider)
 
     result = await run_web_enrichment(
         company_name="广东德美精细化工集团股份有限公司",
@@ -281,7 +281,7 @@ async def test_run_web_enrichment_extract_only_reuses_cached_search(
         calls += 1
         return _FakeProvider()
 
-    monkeypatch.setattr("diligence.recommender.web.runner.build_provider", fake_build_provider)
+    monkeypatch.setattr("diligence.web.runner.build_provider", fake_build_provider)
 
     first = await run_web_enrichment(
         company_name="广东德美精细化工集团股份有限公司",
@@ -303,7 +303,7 @@ async def test_run_web_enrichment_extract_only_reuses_cached_search(
         msg = "provider should not be called in extract-only mode"
         raise AssertionError(msg)
 
-    monkeypatch.setattr("diligence.recommender.web.runner.build_provider", fail_build_provider)
+    monkeypatch.setattr("diligence.web.runner.build_provider", fail_build_provider)
 
     second = await run_web_enrichment(
         company_name="广东德美精细化工集团股份有限公司",
@@ -348,7 +348,7 @@ async def test_run_web_enrichment_provider_config_change_invalidates_search_cach
         calls += 1
         return _FakeProvider()
 
-    monkeypatch.setattr("diligence.recommender.web.runner.build_provider", fake_build_provider)
+    monkeypatch.setattr("diligence.web.runner.build_provider", fake_build_provider)
 
     first = await run_web_enrichment(
         company_name="广东德美精细化工集团股份有限公司",

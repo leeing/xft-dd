@@ -1,26 +1,9 @@
-"""Small data structures for warehouse ETL."""
+"""Compatibility alias for `xft.warehouse.models`."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import importlib as _importlib
+import sys as _sys
 
-
-@dataclass(frozen=True)
-class CompanyPackage:
-    """A discovered Prophet enterprise data directory."""
-
-    credit_code: str
-    company_name: str
-    directory_name: str
-    json_files: tuple[str, ...]
-
-
-@dataclass
-class ImportSummary:
-    """Summary returned by the Prophet JSON to DuckDB importer."""
-
-    companies: int = 0
-    raw_json_rows: int = 0
-    import_status_counts: dict[str, int] = field(default_factory=dict)
-    table_rows: dict[str, int] = field(default_factory=dict)
-
+_module = _importlib.import_module("xft.warehouse.models")
+_sys.modules[__name__] = _module

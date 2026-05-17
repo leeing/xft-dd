@@ -8,7 +8,7 @@ import sys
 
 from dotenv import load_dotenv
 
-from diligence.recommender.web import run_web_enrichment
+from xft.web import run_web_enrichment
 
 
 def _csv(value: str | None) -> list[str] | None:

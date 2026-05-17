@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from diligence.recommender.web import load_web_cache_to_duckdb
+from xft.web import load_web_cache_to_duckdb
 
 
 def _parse_args() -> argparse.Namespace:
@@ -37,4 +37,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

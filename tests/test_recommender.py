@@ -6,11 +6,11 @@ from pathlib import Path
 import pytest
 import yaml
 
-from diligence.recommender.config_loader import load_dimensions_config, load_products_config
-from diligence.recommender.dimension_analyzer import analyze_dimensions
-from diligence.recommender.graph import run_recommendation
-from diligence.recommender.models import AnalysisDimension, EvidenceTemplate, MatchResult, ProductModule
-from diligence.recommender.recommendation_normalizer import normalize_recommendation_payload
+from diligence.pipeline.recommender.config_loader import load_dimensions_config, load_products_config
+from diligence.pipeline.recommender.dimension_analyzer import analyze_dimensions
+from diligence.pipeline.recommender.graph import run_recommendation
+from diligence.pipeline.recommender.models import AnalysisDimension, EvidenceTemplate, MatchResult, ProductModule
+from diligence.pipeline.recommender.recommendation_normalizer import normalize_recommendation_payload
 from diligence.warehouse.prophet_loader import load_prophet_data
 
 

@@ -5,11 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from diligence.recommender.config_loader import load_dimensions_config, load_products_config
-from diligence.recommender.graph import run_recommendation
-from diligence.recommender.scenario import load_scenario
-from diligence.recommender.web.config_loader import load_web_extract_llm_config, load_web_search_config
-from diligence.warehouse.prophet_loader import load_prophet_data
+from xft.pipeline.recommender.config_loader import load_dimensions_config, load_products_config
+from xft.pipeline.recommender.graph import run_recommendation
+from xft.pipeline.recommender.scenario import load_scenario
+from xft.web.config_loader import load_web_extract_llm_config, load_web_search_config
+from xft.warehouse.prophet_loader import load_prophet_data
 
 
 SCENARIO_DIR = Path("config/scenarios/sales_recommendation")
@@ -66,6 +66,56 @@ def test_load_scenario_resolves_bundle_paths() -> None:
     assert scenario.config.id == "sales_recommendation"
     assert scenario.products_path.endswith("config/scenarios/sales_recommendation/products.yaml")
     assert scenario.prompt_paths["match_system"].endswith("prompts/match_system.md")
+
+
+def test_scenario_extends_and_writes_resolved_config(tmp_path: Path) -> None:
+    parent = tmp_path / "base"
+    child = tmp_path / "child"
+    parent.mkdir()
+    child.mkdir()
+    (parent / "scenario.yaml").write_text(
+        """
+version: "1.0"
+id: base_sales
+name: 基础销售场景
+products_config: products.yaml
+dimensions_config: analysis_dimensions.yaml
+web_search_config: web_search.yaml
+web_extract_llm_config: web_extract_llm.yaml
+prompts:
+  match_system: prompts/match.md
+output_dir: runs/base
+web_cache_root: web/base
+""",
+        encoding="utf-8",
+    )
+    (child / "scenario.yaml").write_text(
+        """
+extends: ../base
+id: child_sales
+name: 子销售场景
+overrides:
+  prompts:
+    recommend_system: prompts/recommend.md
+  output_dir: runs/child
+""",
+        encoding="utf-8",
+    )
+
+    scenario = load_scenario(child)
+
+    assert scenario is not None
+    assert scenario.config.id == "child_sales"
+    assert scenario.config.products_config.endswith("base/products.yaml")
+    assert scenario.prompt_paths["match_system"].endswith("base/prompts/match.md")
+    assert scenario.prompt_paths["recommend_system"].endswith("child/prompts/recommend.md")
+    assert scenario.output_dir is not None
+    assert scenario.output_dir.endswith("child/runs/child")
+    resolved_path = scenario.write_resolved_config(tmp_path / "scenario_resolved.json")
+    resolved = json.loads(resolved_path.read_text(encoding="utf-8"))
+    assert resolved["id"] == "child_sales"
+    assert resolved["products_path"].endswith("base/products.yaml")
+    assert resolved["prompt_paths"]["recommend_system"].endswith("child/prompts/recommend.md")
 
 
 def test_config_loaders_accept_scenario_directory() -> None:

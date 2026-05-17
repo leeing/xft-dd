@@ -6,8 +6,8 @@ from typing import Any
 
 import pytest
 
-from diligence.recommender.batch import BatchOptions, run_recommendation_batch
-from diligence.recommender.models import RecommendationRunResult
+from diligence.pipeline.recommender.batch import BatchOptions, run_recommendation_batch
+from diligence.pipeline.recommender.models import RecommendationRunResult
 
 
 async def _fake_runner(**kwargs: Any) -> RecommendationRunResult:

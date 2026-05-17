@@ -10,7 +10,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from diligence.warehouse import load_prophet_data
+from xft.warehouse import load_prophet_data
 
 
 def _parse_args() -> argparse.Namespace:
@@ -48,4 +48,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

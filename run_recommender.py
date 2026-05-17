@@ -10,8 +10,8 @@ from pathlib import Path
 import structlog
 from dotenv import load_dotenv
 
-from diligence.recommender import run_recommendation
-from diligence.recommender.batch import BatchOptions, run_recommendation_batch
+from xft.pipeline.recommender import run_recommendation
+from xft.pipeline.recommender.batch import BatchOptions, run_recommendation_batch
 
 
 def _csv(value: str | None) -> list[str] | None:

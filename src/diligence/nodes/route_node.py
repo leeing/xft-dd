@@ -1,12 +1,9 @@
-"""route_node: fan-out via LangGraph Send API -- one branch per active dimension."""
+"""Compatibility alias for `xft.pipeline.diligence.nodes.route_node`."""
 
 from __future__ import annotations
 
-from langgraph.types import Send
+import importlib as _importlib
+import sys as _sys
 
-from diligence.state import DiligenceState
-
-
-def route_node(state: DiligenceState) -> list[Send]:
-    """Send one search task per active dimension."""
-    return [Send("search_summarize_node", {**state, "current_dimension": dim}) for dim in state["active_dimensions"]]
+_module = _importlib.import_module("xft.pipeline.diligence.nodes.route_node")
+_sys.modules[__name__] = _module

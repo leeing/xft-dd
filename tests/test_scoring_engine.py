@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from diligence.evidence.models import EvidenceRecord
-from diligence.recommender.models import DimensionAnalysis, ProductModule
-from diligence.recommender.scoring.models import ScoringContext
-from diligence.recommender.scoring.score_engine import score_products
+from diligence.pipeline.recommender.models import DimensionAnalysis, ProductModule
+from diligence.scoring.models import ScoringContext
+from diligence.scoring.score_engine import score_products
 
 
 def test_score_engine_applies_positive_negative_and_exclusion_rules() -> None:
