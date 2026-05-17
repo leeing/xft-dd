@@ -1,95 +1,126 @@
 # TECH_DEBT.md
 
-本文档记录 2026-05-17 配置治理 Sprint 后仍然真实存在的技术债务。已完成的历史迁移和配置化事项不再保留为待办。
+本文档记录当前真实存在的技术债。当前优先级是正确性、可配置性和文档一致性；扩展性相关事项暂时后置。
 
 ## 当前基线
 
-项目已经完成第一轮平台化收敛：
+项目已经收敛为 `uv run xft <command>` 的产品化 CLI：
 
-- 根包统一为 `src/xft`，`src/diligence` 旧目录已删除。
-- `xft.pipeline.recommender` 是当前主力销售产品推荐场景。
-- `xft.pipeline.diligence` 是旧尽调报告场景，已隔离为 pipeline。
-- `xft.warehouse`、`xft.evidence`、`xft.web`、`xft.scoring`、`xft.ai`、`xft.cache`、`xft.runtime` 已形成通用基础设施。
-- Scenario bundle 已支持产品、维度、Web、LLM、评分、证据策略和 prompt 的统一配置入口。
-- `scoring_policy.yaml` 与 `evidence_policy.yaml` 已接入运行链路。
-- `xft.runtime.batch`、质量报告、交付清单、失败清单已经可用。
-- 最近验证基线：`ruff` / `mypy` 通过，`pytest` 为 `399 passed`。
+- `uv run xft recommend`：产品推荐流水线
+- `uv run xft diligence`：企业尽调流水线
+- `uv run xft calibrate`：推荐校准
+- `uv run xft web enrich/import`：Web 补证和入库
+- `uv run xft warehouse build`：本地 JSON 入库
+- `uv run xft scenario validate/inspect`：场景配置校验和审计
 
-## 高优先级技术债务
+当前验证结果：
 
-### 1. 报告文案仍依赖 fallback 模板
+- 入口帮助：通过
+- `sales_recommendation` 场景校验：通过
+- `bank_marketing` 场景校验：通过
+- 推荐流水线离线运行：通过
+- 尽调流水线 dry-run：通过
+- CLI / 冒烟入口测试：`18 passed`
+- 全量测试：`455 passed`
+- `uv run mypy src`：通过
+- `uv run ruff check src tests`：通过
 
-状态：未完成。
+## 高优先级技术债
 
-现状：
-
-- 无 LLM 模式可以稳定跑通。
-- 但 fallback 推荐文案比较机械。
-
-风险：
-
-- 对业务人员来说，报告可读性和销售可用性还不够。
-
-建议：
-
-- 每个产品模块增加 `pitch_template`。
-- 报告明确标识规则模式、LLM 模式、Web 模式。
-- 在真实校准后再优化报告，不要早于推荐质量验证。
-
-### 2. 真实 Web / LLM 带标注样本仍偏少
+### 1. 真实业务标注样本不足
 
 状态：未完成。
 
 现状：
 
-- 第一轮真实链路校准已完成。
-- 已验证默认跳过策略、强制 Web 搜索、crawl4ai 抓取、LLM 抽取过滤、DuckDB 入库和报告读取。
-- 已生成 `web_llm_review_samples.csv`，但还缺业务人员标注后的 5-10 家样本。
+- 校准 CLI 已可用。
+- Web / LLM 链路已做过第一轮验证。
+- 但缺少业务人员标注后的 5-10 家真实样本。
 
-风险：
+影响：
 
-- 当前只能说明链路可跑，不能说明推荐 Top1/可接受命中率已经达到业务标准。
+- 当前只能证明流水线可运行，不能证明推荐结果足够准。
 
 建议：
 
 1. 业务人员补 `calibration_labels.csv`。
-2. 跑 5-10 家 `--with-web --with-llm --labels`。
-3. 根据错配案例调整产品规则、评分策略、证据策略和 prompt。
+2. 跑：
 
-### 3. 根级旧尽调兼容模块已删除 ~~仍存在~~
+```bash
+uv run xft calibrate \
+  --scenario config/scenarios/sales_recommendation \
+  --company-list company.txt \
+  --labels calibration_labels.csv \
+  --limit 10
+```
 
-状态：**已完成（2026-05-17）。**
+3. 根据错配案例调整配置。
 
-已删除以下兼容转发文件：
-- `src/xft/graph.py`, `config.py`, `state.py`, `batch.py`, `crawler_mode.py`, `models.py`
-- `src/xft/nodes/` 整个包（8 个文件）
-- `src/xft/pipeline/recommender/scenario.py`, `dimension_analyzer.py`, `profile_repository.py`
+### 2. `bank_marketing` 仍是示例场景，不是真实验收场景
 
-所有 import 已直接指向 `xft.pipeline.diligence.*` 和 `xft.core.*` 真实模块。
+状态：未完成。
 
-## 当前建议优先级
+现状：
 
-1. **真实 Web / LLM 带标注样本扩大**：链路已验证，下一步要验证业务命中率。
-2. **第二个真实业务场景落地**：用产品 patch 验证多场景配置长期可维护性。
-3. **交付包增强**：增加 `.xlsx` 汇总交付和 `.zip` 交付包。
+- `config/scenarios/bank_marketing/scenario.yaml` 已验证 patch 能力。
+- 但它尚未承载完整真实银行营销规则。
 
-## 不再作为技术债跟踪的事项
+影响：
 
-以下事项已经完成，不再列为 debt：
+- “业务人员只通过配置定制场景”的目标，还需要一个真实第二场景验证。
+
+建议：
+
+- 用真实业务规则补全 `bank_marketing`。
+- 跑相同企业，对比 `sales_recommendation` 和 `bank_marketing` 输出差异。
+
+## 中低优先级技术债
+
+### 1. Web / LLM 指标还没有全面进入常规报告
+
+状态：部分完成。
+
+校准报告已有部分指标，但常规推荐报告和批量质量报告中，对 Web cache 命中、LLM fallback、冲突数量、证据覆盖率的展示还不够统一。
+
+当前先不急，等基础推荐质量验证后再做。
+
+### 2. 报告文案仍偏规则模板
+
+状态：未完成。
+
+无 LLM 模式能稳定跑通，但文案比较机械。当前先保证推荐准，再优化表达。
+
+### 3. 交付包仍偏工程产物
+
+状态：未完成。
+
+已有 Markdown、JSON、CSV、manifest，但还没有 `.xlsx` 汇总和 `.zip` 交付包。当前优先级低于正确性和配置调优。
+
+## 已完成，不再作为技术债
 
 - 根包迁移到 `xft`。
 - 删除 `src/diligence`。
-- `xft.web` / `xft.scoring` 解耦 recommender。
-- 旧尽调流水线迁入 `xft.pipeline.diligence`。
-- 通用 runtime batch。
-- batch quality report / delivery manifest。
+- 删除根目录 `.py` 入口脚本。
+- 删除旧兼容 wrapper。
+- 删除 `xft pipeline` 通用入口。
+- 删除根级旧尽调兼容转发模块。
+- Docker 入口统一为 `xft`。
+- 推荐主线稳定在 `xft.pipeline.recommender`。
+- 尽调场景稳定在 `xft.pipeline.diligence`。
 - `scoring_policy.yaml` 配置化。
 - `evidence_policy.yaml` 配置化。
+- Scenario bundle 继承和产品 patch。
 - 推荐结果中的评分解释和证据解释。
 - 业务标注校准 CLI 闭环。
 - 搜索模型下沉到 `xft.core.search_models`。
-- 真实 Web / LLM 第一轮小批次校准。
-- Scenario 产品规则 patch。
 - 配置审计 manifest。
-- `uv run xft <subcommand>` 统一 CLI。
-- 根目录 `.py` 脚本清理。
+- ruff 质量门禁恢复为绿色。
+- 两条流水线冒烟验收流程已写入 `docs/SMOKE.md` 和 README。
+- `tests/test_xft_cli.py` 已覆盖推荐离线冒烟入口和尽调 dry-run 冒烟入口。
+- README 已从业务人员视角补充配置调优指南，覆盖产品规则、维度、评分、证据、Web、LLM、场景 patch 和校准验证。
+
+## 当前建议优先级
+
+1. 扩大真实业务标注样本。
+2. 验证第二个真实业务场景。
+3. 在基础质量稳定后，再考虑交付包和报告表达优化。
