@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 from datetime import UTC, datetime
 
-from xft.models import SearchItem
+from xft.core.search_models import SearchItem
 from xft.progress import display
 from xft.utils.fetch import enrich_items
 from xft.web.cache_writer import WebCacheWriter

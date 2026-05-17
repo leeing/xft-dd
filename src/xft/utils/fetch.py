@@ -18,7 +18,7 @@ import structlog
 from crawl4ai import AsyncWebCrawler  # type: ignore[import-untyped]
 from sqlalchemy.exc import SQLAlchemyError
 
-from xft.models import SearchItem
+from xft.core.search_models import SearchItem
 from xft.settings import settings
 from xft.utils.source_registry import classify_source
 

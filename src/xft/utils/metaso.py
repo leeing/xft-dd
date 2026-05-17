@@ -27,7 +27,7 @@ from typing import Any
 import httpx
 import structlog
 
-from xft.models import SearchItem, make_item_id
+from xft.core.search_models import SearchItem, make_item_id
 
 log = structlog.get_logger(__name__)
 

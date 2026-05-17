@@ -1,15 +1,13 @@
-"""Compatibility exports for the diligence pipeline models."""
+"""Compatibility exports for shared search and diligence pipeline models."""
 
+from xft.core.search_models import DimensionSearchResult, SearchItem, make_item_id
 from xft.pipeline.diligence.models import (
     BatchRunMeta,
     CompanyRunResult,
     CostRecord,
-    DimensionSearchResult,
     DimensionSummary,
     RunError,
     RunMeta,
-    SearchItem,
-    make_item_id,
 )
 
 __all__ = [

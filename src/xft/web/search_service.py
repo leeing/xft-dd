@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from xft.models import SearchItem
+from xft.core.search_models import SearchItem
 from xft.progress import display
 from xft.web.cache_writer import WebCacheWriter
 from xft.web.models import (
