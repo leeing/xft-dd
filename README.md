@@ -119,6 +119,22 @@ uv run xft recommend --with-web --refresh-web "企业名称"
 
 ## 2. 常用运行方式
 
+### 两条流水线最小验收
+
+每次改配置或重构后，建议先跑这两条，确认当前主链路没有坏：
+
+```bash
+# 产品推荐流水线：只用本地数据和规则兜底，不调用 LLM / Web
+uv run xft recommend --no-llm \
+  --scenario config/scenarios/sales_recommendation \
+  "企业名称"
+
+# 企业尽调流水线：只预览搜索计划，不触发外部调用
+uv run xft diligence --dry-run "企业名称"
+```
+
+更完整的冒烟验收流程见 [两条流水线冒烟验收](docs/SMOKE.md)。
+
 ### 单家公司推荐
 
 ```bash
@@ -246,105 +262,217 @@ prompts:
 uv run xft recommend --scenario config/scenarios/sales_recommendation "企业名称"
 ```
 
-### 3.2 配产品：`products.yaml`
+### 3.2 推荐的调优流程
 
-一个产品模块通常包含：
+不要一上来就改很多文件。建议按这个顺序来：
 
-- `module_id`：产品唯一 ID，不建议随意改。
-- `module_name`：报告里展示的产品名称。
-- `priority`：同分时的排序优先级。
-- `base_score`：基础分。
-- `target_needs`：这个产品关注哪些分析维度。
-- `match_rule`：业务解释。
-- `positive_rules`：命中后加分的规则。
-- `negative_rules`：信息缺失或不利信号的扣分规则。
-- `exclusion_rules`：明显不适合时的排除规则。
-
-示例：
-
-```yaml
-products:
-  - module_id: crm_channel
-    module_name: 客户与渠道管理(CRM)
-    priority: 82
-    base_score: 46
-    target_needs:
-      - sales_channel
-      - business_product
-    match_rule: 存在销售团队、跨区域市场、经销渠道或多客户触达线索的企业，优先考虑客户管理和渠道协同。
-    positive_rules:
-      - id: sales_channel_supported
-        dimension_id: sales_channel
-        evidence_type: supported
-        weight: 16
-        reason: 销售与渠道维度已有证据支持。
+```text
+先跑基线 → 看结果哪里不符合预期 → 只改一个配置点 → 校验配置 → 重跑同一批企业 → 对比结果
 ```
 
-### 3.3 配分析维度：`analysis_dimensions.yaml`
+推荐命令：
 
-维度决定系统从哪些角度分析企业。
+```bash
+# 1. 先确认配置能解析
+uv run xft scenario validate config/scenarios/sales_recommendation
 
-一个维度通常包含：
+# 2. 查看最终生效配置，尤其是继承和 patch 后的结果
+uv run xft scenario inspect config/scenarios/sales_recommendation
 
-- `id`：维度 ID。
-- `level1/level2/level3`：报告展示用的分层名称。
-- `local_fields`：优先从本地企业画像读取哪些字段。
-- `evidence_templates`：把字段转成证据时使用的展示名称。
-- `insufficient_evidence`：哪些信息缺失时需要提示。
-- `support_rules`：本地字段满足条件时，自动生成分析判断。
-- `web_search_queries`：本地信息不足时，用哪些关键词搜索 Web。
+# 3. 用本地数据和规则兜底跑一家公司，适合快速看规则是否生效
+uv run xft recommend --no-llm \
+  --scenario config/scenarios/sales_recommendation \
+  "企业名称"
 
-示例：
-
-```yaml
-dimensions:
-  - id: business_product
-    level1: 业务模式与产品特征
-    level2: 行业与产业链定位
-    level3: 主营业务与产品属性
-    local_fields:
-      - industry
-      - business_scope
-      - labels
-    web_search_queries:
-      - "{company_name} 官网 产品"
-      - "{company_name} 主营产品"
-      - "{company_name} 客户案例"
+# 4. 用一批企业做校准，适合看整体命中率和错配案例
+uv run xft calibrate \
+  --scenario config/scenarios/sales_recommendation \
+  --company-list company.txt \
+  --limit 10
 ```
 
-### 3.4 配评分策略：`scoring_policy.yaml`
+如果有业务标注文件，优先带上 `--labels`：
 
-这里控制评分的通用参数，例如：
+```bash
+uv run xft calibrate \
+  --scenario config/scenarios/sales_recommendation \
+  --company-list company.txt \
+  --labels calibration_labels.csv \
+  --limit 10
+```
 
-- 分数上限和下限。
-- 证据质量对分数的影响。
-- 缺失证据的扣分方式。
-- 推荐等级的阈值。
+### 3.3 常见调优目标
 
-如果只是想调整产品匹配逻辑，通常优先改 `products.yaml`；只有要调整全局评分口径时，才改 `scoring_policy.yaml`。
+| 业务现象 | 优先改哪里 | 不建议先改哪里 |
+|----------|------------|----------------|
+| 某个产品经常推荐过高 | `products.yaml` 的 `base_score`、`positive_rules`、`negative_rules` | prompt |
+| 某个产品经常推荐过低 | `products.yaml` 增加加分规则或提高权重 | 全局评分策略 |
+| 报告缺少某类判断依据 | `analysis_dimensions.yaml` 增加维度字段、缺失证据或搜索词 | 产品权重 |
+| 本地数据够多但仍频繁搜索 Web | `evidence_policy.yaml` 的 Web 跳过阈值 | Web provider |
+| Web 结果噪声太多 | `analysis_dimensions.yaml` 的搜索词、`web_search.yaml` 的 provider/页数 | 产品规则 |
+| Web 证据抽取不符合业务口径 | `prompts/extract_evidence_system.md` | 评分策略 |
+| 整体分数偏高或偏低 | `scoring_policy.yaml` | 单个产品规则 |
+| 想做一个新行业/新客群场景 | 新建 `config/scenarios/<新场景>/scenario.yaml`，用 `extends` + `patches` | 复制整份代码 |
 
-### 3.5 配证据策略：`evidence_policy.yaml`
+### 3.4 调产品推荐：`products.yaml`
 
-这里控制证据如何被使用，例如：
+当你觉得“推荐了不该推荐的产品”或“该推荐的产品没上来”，优先改 `products.yaml`。
 
-- 本地 JSON 信息足够时，是否跳过 Web 搜索。
-- 不同来源的优先级。
-- Web 信息和本地 JSON 冲突时如何处理。
-- 证据质量分怎么计算。
+一个产品模块最常调的是：
 
-默认原则是：本地 JSON 已经提供充分信息时，不重复搜索 Web；如果 Web 信息和本地 JSON 冲突，以本地 JSON 为准，并在报告中提示冲突。
+| 字段 | 业务含义 | 调整建议 |
+|------|----------|----------|
+| `base_score` | 产品基础分 | 产品太容易上榜就降低，太难上榜就提高 |
+| `priority` | 同分排序 | 只影响同分或接近分数时的顺序 |
+| `target_needs` | 产品关注的分析维度 | 产品依赖哪些维度，就填哪些维度 ID |
+| `match_rule` | 报告里的业务解释 | 用业务人员能看懂的话描述推荐逻辑 |
+| `positive_rules` | 命中后加分 | 用来表达“出现什么信号就更适合” |
+| `negative_rules` | 扣分 | 用来表达“缺少什么信息或出现什么弱信号就谨慎” |
+| `exclusion_rules` | 排除或强压分 | 用来表达“出现什么情况基本不适合” |
 
-### 3.6 配 Web 搜索：`web_search.yaml`
+示例：员工规模较大时，提高“人力资源与考勤管理”的推荐分：
 
-这里控制 Web 搜索和抓取，例如：
+```yaml
+positive_rules:
+  - id: employee_scale_signal
+    source_field: employee_count
+    op: ">="
+    value: 200
+    weight: 10
+    reason: 员工规模较大，通常存在考勤排班、组织人事与薪酬绩效管理需求。
+```
 
-- 启用哪些 provider。
-- 每个关键词取多少条结果。
-- 是否抓取网页正文。
-- 缓存目录。
-- 是否复用已有搜索/抓取/抽取结果。
+示例：缺少倒班制度信息时，对“人力资源与考勤管理”谨慎扣分：
 
-常用命令：
+```yaml
+negative_rules:
+  - id: missing_shift_policy
+    missing_evidence: 倒班制度
+    penalty: 5
+    reason: 缺少倒班制度信息，影响考勤排班方案判断。
+```
+
+调优建议：
+
+- `weight` 或 `penalty` 一次不要改太大，建议每次调整 `3-8` 分。
+- 如果一个产品总是排第一，先看它是不是 `base_score` 太高。
+- 如果一个产品完全上不来，先看它的 `target_needs` 是否能被维度支持。
+- `reason` 会进入解释链路，写给业务人员看，不要写成技术字段说明。
+
+### 3.5 调分析维度：`analysis_dimensions.yaml`
+
+当你觉得“系统没有看懂企业的某类特征”，改 `analysis_dimensions.yaml`。
+
+一个维度最常调的是：
+
+| 字段 | 业务含义 | 调整建议 |
+|------|----------|----------|
+| `local_fields` | 优先读取哪些本地企业画像字段 | 本地 JSON 已经有的字段，优先加在这里 |
+| `evidence_templates` | 本地字段如何显示成证据 | label 要写成人能读懂的名字 |
+| `insufficient_evidence` | 缺少哪些信息要提示 | 用来告诉报告“还缺什么才能判断更准” |
+| `support_rules` | 本地字段满足条件时如何形成判断 | 适合稳定、明确的业务规则 |
+| `web_search_queries` | 本地不足时搜什么 | 搜索词越具体，噪声越少 |
+| `analysis_prompt` | LLM 分析维度时的要求 | 用来约束不要编造、不要过度推断 |
+| `evidence_policy` | 该维度证据强弱口径 | 写清哪些是强证据，哪些只是弱线索 |
+
+示例：把“招投标数量”作为供应链复杂度线索：
+
+```yaml
+support_rules:
+  - field: bidding_total
+    op: ">"
+    value: 0
+    claim: 存在招投标记录，可作为项目型采购或销售管理复杂度线索。
+    confidence: 低
+```
+
+示例：为业务产品维度增加 Web 搜索词：
+
+```yaml
+web_search_queries:
+  - "{company_name} 官网 产品"
+  - "{company_name} 主营产品"
+  - "{company_name} 客户案例"
+```
+
+调优建议：
+
+- 有明确本地字段时，先加 `local_fields` 和 `support_rules`，不要一开始依赖 Web。
+- 搜索词要带 `{company_name}`，否则容易搜到行业泛信息。
+- `confidence` 不要随便写高。行业、规模、经营范围通常是弱线索；官网产品、客户案例、公告通常更强。
+- `insufficient_evidence` 很重要，它能让报告明确“为什么还不能高置信判断”。
+
+### 3.6 调评分口径：`scoring_policy.yaml`
+
+当你觉得“不是某个产品错了，而是整体分数偏高/偏低”，再改 `scoring_policy.yaml`。
+
+常见配置含义：
+
+| 配置 | 含义 |
+|------|------|
+| `dimension_support.supported_score` | 维度被支持时给产品的基础加分 |
+| `dimension_support.partial_score` | 维度部分支持时的加分 |
+| `evidence_support.per_item` | 每条证据给多少分 |
+| `evidence_support.cap` | 证据加分上限 |
+| `web_support.confirmation_per_item` | Web 佐证每条加多少分 |
+| `web_support.supplement_per_item` | Web 补充证据每条加多少分 |
+| `penalties.conflict_per_item` | 每条冲突证据扣多少分 |
+| `penalties.missing_evidence_cap` | 缺失证据最多扣多少分 |
+| `exclusion.score_cap` | 触发排除规则后最高只能到多少分 |
+
+调优建议：
+
+- 如果所有产品分数都偏高，降低 `dimension_support` 或 `evidence_support`。
+- 如果 Web 证据影响过大，降低 `web_support`。
+- 如果存在冲突还被高分推荐，提高 `penalties.conflict_per_item`。
+- 如果缺失信息导致扣分过重，降低 `missing_evidence_cap`。
+
+### 3.7 调证据使用策略：`evidence_policy.yaml`
+
+当你关注“证据够不够、是否要搜 Web、冲突怎么处理”时，改 `evidence_policy.yaml`。
+
+常见配置含义：
+
+| 配置 | 含义 |
+|------|------|
+| `web_planning.supported_facts_to_skip_web` | 本地已有多少条事实后跳过 Web 搜索 |
+| `dimension_analysis.supported_facts_threshold` | 一个维度达到 supported 需要多少条事实 |
+| `resolver.source_priority` | 多来源证据冲突时的来源优先级 |
+| `resolver.authority_boost` | 高权威来源如何提升置信度 |
+| `resolver.quality_score` | 不同关系证据如何计算质量分 |
+| `recommender.supported_quality_threshold` | 质量分达到多少才算维度支持 |
+
+调优建议：
+
+- 如果希望更少搜索 Web，降低 `supported_facts_to_skip_web`。当前含义是“本地事实数达到该值就跳过 Web”，所以阈值越低，越容易跳过 Web。
+- 如果本地弱证据太容易让维度变成 supported，提高 `supported_quality_threshold`。
+- 如果 Web 和本地冲突，默认以本地 JSON 为准。不要轻易把 `web` 的优先级排到 `local_json` 前面。
+- `manual` 适合人工确认后的证据，优先级可以高于普通规则和 Web。
+
+### 3.8 调 Web 搜索：`web_search.yaml`
+
+当你觉得“Web 搜不到、搜太多、噪声太大、抓取太慢”，改 `web_search.yaml` 和维度里的 `web_search_queries`。
+
+常见配置含义：
+
+| 配置 | 含义 |
+|------|------|
+| `default_providers` | 默认使用哪些搜索 provider |
+| `providers.*.enabled` | 是否启用某个 provider |
+| `execution.max_queries_per_dimension` | 每个维度最多跑多少个搜索词 |
+| `execution.max_results_per_query` | 每个搜索词最多取多少条结果 |
+| `execution.fetch_pages` | 是否抓取网页正文 |
+| `fetch.blocked_domains` | 不抓取哪些域名 |
+| `fetch.max_full_text_chars` | 每个网页最多保留多少正文字符 |
+
+调优建议：
+
+- 搜索噪声大，优先改 `analysis_dimensions.yaml` 的 `web_search_queries`，让搜索词更具体。
+- 搜索成本高，降低 `max_queries_per_dimension` 或 `max_results_per_query`。
+- 抓取慢，降低 `fetch.concurrency` 或关闭 `fetch_pages`。
+- 某些站点质量差或反爬严重，加入 `blocked_domains`。
+
+刷新缓存命令：
 
 ```bash
 uv run xft web enrich --refresh-search "企业名称"       # 仅重新搜索
@@ -352,29 +480,31 @@ uv run xft web enrich --refresh-fetch "企业名称"        # 仅重新抓取网
 uv run xft web enrich --refresh-extraction "企业名称"   # 仅重新抽取证据
 ```
 
-### 3.7 配 LLM：`web_extract_llm.yaml` 和 prompts
+### 3.9 调 LLM 和 Prompt
 
-`web_extract_llm.yaml` 控制 Web 证据抽取使用的模型和参数。
+当你觉得“推荐理由写得不对、Web 证据抽取口径不对、模型过度推断”，改 `prompts/*.md`。
 
-`prompts/` 目录控制 LLM 的提示词。常见文件：
+常见文件：
 
 | 文件 | 用途 |
 |------|------|
-| `match_system.md` | 产品匹配时的系统提示词 |
-| `recommend_system.md` | 生成推荐理由时的系统提示词 |
-| `extract_evidence_system.md` | 从 Web 内容抽取证据时的系统提示词 |
+| `prompts/match_system.md` | 产品匹配时的系统提示词 |
+| `prompts/recommend_system.md` | 生成推荐理由时的系统提示词 |
+| `prompts/extract_evidence_system.md` | 从 Web 内容抽取证据时的系统提示词 |
+| `web_extract_llm.yaml` | Web 证据抽取模型、温度、超时和输入长度 |
 
-修改 prompt 后，如果想让 Web 证据重新抽取，可以运行：
+调优建议：
 
-```bash
-uv run xft web enrich --refresh-extraction "企业名称"
-```
+- 如果模型编造信息，在 prompt 中明确“只能基于证据，不得补充未知事实”。
+- 如果 Web 抽取混入无关公司，在 `extract_evidence_system.md` 中强化“必须确认目标企业名称”。
+- 如果输出太发散，保持 `temperature: 0`。
+- 修改 Web 抽取 prompt 后，使用 `--refresh-extraction` 重新抽取。
 
-## 4. 新增一个业务场景
+### 3.10 新增一个业务场景
 
-推荐做法是复制已有场景，或者通过 `extends` 继承已有场景，只改差异。
+如果只是新客群、新行业、新销售策略，不建议复制整套配置。优先用 `extends` 继承已有场景，只写差异。
 
-例如 `config/scenarios/bank_marketing/scenario.yaml` 可以继承销售推荐场景，然后只调整部分产品规则：
+例如 `config/scenarios/bank_marketing/scenario.yaml` 继承销售推荐场景，只调整 CRM 产品：
 
 ```yaml
 extends: ../sales_recommendation
@@ -386,24 +516,54 @@ patches:
     - module_id: crm_channel
       set:
         base_score: 55
+        match_rule: 银行高质量客户、跨境结算活跃或渠道经营线索明显的企业，优先考虑客户与渠道管理。
       append_positive_rules:
         - id: bank_high_quality_customer
           source_field: bank_flags.high_quality_customer
           op: "=="
           value: true
           weight: 12
-          reason: 银行高质量客户标签提示金融服务匹配度更高
+          reason: 银行高质量客户标签提示金融服务匹配度更高。
 ```
 
-这样不需要复制整份 `products.yaml`，只维护这个场景和默认场景不同的部分。
-
-新增或修改场景后，建议先校验：
+新增或修改场景后，先校验：
 
 ```bash
 uv run xft scenario validate config/scenarios/bank_marketing
+uv run xft scenario inspect config/scenarios/bank_marketing
 ```
 
-## 5. 配置 API Key
+### 3.11 如何判断调优是否有效
+
+单家公司适合看解释是否合理：
+
+```bash
+uv run xft recommend --no-llm \
+  --scenario config/scenarios/sales_recommendation \
+  "企业名称"
+```
+
+一批企业适合看整体命中率：
+
+```bash
+uv run xft calibrate \
+  --scenario config/scenarios/sales_recommendation \
+  --company-list company.txt \
+  --labels calibration_labels.csv \
+  --limit 10
+```
+
+建议每次调优记录：
+
+| 记录项 | 示例 |
+|--------|------|
+| 改了什么 | `crm_channel.base_score 46 -> 50` |
+| 为什么改 | CRM 在渠道型企业中排名偏低 |
+| 验证哪些企业 | `company.txt` 前 10 家 |
+| 结果如何 | Top1 命中率、可接受命中率、错配案例 |
+| 是否保留 | 保留 / 回滚 / 继续调 |
+
+## 4. 配置 API Key
 
 项目会读取 `.env` 中的环境变量。可以参考 `.env.example` 创建本地 `.env`。
 
@@ -423,7 +583,7 @@ OPENAI_API_KEY=你的密钥
 uv run xft recommend --no-llm "企业名称"
 ```
 
-## 6. Docker 使用方法
+## 5. Docker 使用方法
 
 项目的 Docker 入口已经统一为 `xft`。构建镜像：
 
@@ -480,7 +640,7 @@ docker compose run --rm xft warehouse build --input data --output cache/company_
 docker compose run --rm xft recommend --no-llm "企业名称"
 ```
 
-## 7. 常见问题
+## 6. 常见问题
 
 ### 找不到企业怎么办？
 
