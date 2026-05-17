@@ -449,14 +449,18 @@ run_web_enrichment.py              # Web 搜索、抓取、抽取、缓存
 etl_web_to_duckdb.py               # data/web -> DuckDB Web 表
 run_recommender.py                 # 推荐主入口
 
-src/diligence/warehouse/           # DuckDB 本地仓库
-src/diligence/evidence/            # 统一证据模型、仓库、冲突解决
-src/diligence/ai/                  # 公共 LLM client / JSON 抽取工具
-src/diligence/recommender/         # 推荐图、维度分析、报告渲染
-src/diligence/recommender/scoring/ # 配置驱动评分引擎
-src/diligence/recommender/web/     # Web enrichment 服务与缓存
-src/diligence/nodes/               # legacy 报告流水线节点
+src/xft/warehouse/                 # DuckDB 本地仓库
+src/xft/evidence/                  # 统一证据模型、仓库、冲突解决
+src/xft/ai/                        # 公共 LLM client / JSON 抽取工具
+src/xft/web/                       # Web enrichment 服务与缓存
+src/xft/scoring/                   # 配置驱动评分引擎
+src/xft/pipeline/recommender/      # 推荐图、维度分析、报告渲染
+src/xft/nodes/                     # legacy 报告流水线节点（待迁入 pipeline/diligence）
+
+src/diligence/                     # 兼容期旧包名，暂时保留
 ```
+
+当前新入口脚本已经使用 `xft.*` import；`diligence.*` 仍作为兼容路径保留，后续会逐步迁移到 `xft.pipeline.diligence`。
 
 ## 常用命令
 
