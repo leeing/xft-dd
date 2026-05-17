@@ -211,3 +211,4 @@ class ScenarioConfig(BaseModel):
     output_dir: str | None = None
     web_cache_root: str | None = None
     overrides: dict[str, Any] = Field(default_factory=dict)
+    patches: dict[str, Any] = Field(default_factory=dict)

@@ -79,8 +79,12 @@ class ScenarioBundle:
 
     def write_resolved_config(self, path: str | Path | None = None) -> Path:
         """Write scenario_resolved.json for auditability and return its path."""
+        return self.write_resolved_config_payload(self.resolved_payload(), path=path)
+
+    def write_resolved_config_payload(self, payload: dict[str, Any], path: str | Path | None = None) -> Path:
+        """Write a resolved scenario payload for auditability and return its path."""
         out = Path(path) if path is not None else self.root / "scenario_resolved.json"
-        out.write_text(json.dumps(self.resolved_payload(), ensure_ascii=False, indent=2), encoding="utf-8")
+        out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         return out
 
 
@@ -140,14 +144,18 @@ def _load_scenario_data(scenario_file: Path, *, stack: list[Path]) -> dict[str, 
     if isinstance(extends, str) and extends.strip():
         parent_file, _ = _scenario_file_and_root(_resolve_path(root, extends))
         parent = _load_scenario_data(parent_file, stack=[*stack, scenario_file])
-    explicit = {key: value for key, value in raw.items() if key not in {"extends", "overrides"}}
+    explicit = {key: value for key, value in raw.items() if key not in {"extends", "overrides", "patches"}}
     raw_overrides = raw.get("overrides")
     overrides: dict[str, Any] = raw_overrides if isinstance(raw_overrides, dict) else {}
+    raw_patches = raw.get("patches")
+    patches: dict[str, Any] = raw_patches if isinstance(raw_patches, dict) else {}
     child = _deep_merge(explicit, overrides)
     child = _resolve_config_paths(root, child)
     merged = _deep_merge(parent, child)
     merged["extends"] = str(_resolve_path(root, extends)) if isinstance(extends, str) and extends.strip() else None
     merged["overrides"] = overrides
+    parent_patches = parent.get("patches", {})
+    merged["patches"] = _deep_merge(parent_patches if isinstance(parent_patches, dict) else {}, patches)
     return merged
 
 

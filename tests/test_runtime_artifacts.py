@@ -81,12 +81,17 @@ def test_build_quality_report_common_metrics() -> None:
 
 
 def test_write_runtime_delivery_artifacts(tmp_path: Path) -> None:
+    company_dir = tmp_path / "company_a"
+    company_dir.mkdir()
+    (company_dir / "config_manifest.json").write_text("{}", encoding="utf-8")
+    (company_dir / "scenario_resolved.json").write_text("{}", encoding="utf-8")
     rows = [
         {
             "company_name": "公司A",
             "status": "success",
-            "report_path": str(tmp_path / "report.md"),
-            "result_path": str(tmp_path / "result.json"),
+            "output_dir": str(company_dir),
+            "report_path": str(company_dir / "report.md"),
+            "result_path": str(company_dir / "result.json"),
         },
         {"company_name": "公司B", "status": "failed", "error": "boom"},
     ]
@@ -108,4 +113,6 @@ def test_write_runtime_delivery_artifacts(tmp_path: Path) -> None:
     assert quality_md.exists()
     payload = json.loads(delivery.read_text(encoding="utf-8"))
     assert any(item["type"] == "company_report" for item in payload["files"])
+    assert any(item["type"] == "company_config_manifest" for item in payload["files"])
+    assert any(item["type"] == "company_scenario_resolved" for item in payload["files"])
     assert any(item["type"] == "failed_companies" for item in payload["files"])

@@ -5,6 +5,9 @@ services:
     env_file:
       - .env
     volumes:
+      - ./data:/app/data
+      - ./cache:/app/cache
+      - ./recommendation_runs:/app/recommendation_runs
       - ./runs:/app/runs
       - ./batch_runs:/app/batch_runs
       # Uncomment to override the built-in config:
