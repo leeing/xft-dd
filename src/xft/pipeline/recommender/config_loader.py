@@ -9,8 +9,8 @@ from pydantic import BaseModel, Field
 
 from xft.cache.hashing import stable_json_hash
 from xft.core.config_loader import load_dimensions_config, load_prompt, read_yaml
+from xft.core.scenario import ScenarioBundle, maybe_scenario_path
 from xft.pipeline.recommender.models import ProductModule, ProductsConfig
-from xft.pipeline.recommender.scenario import ScenarioBundle, maybe_scenario_path
 
 __all__ = ["load_products_config", "load_dimensions_config", "load_prompt", "write_products_resolved_config"]
 

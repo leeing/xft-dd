@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from xft.config import load_config
+from xft.pipeline.diligence.config import load_config
 
 
 def _write_config(tmp_path: Path, content: str) -> Path:

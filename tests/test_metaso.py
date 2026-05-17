@@ -186,7 +186,7 @@ async def test_enrich_with_metaso_prepends_items() -> None:
     """Metaso items are prepended before existing search result items."""
     from datetime import UTC, datetime
 
-    from xft.models import SearchItem, make_item_id
+    from xft.core.search_models import SearchItem, make_item_id
 
     existing = SearchItem(
         id=make_item_id(url="https://qcc.com/1", title="企查查结果", snippet="s"),
@@ -222,7 +222,7 @@ async def test_enrich_with_metaso_no_key_returns_original() -> None:
     """Empty API key → original items returned unchanged, zero credits."""
     from datetime import UTC, datetime
 
-    from xft.models import SearchItem, make_item_id
+    from xft.core.search_models import SearchItem, make_item_id
 
     existing = SearchItem(
         id=make_item_id(url="https://qcc.com/1", title="t", snippet="s"),
@@ -337,7 +337,7 @@ async def test_enrich_with_metaso_prepends_source_items_first() -> None:
     """Source items come before answer items, which come before existing items."""
     from datetime import UTC, datetime
 
-    from xft.models import SearchItem, make_item_id
+    from xft.core.search_models import SearchItem, make_item_id
 
     existing = SearchItem(
         id=make_item_id(url="https://qcc.com/1", title="企查查结果", snippet="s"),
@@ -532,7 +532,7 @@ async def test_enrich_with_metaso_search_prepends_items() -> None:
     """Metaso search items are prepended before existing items."""
     from datetime import UTC, datetime
 
-    from xft.models import SearchItem, make_item_id
+    from xft.core.search_models import SearchItem, make_item_id
 
     existing = SearchItem(
         id=make_item_id(url="https://qcc.com/1", title="企查查结果", snippet="s"),
@@ -568,7 +568,7 @@ async def test_enrich_with_metaso_search_no_key_returns_original() -> None:
     """Empty API key → original items returned unchanged."""
     from datetime import UTC, datetime
 
-    from xft.models import SearchItem, make_item_id
+    from xft.core.search_models import SearchItem, make_item_id
 
     existing = SearchItem(
         id=make_item_id(url="https://qcc.com/1", title="t", snippet="s"),

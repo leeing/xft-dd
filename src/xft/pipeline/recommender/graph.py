@@ -11,6 +11,7 @@ import duckdb
 import structlog
 from langgraph.graph import END, START, StateGraph
 
+from xft.core.scenario import DEFAULT_PROMPTS, load_scenario
 from xft.evidence.policy import load_evidence_policy
 from xft.pipeline.recommender.config_loader import (
     load_dimensions_config,
@@ -24,7 +25,6 @@ from xft.pipeline.recommender.nodes.llm_match_node import llm_match_node
 from xft.pipeline.recommender.nodes.llm_recommend_node import llm_recommend_node
 from xft.pipeline.recommender.nodes.save_node import save_node
 from xft.pipeline.recommender.nodes.web_evidence_node import web_evidence_node
-from xft.pipeline.recommender.scenario import DEFAULT_PROMPTS, load_scenario
 from xft.pipeline.recommender.state import RecommenderState
 from xft.progress import display
 from xft.runtime.config_manifest import ConfigManifest, file_ref, model_hash, write_config_manifest

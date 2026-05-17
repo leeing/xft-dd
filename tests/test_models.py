@@ -3,13 +3,8 @@ from __future__ import annotations
 import hashlib
 from datetime import UTC, datetime
 
-from xft.models import (
-    BatchRunMeta,
-    CompanyRunResult,
-    DimensionSearchResult,
-    RunMeta,
-    make_item_id,
-)
+from xft.core.search_models import DimensionSearchResult, make_item_id
+from xft.pipeline.diligence.models import BatchRunMeta, CompanyRunResult, RunMeta
 
 
 def test_make_item_id_with_url() -> None:

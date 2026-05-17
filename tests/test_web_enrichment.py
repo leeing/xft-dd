@@ -9,7 +9,7 @@ import duckdb
 import pytest
 import yaml
 
-from xft.models import SearchItem, make_item_id
+from xft.core.search_models import SearchItem, make_item_id
 from xft.evidence.policy import EvidencePolicy
 from xft.web.config_loader import load_web_search_config
 from xft.web.models import ProviderSearchResponse

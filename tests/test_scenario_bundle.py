@@ -11,7 +11,7 @@ from xft.pipeline.recommender.config_loader import (
     write_products_resolved_config,
 )
 from xft.pipeline.recommender.graph import run_recommendation
-from xft.pipeline.recommender.scenario import load_scenario
+from xft.core.scenario import load_scenario
 from xft.evidence.policy import load_evidence_policy
 from xft.scoring.policy_loader import load_scoring_policy
 from xft.web.config_loader import load_web_extract_llm_config, load_web_search_config

@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Generator
 
 import pytest
-import xft.nodes.summarize_node as sn
+import xft.pipeline.diligence.nodes.summarize_node as sn
 from xft.settings import settings
 
 

@@ -15,11 +15,11 @@ def test_xft_platform_imports() -> None:
     assert callable(run_recommendation)
 
 
-def test_xft_diligence_compat_imports() -> None:
-    from xft.batch import run_batch
-    from xft.config import load_config
-    from xft.graph import run_company_graph
-    from xft.nodes.init_node import make_run_id
+def test_xft_diligence_real_imports() -> None:
+    from xft.pipeline.diligence.batch import run_batch
+    from xft.pipeline.diligence.config import load_config
+    from xft.pipeline.diligence.graph import run_company_graph
+    from xft.pipeline.diligence.nodes.init_node import make_run_id
 
     assert callable(load_config)
     assert callable(run_company_graph)

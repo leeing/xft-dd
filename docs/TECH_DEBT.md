@@ -56,23 +56,16 @@
 2. 跑 5-10 家 `--with-web --with-llm --labels`。
 3. 根据错配案例调整产品规则、评分策略、证据策略和 prompt。
 
-### 3. 根级旧尽调兼容模块仍存在
+### 3. 根级旧尽调兼容模块已删除 ~~仍存在~~
 
-状态：可接受，暂不优先。
+状态：**已完成（2026-05-17）。**
 
-现状：
+已删除以下兼容转发文件：
+- `src/xft/graph.py`, `config.py`, `state.py`, `batch.py`, `crawler_mode.py`, `models.py`
+- `src/xft/nodes/` 整个包（8 个文件）
+- `src/xft/pipeline/recommender/scenario.py`, `dimension_analyzer.py`, `profile_repository.py`
 
-- `xft.graph`、`xft.config`、`xft.models`、`xft.nodes.*` 等仍是旧尽调流水线兼容转发。
-- `src/diligence` 已删除，因此这不是双包路径问题。
-
-风险：
-
-- 新开发者可能误用旧尽调兼容 import，而不是 `xft.pipeline.diligence.*`。
-
-建议：
-
-- README 明确业务入口统一使用 `uv run xft ...`。
-- 等搜索模型下沉后，再评估是否逐步删除 `xft.models` 的旧兼容含义。
+所有 import 已直接指向 `xft.pipeline.diligence.*` 和 `xft.core.*` 真实模块。
 
 ## 当前建议优先级
 
@@ -99,4 +92,4 @@
 - Scenario 产品规则 patch。
 - 配置审计 manifest。
 - `uv run xft <subcommand>` 统一 CLI。
-- 根目录 `.py` 脚本清理，旧入口移入 `scripts/compat/`。
+- 根目录 `.py` 脚本清理。

@@ -6,12 +6,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from xft.config import AppConfig, Dimension
+from xft.pipeline.diligence.config import AppConfig, Dimension
 from xft.cache.db import reset_engine_for_tests
 from xft.cache.db import _normalise_asyncpg_url
 from xft.cache.hashing import content_hash, normalize_markdown
 from xft.cache.repository import FetchCacheRepo, SearchCacheKey, SearchCacheRepo
-from xft.models import SearchItem, make_item_id
+from xft.core.search_models import SearchItem, make_item_id
 from xft.settings import settings
 from xft.utils.fetch import enrich_items
 from xft.utils.minimax_search import run_search
@@ -159,7 +159,7 @@ async def test_enrich_items_uses_l2_fetch_cache(monkeypatch: pytest.MonkeyPatch,
 
 
 async def test_crawler_mode_requires_cache(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
-    from xft.crawler_mode import run_crawler_mode
+    from xft.pipeline.diligence.crawler_mode import run_crawler_mode
 
     monkeypatch.setattr(settings, "cache_enabled", False)
     cfg = AppConfig(
@@ -172,7 +172,7 @@ async def test_crawler_mode_requires_cache(monkeypatch: pytest.MonkeyPatch, tmp_
 
 
 async def test_crawler_mode_l1_hit_skips_search_and_fetch(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
-    from xft.crawler_mode import run_crawler_mode
+    from xft.pipeline.diligence.crawler_mode import run_crawler_mode
 
     await _enable_cache(monkeypatch, tmp_path)
     cfg = AppConfig(
@@ -199,7 +199,7 @@ async def test_crawler_mode_l1_hit_skips_search_and_fetch(monkeypatch: pytest.Mo
 
 
 async def test_crawler_mode_l1_miss_searches_and_fetches(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
-    from xft.crawler_mode import run_crawler_mode_for_target
+    from xft.pipeline.diligence.crawler_mode import run_crawler_mode_for_target
 
     await _enable_cache(monkeypatch, tmp_path)
     cfg = AppConfig(

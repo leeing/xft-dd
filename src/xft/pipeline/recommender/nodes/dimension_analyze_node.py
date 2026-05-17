@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from xft.pipeline.recommender.dimension_analyzer import analyze_dimensions
+from xft.core.dimension_analyzer import analyze_dimensions
 from xft.pipeline.recommender.state import RecommenderState
 from xft.progress import display
 
