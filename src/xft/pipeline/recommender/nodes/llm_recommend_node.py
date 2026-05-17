@@ -34,7 +34,6 @@ from xft.settings import settings
 LLM_TIMEOUT_SECONDS = 60
 RECOMMEND_SCORE_THRESHOLD = 55
 
-
 class _RecommendationPayload(BaseModel):
     summary: str
     recommendations: list[RecommendationItem]
@@ -152,6 +151,7 @@ def _scoring_run(state: RecommenderState) -> ScoringRunResult:
             company_profile=state.get("profile", {}),
             dimension_analyses=state["dimension_analysis"],
         ),
+        policy=state["scoring_policy"],
     )
 
 

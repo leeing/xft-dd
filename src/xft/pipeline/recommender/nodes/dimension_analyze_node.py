@@ -13,7 +13,11 @@ async def dimension_analyze_node(state: RecommenderState) -> dict[str, object]:
     if not profile:
         display.fail("无企业画像数据")
         return {"dimension_analysis": []}
-    analyses = analyze_dimensions(profile=profile, dimensions=state["dimensions_config"].dimensions)
+    analyses = analyze_dimensions(
+        profile=profile,
+        dimensions=state["dimensions_config"].dimensions,
+        policy=state["evidence_policy"],
+    )
     needs_web = state.get("needs_web_enrichment", False) or any(item.status == "insufficient" for item in analyses)
     supported = sum(1 for a in analyses if a.status == "supported")
     partial = sum(1 for a in analyses if a.status == "partial")

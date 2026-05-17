@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import structlog
 
 from xft.core.models import DimensionAnalysis
+from xft.evidence.policy import EvidencePolicy, WebPlanningPolicy
 from xft.progress import display
 
 SUPPORTED_FACTS_TO_SKIP_WEB = 3
@@ -35,15 +36,17 @@ class WebSearchPlan:
     skipped: list[SkippedDimension]
 
 
-def plan_web_search(
+def plan_web_search(  # noqa: PLR0913
     analyses: list[DimensionAnalysis],
     *,
     only_dimensions: list[str] | None = None,
     force_dimensions: bool = False,
     refresh: bool = False,
     max_queries_per_dimension: int = 3,
+    policy: EvidencePolicy | WebPlanningPolicy | None = None,
 ) -> WebSearchPlan:
     """Plan Web queries, skipping locally supported dimensions by default."""
+    planning_policy = _planning_policy(policy)
     selected_ids = set(only_dimensions or [])
     planned: list[PlannedDimension] = []
     skipped: list[SkippedDimension] = []
@@ -56,7 +59,12 @@ def plan_web_search(
         if selected_ids and not explicitly_selected:
             log.debug("dimension_not_selected", dimension_id=analysis.dimension_id)
             continue
-        if _should_skip(analysis, explicitly_selected=explicitly_selected, force_dimensions=force_dimensions):
+        if _should_skip(
+            analysis,
+            explicitly_selected=explicitly_selected,
+            force_dimensions=force_dimensions,
+            policy=planning_policy,
+        ):
             log.info(
                 "web_search_skipped",
                 dimension_id=analysis.dimension_id,
@@ -97,7 +105,22 @@ def plan_web_search(
     return WebSearchPlan(planned=planned, skipped=skipped)
 
 
-def _should_skip(analysis: DimensionAnalysis, *, explicitly_selected: bool, force_dimensions: bool) -> bool:
+def _should_skip(
+    analysis: DimensionAnalysis,
+    *,
+    explicitly_selected: bool,
+    force_dimensions: bool,
+    policy: WebPlanningPolicy | None = None,
+) -> bool:
     if explicitly_selected or force_dimensions:
         return False
-    return analysis.status == "supported" and len(analysis.facts) >= SUPPORTED_FACTS_TO_SKIP_WEB
+    policy = policy or WebPlanningPolicy(supported_facts_to_skip_web=SUPPORTED_FACTS_TO_SKIP_WEB)
+    return analysis.status == "supported" and len(analysis.facts) >= policy.supported_facts_to_skip_web
+
+
+def _planning_policy(policy: EvidencePolicy | WebPlanningPolicy | None) -> WebPlanningPolicy:
+    if isinstance(policy, EvidencePolicy):
+        return policy.web_planning
+    if policy is not None:
+        return policy
+    return WebPlanningPolicy(supported_facts_to_skip_web=SUPPORTED_FACTS_TO_SKIP_WEB)

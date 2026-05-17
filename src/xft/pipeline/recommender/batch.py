@@ -46,6 +46,12 @@ SUMMARY_FIELDS = [
     "rules_evaluated",
     "rules_matched",
     "products_excluded",
+    "web_search_executed",
+    "web_search_reused",
+    "web_fetch_executed",
+    "web_fetch_reused",
+    "web_extraction_executed",
+    "web_extraction_reused",
     "error",
     "elapsed_seconds",
 ]
@@ -79,8 +85,11 @@ class BatchOptions:
     refresh_web: bool = False
     web_config_path: str | None = None
     web_extract_llm_config_path: str | None = None
+    scoring_policy_path: str | None = None
+    evidence_policy_path: str | None = None
     web_providers: list[str] | None = None
     web_fetch_pages: bool | None = None
+    web_force_dimensions: bool = False
     web_use_llm_extraction: bool = True
     continue_on_error: bool = True
 
@@ -181,8 +190,11 @@ async def run_recommendation_batch(  # noqa: PLR0913
                 refresh_web=options.refresh_web,
                 web_config_path=options.web_config_path,
                 web_extract_llm_config_path=options.web_extract_llm_config_path,
+                scoring_policy_path=options.scoring_policy_path,
+                evidence_policy_path=options.evidence_policy_path,
                 web_providers=options.web_providers,
                 web_fetch_pages=options.web_fetch_pages,
+                web_force_dimensions=options.web_force_dimensions,
                 web_use_llm_extraction=options.web_use_llm_extraction,
             )
             row = summarize_run(result)
@@ -265,6 +277,7 @@ def summarize_run(result: RecommendationRunResult) -> dict[str, Any]:
             "rules_evaluated": scoring_summary.get("rules_evaluated", 0),
             "rules_matched": scoring_summary.get("rules_matched", 0),
             "products_excluded": scoring_summary.get("products_excluded", 0),
+            **_web_metrics(output_dir),
             "error": result.error or "",
             "elapsed_seconds": 0,
         }
@@ -305,6 +318,29 @@ def _summarize_existing(*, company_name: str, run_id: str, result_path: Path) ->
     return row
 
 
+def _web_metrics(output_dir: Path) -> dict[str, int]:
+    """Read web_metrics.json from a run directory if present."""
+    path = output_dir / "web_metrics.json"
+    if not path.exists():
+        return {
+            "web_search_executed": 0,
+            "web_search_reused": 0,
+            "web_fetch_executed": 0,
+            "web_fetch_reused": 0,
+            "web_extraction_executed": 0,
+            "web_extraction_reused": 0,
+        }
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return {
+        "web_search_executed": data.get("search_executed", 0),
+        "web_search_reused": data.get("search_reused", 0),
+        "web_fetch_executed": data.get("fetch_executed", 0),
+        "web_fetch_reused": data.get("fetch_reused", 0),
+        "web_extraction_executed": data.get("extraction_executed", 0),
+        "web_extraction_reused": data.get("extraction_reused", 0),
+    }
+
+
 def _failed_row(company_name: str, run_id: str, output_dir: str, error: str) -> dict[str, Any]:
     return _ordered_row(
         {
@@ -329,6 +365,12 @@ def _failed_row(company_name: str, run_id: str, output_dir: str, error: str) -> 
             "rules_evaluated": 0,
             "rules_matched": 0,
             "products_excluded": 0,
+            "web_search_executed": 0,
+            "web_search_reused": 0,
+            "web_fetch_executed": 0,
+            "web_fetch_reused": 0,
+            "web_extraction_executed": 0,
+            "web_extraction_reused": 0,
             "error": error,
             "elapsed_seconds": 0,
         }
@@ -344,6 +386,14 @@ def _options_payload(options: BatchOptions, *, limit: int | None, skip_existing:
         "use_web_evidence": options.use_web_evidence,
         "with_web": options.with_web,
         "refresh_web": options.refresh_web,
+        "web_config_path": options.web_config_path,
+        "web_extract_llm_config_path": options.web_extract_llm_config_path,
+        "web_providers": options.web_providers,
+        "web_fetch_pages": options.web_fetch_pages,
+        "web_force_dimensions": options.web_force_dimensions,
+        "web_use_llm_extraction": options.web_use_llm_extraction,
+        "scoring_policy_path": options.scoring_policy_path,
+        "evidence_policy_path": options.evidence_policy_path,
         "continue_on_error": options.continue_on_error,
         "limit": limit,
         "skip_existing": skip_existing,

@@ -220,6 +220,17 @@ class ProviderSearchResponse(BaseModel):
     error: str | None = None
 
 
+class WebRunMetrics(BaseModel):
+    """Standardized Web enrichment execution metrics."""
+
+    search_executed: int = 0
+    search_reused: int = 0
+    fetch_executed: int = 0
+    fetch_reused: int = 0
+    extraction_executed: int = 0
+    extraction_reused: int = 0
+
+
 class WebRunResult(BaseModel):
     """Public Web enrichment run result."""
 
@@ -233,6 +244,7 @@ class WebRunResult(BaseModel):
     evidence: int
     duckdb_loaded: bool = False
     error: str | None = None
+    metrics: WebRunMetrics | None = None
 
 
 class WebLoadSummary(BaseModel):

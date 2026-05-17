@@ -12,6 +12,7 @@ import structlog
 from xft.core.config_loader import load_dimensions_config
 from xft.core.dimension_analyzer import analyze_dimensions
 from xft.core.scenario import load_scenario
+from xft.evidence.policy import load_evidence_policy
 from xft.progress import display
 from xft.warehouse.profile_repository import CompanyProfileRepository
 from xft.web.cache_index import (
@@ -33,6 +34,7 @@ from xft.web.fetcher import fetch_and_cache_pages
 from xft.web.models import (
     RecordStatus,
     WebRunManifest,
+    WebRunMetrics,
     WebRunResult,
     WebSearchQueryRecord,
     WebSearchResultRecord,
@@ -59,6 +61,7 @@ async def run_web_enrichment(  # noqa: C901, PLR0912, PLR0913, PLR0915
     web_config_path: str | None = None,
     web_extract_llm_config_path: str | None = None,
     dimensions_config_path: str | None = None,
+    evidence_policy_path: str | None = None,
     output_root: str | None = None,
     only_dimensions: list[str] | None = None,
     providers: list[str] | None = None,
@@ -86,10 +89,14 @@ async def run_web_enrichment(  # noqa: C901, PLR0912, PLR0913, PLR0915
     dimensions_path = dimensions_config_path or (
         scenario.dimensions_path if scenario else "config/recommender/analysis_dimensions.yaml"
     )
+    evidence_path = evidence_policy_path or (
+        scenario.evidence_policy_path if scenario else "config/evidence_policy.yaml"
+    )
     web_config = load_web_search_config(web_search_path)
     if scenario and scenario.web_cache_root:
         web_config = web_config.model_copy(update={"cache_root": scenario.web_cache_root})
     llm_config = load_web_extract_llm_config(web_extract_path)
+    evidence_policy = load_evidence_policy(evidence_path)
     if not web_config.enabled:
         log.warning("web_enrichment_disabled", company_name=company_name)
         return WebRunResult(
@@ -116,7 +123,7 @@ async def run_web_enrichment(  # noqa: C901, PLR0912, PLR0913, PLR0915
             error=f"company not found in company_profile: {company_name}",
         )
     dimensions = load_dimensions_config(dimensions_path).dimensions
-    analyses = analyze_dimensions(profile=profile, dimensions=dimensions)
+    analyses = analyze_dimensions(profile=profile, dimensions=dimensions, policy=evidence_policy)
     effective_refresh = refresh or web_config.execution.refresh
     plan = plan_web_search(
         analyses,
@@ -124,6 +131,7 @@ async def run_web_enrichment(  # noqa: C901, PLR0912, PLR0913, PLR0915
         force_dimensions=force_dimensions,
         refresh=effective_refresh,
         max_queries_per_dimension=web_config.execution.max_queries_per_dimension,
+        policy=evidence_policy,
     )
     provider_names = providers or web_config.default_providers
     provider_names = [
@@ -221,6 +229,7 @@ async def run_web_enrichment(  # noqa: C901, PLR0912, PLR0913, PLR0915
             "dimensions_config_path": dimensions_path,
             "web_extract_llm_config_path": web_extract_path,
             "web_config_path": web_search_path,
+            "evidence_policy_path": evidence_path,
             "scenario_path": scenario_path or "",
         },
         providers=provider_names,
@@ -480,6 +489,14 @@ async def run_web_enrichment(  # noqa: C901, PLR0912, PLR0913, PLR0915
         evidence=evidence_count,
         duckdb_loaded=duckdb_loaded,
         error="; ".join(errors) or None,
+        metrics=WebRunMetrics(
+            search_executed=cache_stats.get("search_executed", 0),
+            search_reused=cache_stats.get("search_reused", 0),
+            fetch_executed=cache_stats.get("fetch_executed", 0),
+            fetch_reused=cache_stats.get("fetch_reused", 0),
+            extraction_executed=cache_stats.get("extraction_executed", 0),
+            extraction_reused=cache_stats.get("extraction_reused", 0),
+        ),
     )
 
 
