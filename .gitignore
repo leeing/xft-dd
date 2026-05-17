@@ -18,6 +18,9 @@ batch_runs/
 # Local DuckDB
 cache/diligence_local.duckdb
 
+# Sample data
+json/
+
 company.txt
 enquery.xlsx
 
