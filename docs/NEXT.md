@@ -58,7 +58,7 @@ src/xft/
 - 搜索模型下沉到 `xft.core.search_models`，`web/cache/utils` 已解除对旧尽调模型的历史依赖。
 - Scenario 产品规则 patch，支持按 `module_id` 局部调整产品规则。
 - 配置审计 manifest，run/batch 产物可追溯配置 hash。
-- `uv run xft <subcommand>` 统一 CLI，根目录 `.py` 脚本已清空，旧入口移入 `scripts/compat/`。
+- `uv run xft <subcommand>` 统一 CLI，根目录 `.py` 脚本已清空。
 
 ## 仍然存在的关键问题
 
