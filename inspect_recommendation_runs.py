@@ -100,9 +100,7 @@ def main() -> int:
         sys.stderr.write(f"runs dir not found: {runs_dir}\n")
         return 1
     rows = [
-        _summarize_run(path)
-        for path in sorted(runs_dir.iterdir())
-        if path.is_dir() and path.name.startswith("rec_")
+        _summarize_run(path) for path in sorted(runs_dir.iterdir()) if path.is_dir() and path.name.startswith("rec_")
     ]
     _print_summary(rows)
     if args.output:

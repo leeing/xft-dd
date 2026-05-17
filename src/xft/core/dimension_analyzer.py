@@ -73,14 +73,12 @@ def analyze_dimensions(
         confidence = "中" if status == "supported" else "低" if status == "partial" else "待补充"
         inferences = _build_rule_inferences(dim.support_rules, profile)
         inference_evidence = [
-            build_rule_evidence(profile=profile, dimension_id=dim.id, claim=claim)
-            for claim in inferences
+            build_rule_evidence(profile=profile, dimension_id=dim.id, claim=claim) for claim in inferences
         ]
         if not inferences:
             inferences = _build_legacy_inferences(dim.id, profile)
             inference_evidence = [
-                build_rule_evidence(profile=profile, dimension_id=dim.id, claim=claim)
-                for claim in inferences
+                build_rule_evidence(profile=profile, dimension_id=dim.id, claim=claim) for claim in inferences
             ]
         results.append(
             DimensionAnalysis(
@@ -157,10 +155,7 @@ def _render_queries(queries: list[str], profile: dict[str, Any]) -> list[str]:
     company_name = str(profile.get("company_name") or "")
     industry = str(profile.get("industry") or "")
     industry_big = str(profile.get("industry_big") or "")
-    return [
-        query.format(company_name=company_name, industry=industry, industry_big=industry_big)
-        for query in queries
-    ]
+    return [query.format(company_name=company_name, industry=industry, industry_big=industry_big) for query in queries]
 
 
 def _build_legacy_inferences(dimension_id: str, profile: dict[str, Any]) -> list[str]:

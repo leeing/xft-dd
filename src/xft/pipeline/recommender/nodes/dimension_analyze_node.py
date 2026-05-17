@@ -27,4 +27,3 @@ async def dimension_analyze_node(state: RecommenderState) -> dict[str, object]:
         if a.status != "supported":
             display.branch(f"{a.dimension_id}: {a.status} ({len(a.facts)}条事实, 需Web补充)")
     return {"dimension_analysis": analyses, "needs_web_enrichment": needs_web}
-

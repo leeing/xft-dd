@@ -57,8 +57,7 @@ def _score_breakdown(product: ProductModule, analyses: list[DimensionAnalysis], 
     partial = sum(1 for item in analyses if item.status == "partial")
     local_count = sum(len(item.local_evidence) for item in analyses)
     confirmation_count = sum(
-        len([ev for ev in item.web_evidence if ev.relation_to_profile == "confirmation"])
-        for item in analyses
+        len([ev for ev in item.web_evidence if ev.relation_to_profile == "confirmation"]) for item in analyses
     )
     supplement_count = sum(
         len([ev for ev in item.web_evidence if ev.relation_to_profile not in ("confirmation", "conflict")])
@@ -226,8 +225,7 @@ def _fallback_recommendation(state: RecommenderState) -> RecommendationOutput:
     scoring = _scoring_run(state)
     match_by_id = {item.module_id: item for item in state["match_results"]}
     ranked_scores = [
-        item for item in scoring.product_scores
-        if item.final_score >= RECOMMEND_SCORE_THRESHOLD and not item.excluded
+        item for item in scoring.product_scores if item.final_score >= RECOMMEND_SCORE_THRESHOLD and not item.excluded
     ]
     if not ranked_scores:
         ranked_scores = scoring.product_scores[:3]
@@ -238,10 +236,7 @@ def _fallback_recommendation(state: RecommenderState) -> RecommendationOutput:
         product = scored.product
         item = match_by_id.get(product.module_id)
         # Build pitch based on evidence composition
-        related = [
-            a for a in state["dimension_analysis"]
-            if a.dimension_id in product.target_needs
-        ]
+        related = [a for a in state["dimension_analysis"] if a.dimension_id in product.target_needs]
         has_conflict = any(a.conflicts for a in related)
         has_web = any(a.web_evidence for a in related)
         business_need = item.business_need if item else product.match_rule
@@ -277,8 +272,7 @@ def _fallback_recommendation(state: RecommenderState) -> RecommendationOutput:
 
     profile = state.get("profile", {})
     summary = (
-        f"{profile.get('company_name', state['company_name'])} 当前基于本地 DuckDB 画像生成推荐；"
-        f"{evidence_summary}"
+        f"{profile.get('company_name', state['company_name'])} 当前基于本地 DuckDB 画像生成推荐；{evidence_summary}"
     )
     output = RecommendationOutput(
         company_name=str(profile.get("company_name") or state["company_name"]),

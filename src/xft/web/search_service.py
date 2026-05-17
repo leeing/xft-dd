@@ -54,7 +54,7 @@ async def run_provider_query(  # noqa: PLR0913
     if response.error:
         display.branch(f"✗ [{provider_name}] {query[:60]} → {response.error}")
     else:
-        display.branch(f"🔍 [{provider_name}] \"{query[:50]}\" → {result_count}条")
+        display.branch(f'🔍 [{provider_name}] "{query[:50]}" → {result_count}条')
     q_record = WebSearchQueryRecord(
         query_id=query_id,
         web_run_id=web_run_id,

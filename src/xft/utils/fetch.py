@@ -67,16 +67,30 @@ def _company_name_key(target: str) -> str:
     key = target
     # Remove location prefix if present (e.g. 广东, 深圳市, 北京)
     for prefix in (
-        "广东", "深圳市", "北京市", "上海市", "广州市", "浙江省", "江苏省",
-        "深圳", "北京", "上海", "广州", "浙江", "江苏", "杭州", "成都", "武汉",
+        "广东",
+        "深圳市",
+        "北京市",
+        "上海市",
+        "广州市",
+        "浙江省",
+        "江苏省",
+        "深圳",
+        "北京",
+        "上海",
+        "广州",
+        "浙江",
+        "江苏",
+        "杭州",
+        "成都",
+        "武汉",
     ):
         if key.startswith(prefix) and len(key) > len(prefix) + 2:
-            key = key[len(prefix):]
+            key = key[len(prefix) :]
             break
     # Remove company suffix
     for suffix in _COMPANY_SUFFIXES:
         if key.endswith(suffix) and len(key) > len(suffix) + 1:
-            key = key[:-len(suffix)]
+            key = key[: -len(suffix)]
             break
     return key
 

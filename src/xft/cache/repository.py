@@ -75,15 +75,19 @@ class SearchCacheRepo:
         params_hash = _search_params_hash(params)
         async with sessionmaker() as session:
             rows = (
-                await session.execute(
-                    select(search_cache.c.query_hash, search_cache.c.expires_at)
-                    .where(search_cache.c.provider == "minimax")
-                    .where(search_cache.c.query_hash.in_([stable_hash(q) for q in query_texts]))
-                    .where(search_cache.c.params_hash == params_hash)
-                    .where(search_cache.c.policy_version == settings.cache_policy_version)
-                    .where(search_cache.c.status == "success")
+                (
+                    await session.execute(
+                        select(search_cache.c.query_hash, search_cache.c.expires_at)
+                        .where(search_cache.c.provider == "minimax")
+                        .where(search_cache.c.query_hash.in_([stable_hash(q) for q in query_texts]))
+                        .where(search_cache.c.params_hash == params_hash)
+                        .where(search_cache.c.policy_version == settings.cache_policy_version)
+                        .where(search_cache.c.status == "success")
+                    )
                 )
-            ).mappings().all()
+                .mappings()
+                .all()
+            )
         hit_hashes: set[str] = set()
         for row in rows:
             expires_at = _as_aware(row["expires_at"])

@@ -189,16 +189,19 @@ def load_cached_queries(
             if runtime is None:
                 key = (query.dimension_id, query.provider, query.query)
             else:
-                key = query.cache_key or make_search_cache_key(
-                    credit_code=runtime.credit_code,
-                    company_name=runtime.company_name,
-                    dimension_id=query.dimension_id,
-                    query=query.query,
-                    provider=query.provider,
-                    provider_params_hash=runtime.provider_params_hashes.get(query.provider, ""),
-                    max_results=runtime.max_results_per_query,
-                    cache_policy_version=runtime.cache_policy_version,
-                ).key_hash
+                key = (
+                    query.cache_key
+                    or make_search_cache_key(
+                        credit_code=runtime.credit_code,
+                        company_name=runtime.company_name,
+                        dimension_id=query.dimension_id,
+                        query=query.query,
+                        provider=query.provider,
+                        provider_params_hash=runtime.provider_params_hashes.get(query.provider, ""),
+                        max_results=runtime.max_results_per_query,
+                        cache_policy_version=runtime.cache_policy_version,
+                    ).key_hash
+                )
             cached[key] = CachedQuery(
                 query=query,
                 results=by_query_id[query.query_id],
@@ -269,16 +272,14 @@ def write_cache_index(
                 continue
             run_queries = [WebSearchQueryRecord.model_validate(row) for row in _read_jsonl(run_dir / "queries.jsonl")]
             run_results = [
-                WebSearchResultRecord.model_validate(row)
-                for row in _read_jsonl(run_dir / "search_results.jsonl")
+                WebSearchResultRecord.model_validate(row) for row in _read_jsonl(run_dir / "search_results.jsonl")
             ]
             result_count_by_query: dict[str, int] = {}
             for result in run_results:
                 result_count_by_query[result.query_id] = result_count_by_query.get(result.query_id, 0) + 1
             run_pages = [WebPageRecord.model_validate(row) for row in _read_jsonl(run_dir / "fetched_pages.jsonl")]
             run_evidence = [
-                WebEvidenceRecord.model_validate(row)
-                for row in _read_jsonl(run_dir / "web_evidence.jsonl")
+                WebEvidenceRecord.model_validate(row) for row in _read_jsonl(run_dir / "web_evidence.jsonl")
             ]
             results_by_dimension: dict[str, list[WebSearchResultRecord]] = {}
             evidence_by_dimension: dict[str, int] = {}
@@ -303,9 +304,7 @@ def write_cache_index(
                     dimension_id=query.dimension_id,
                     query=query.query,
                     provider=query.provider,
-                    provider_params_hash=(
-                        runtime.provider_params_hashes.get(query.provider, "") if runtime else ""
-                    ),
+                    provider_params_hash=(runtime.provider_params_hashes.get(query.provider, "") if runtime else ""),
                     max_results=runtime.max_results_per_query if runtime else 0,
                     cache_policy_version=runtime.cache_policy_version if runtime else "v1",
                 )
@@ -422,8 +421,7 @@ def make_runtime_config(  # noqa: PLR0913
         company_name=company_name,
         cache_policy_version=cache_policy_version,
         provider_params_hashes={
-            name: stable_hash(config.model_dump(mode="json"))
-            for name, config in provider_configs.items()
+            name: stable_hash(config.model_dump(mode="json")) for name, config in provider_configs.items()
         },
         max_results_per_query=max_results_per_query,
         fetch_config_hash=stable_hash(fetch_config.model_dump(mode="json")),

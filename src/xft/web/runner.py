@@ -127,9 +127,7 @@ async def run_web_enrichment(  # noqa: C901, PLR0912, PLR0913, PLR0915
     )
     provider_names = providers or web_config.default_providers
     provider_names = [
-        name
-        for name in provider_names
-        if web_config.providers.get(name, None) and web_config.providers[name].enabled
+        name for name in provider_names if web_config.providers.get(name, None) and web_config.providers[name].enabled
     ]
     company_display_name = str(profile.get("company_name") or company_name)
     credit_code = _str_or_none(profile.get("credit_code"))
@@ -309,7 +307,7 @@ async def run_web_enrichment(  # noqa: C901, PLR0912, PLR0913, PLR0915
                         company_name=company_name,
                     )
                     cache_stats["search_reused"] += 1
-                    display.branch(f"♻ [{provider_name}] \"{query[:50]}\" → 复用{len(search_output.results)}条")
+                    display.branch(f'♻ [{provider_name}] "{query[:50]}" → 复用{len(search_output.results)}条')
                 elif extract_only:
                     continue
                 else:

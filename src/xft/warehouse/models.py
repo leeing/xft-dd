@@ -23,4 +23,3 @@ class ImportSummary:
     raw_json_rows: int = 0
     import_status_counts: dict[str, int] = field(default_factory=dict)
     table_rows: dict[str, int] = field(default_factory=dict)
-

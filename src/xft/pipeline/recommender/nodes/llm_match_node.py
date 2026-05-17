@@ -79,10 +79,7 @@ def _evidence_score_for_product(
     conflict_count = sum(len(item.conflicts) for item in related)
 
     adjustment = (
-        min(20, primary_count * 4)
-        + min(12, confirmation_count * 3)
-        + min(8, supplement_count)
-        - conflict_count * 8
+        min(20, primary_count * 4) + min(12, confirmation_count * 3) + min(8, supplement_count) - conflict_count * 8
     )
 
     return min(100, max(0, base_score + adjustment))

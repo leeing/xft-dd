@@ -48,10 +48,7 @@ def build_quality_report(batch_id: str, rows: list[dict[str, Any]], *, pipeline:
         skipped_count=statuses.get("skipped", 0),
         average_profile_completeness=_average(completeness),
         average_top_score=_average(scores),
-        top_modules=[
-            {"module_id": module_id, "count": count}
-            for module_id, count in module_counts.most_common()
-        ],
+        top_modules=[{"module_id": module_id, "count": count} for module_id, count in module_counts.most_common()],
         high_conflict_companies=[
             {"company_name": _row_company(row), "conflict_count": row.get("conflict_count", 0)}
             for row in rows
@@ -227,4 +224,3 @@ def _average(values: list[float]) -> float:
     if not values:
         return 0
     return round(sum(values) / len(values), 4)
-

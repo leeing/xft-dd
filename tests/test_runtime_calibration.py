@@ -45,4 +45,3 @@ def test_build_calibration_report_detects_distribution_and_quality_issues() -> N
     rendered = render_calibration_report(report)
     assert "推荐规则校准报告" in rendered
     assert "procurement_srm" in rendered
-

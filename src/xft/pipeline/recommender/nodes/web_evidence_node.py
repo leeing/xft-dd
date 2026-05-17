@@ -104,8 +104,10 @@ async def web_evidence_node(state: RecommenderState) -> dict[str, object]:
         conflicts = len(resolved.conflict_evidence)
         score = resolved.quality_score
         quality_label = (
-            "high" if score >= HIGH_CONFIDENCE_QUALITY_THRESHOLD
-            else "medium" if score >= MEDIUM_CONFIDENCE_QUALITY_THRESHOLD
+            "high"
+            if score >= HIGH_CONFIDENCE_QUALITY_THRESHOLD
+            else "medium"
+            if score >= MEDIUM_CONFIDENCE_QUALITY_THRESHOLD
             else "low"
         )
         detail = f"质量 {score:.0f} ({quality_label})"
@@ -147,14 +149,10 @@ def _merge_resolved(
     ]
 
     # Local evidence = primary items from local_json
-    local_evs = [
-        ev for ev in resolved.primary_evidence if ev.source_type == "local_json"
-    ]
+    local_evs = [ev for ev in resolved.primary_evidence if ev.source_type == "local_json"]
 
     # Web evidence = primary_from_web + supplement + confirmation (excluding conflicts)
-    primary_from_web = [
-        ev for ev in resolved.primary_evidence if ev.source_type != "local_json"
-    ]
+    primary_from_web = [ev for ev in resolved.primary_evidence if ev.source_type != "local_json"]
     web_evs = (
         primary_from_web[:MAX_WEB_EVIDENCE_PER_DIMENSION]
         + resolved.supplement_evidence[:MAX_WEB_EVIDENCE_PER_DIMENSION]

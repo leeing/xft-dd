@@ -26,4 +26,3 @@ async def data_gather_node(state: RecommenderState) -> dict[str, object]:
         "profile": profile,
         "needs_web_enrichment": completeness < MIN_PROFILE_COMPLETENESS,
     }
-

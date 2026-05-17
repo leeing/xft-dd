@@ -41,9 +41,7 @@ def score_products(
 ) -> ScoringRunResult:
     """Score all products using configured positive/negative/exclusion rules."""
     score_subjects = (
-        list(subjects)
-        if subjects is not None
-        else [_subject_from_product(product) for product in products or []]
+        list(subjects) if subjects is not None else [_subject_from_product(product) for product in products or []]
     )
     product_scores = [_score_product(product, context) for product in score_subjects]
     product_scores = sorted(product_scores, key=_score_sort_key, reverse=True)
@@ -68,14 +66,8 @@ def score_products(
 def _score_product(product: ScoringSubject, context: ScoringContext) -> ProductScoreResult:
     related = [item for item in context.dimension_analyses if item.dimension_id in product.target_dimensions]
     base_score = product.base_score if product.base_score is not None else int(product.priority * 0.45)
-    positive_results = [
-        evaluate_score_rule(rule, context, rule_type="positive")
-        for rule in product.positive_rules
-    ]
-    negative_results = [
-        evaluate_score_rule(rule, context, rule_type="negative")
-        for rule in product.negative_rules
-    ]
+    positive_results = [evaluate_score_rule(rule, context, rule_type="positive") for rule in product.positive_rules]
+    negative_results = [evaluate_score_rule(rule, context, rule_type="negative") for rule in product.negative_rules]
     exclusion_results = [evaluate_exclusion_rule(rule, context) for rule in product.exclusion_rules]
 
     matched_positive = [item for item in positive_results if item.matched]
@@ -88,12 +80,10 @@ def _score_product(product: ScoringSubject, context: ScoringContext) -> ProductS
         sum(len(item.local_evidence) for item in related) * LOCAL_EVIDENCE_SCORE_PER_ITEM,
     )
     confirmation_count = sum(
-        len([ev for ev in item.web_evidence if ev.relation_to_profile == "confirmation"])
-        for item in related
+        len([ev for ev in item.web_evidence if ev.relation_to_profile == "confirmation"]) for item in related
     )
     supplement_count = sum(
-        len([ev for ev in item.web_evidence if ev.relation_to_profile == "supplement"])
-        for item in related
+        len([ev for ev in item.web_evidence if ev.relation_to_profile == "supplement"]) for item in related
     )
     web_support = min(WEB_CONFIRMATION_SCORE_CAP, confirmation_count * WEB_CONFIRMATION_SCORE_PER_ITEM) + min(
         WEB_SUPPLEMENT_SCORE_CAP,

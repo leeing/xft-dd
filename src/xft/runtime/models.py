@@ -42,4 +42,3 @@ class PipelineRunResult(BaseModel):
     artifacts_dir: str | None = None
     error: str | None = None
     raw: dict[str, Any] = Field(default_factory=dict)
-

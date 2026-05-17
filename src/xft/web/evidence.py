@@ -57,15 +57,29 @@ def _company_name_key(target: str) -> str:
     """
     key = target
     for prefix in (
-        "广东", "深圳市", "北京市", "上海市", "广州市", "浙江省", "江苏省",
-        "深圳", "北京", "上海", "广州", "浙江", "江苏", "杭州", "成都", "武汉",
+        "广东",
+        "深圳市",
+        "北京市",
+        "上海市",
+        "广州市",
+        "浙江省",
+        "江苏省",
+        "深圳",
+        "北京",
+        "上海",
+        "广州",
+        "浙江",
+        "江苏",
+        "杭州",
+        "成都",
+        "武汉",
     ):
         if key.startswith(prefix) and len(key) > len(prefix) + 2:
-            key = key[len(prefix):]
+            key = key[len(prefix) :]
             break
     for suffix in _COMPANY_SUFFIXES:
         if key.endswith(suffix) and len(key) > len(suffix) + 1:
-            key = key[:-len(suffix)]
+            key = key[: -len(suffix)]
             break
     return key
 
@@ -138,7 +152,10 @@ async def extract_evidence_batch(  # noqa: PLR0913
         return [], {}, {}
     company_name = str(profile.get("company_name", ""))
     request_payload = _build_request_payload(
-        profile=profile, analysis=analysis, results=results, llm_config=llm_config,
+        profile=profile,
+        analysis=analysis,
+        results=results,
+        llm_config=llm_config,
         company_name=company_name,
     )
     source_count = len(request_payload.get("sources", []))
@@ -148,10 +165,8 @@ async def extract_evidence_batch(  # noqa: PLR0913
         return fallback_evidence, request_payload, {"mode": "fallback"}
     try:
         raw_prompt = Path(llm_config.prompt_file).read_text(encoding="utf-8")
-        system_prompt = (
-            raw_prompt.replace("{company_name}", company_name).replace(
-                "{dimension_name}", analysis.dimension_id
-            )
+        system_prompt = raw_prompt.replace("{company_name}", company_name).replace(
+            "{dimension_name}", analysis.dimension_id
         )
         task = llm_config.tasks.get("web_evidence_extract")
         client = get_ai_client()
@@ -171,7 +186,10 @@ async def extract_evidence_batch(  # noqa: PLR0913
         display.branch(f"🧠 {analysis.dimension_id}: LLM失败, 兜底提取 → {len(fallback_evidence)}条")
         return fallback_evidence, request_payload, {"mode": "fallback"}
     evidence = _records_from_claims(
-        parsed.claims, results=results, queries_by_id=queries_by_id, llm_config=llm_config,
+        parsed.claims,
+        results=results,
+        queries_by_id=queries_by_id,
+        llm_config=llm_config,
         company_name=company_name,
     )
     total_claims = len(parsed.claims)

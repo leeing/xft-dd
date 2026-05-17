@@ -243,4 +243,3 @@ def _failed_row(pipeline: PipelineId, target: str, run_id: str, error: str, runs
 
 def _ordered_row(row: dict[str, Any]) -> dict[str, Any]:
     return {field: row.get(field, "") for field in RUNTIME_BATCH_FIELDS}
-

@@ -70,9 +70,7 @@ async def _main() -> int:
         from xft.runtime.batch import PipelineBatchRequest, run_pipeline_batch
 
         company_names = [
-            line.strip()
-            for line in Path(args.company_list).read_text(encoding="utf-8").splitlines()
-            if line.strip()
+            line.strip() for line in Path(args.company_list).read_text(encoding="utf-8").splitlines() if line.strip()
         ]
         batch = await run_pipeline_batch(
             PipelineBatchRequest(

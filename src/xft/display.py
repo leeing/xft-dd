@@ -81,4 +81,3 @@ def _format_shareholder(item: dict[str, Any]) -> str:
             pct = str(rate)
         return f"{item['name']}({pct})"
     return str(item["name"])
-

@@ -25,9 +25,7 @@ async def _fake_runner(**kwargs: Any) -> RecommendationRunResult:
                 "company_name": company_name,
                 "scenario": "sales_recommendation",
                 "scenario_name": "销售产品推荐",
-                "recommendations": [
-                    {"module_id": "procurement_srm", "module_name": "SRM", "score": 78}
-                ],
+                "recommendations": [{"module_id": "procurement_srm", "module_name": "SRM", "score": 78}],
                 "profile_completeness": 0.8,
                 "needs_web_enrichment": False,
                 "evidence_summary": {

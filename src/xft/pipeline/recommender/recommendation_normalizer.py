@@ -117,9 +117,7 @@ def _build_item(
     )
     if score_breakdown.final_score == 0 and score:
         score_breakdown = score_breakdown.model_copy(update={"final_score": score})
-    evidence_trace = _extract_evidence_trace(raw.get("evidence_trace")) or (
-        fallback.evidence_trace if fallback else []
-    )
+    evidence_trace = _extract_evidence_trace(raw.get("evidence_trace")) or (fallback.evidence_trace if fallback else [])
     return RecommendationItem(
         rank=1,
         module_id=product.module_id,

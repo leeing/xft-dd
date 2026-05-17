@@ -120,9 +120,7 @@ def _process_field_group(  # noqa: PLR0913
     local_items = [ev for ev in field_evs if ev.source_type == "local_json"]
     web_items = [ev for ev in field_evs if ev.source_type == "web"]
     rule_items = [ev for ev in field_evs if ev.source_type == "rule"]
-    other_items = [
-        ev for ev in field_evs if ev.source_type not in ("local_json", "web", "rule")
-    ]
+    other_items = [ev for ev in field_evs if ev.source_type not in ("local_json", "web", "rule")]
 
     # Local and manual/other primary sources
     for ev in local_items + other_items:

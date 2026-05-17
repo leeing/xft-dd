@@ -13,4 +13,3 @@ def connect(path: str | Path) -> Any:
     db_path = Path(path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
     return duckdb.connect(str(db_path))
-

@@ -82,6 +82,7 @@ async def _main() -> int:  # noqa: C901
 
     if not args.verbose:
         import logging
+
         logging.basicConfig(level=logging.CRITICAL)
         structlog.configure(
             processors=[structlog.dev.ConsoleRenderer()],

@@ -118,21 +118,25 @@ async def sync_search_cache(pg_conn: asyncpg.Connection, duck_conn: duckdb.DuckD
         print("  search_cache: 0 rows (skip)")
         return 0
 
-    columns = [desc[0] for desc in await pg_conn.fetch("SELECT column_name FROM information_schema.columns WHERE table_name = 'search_cache'")]
+    columns = [
+        desc[0]
+        for desc in await pg_conn.fetch(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = 'search_cache'"
+        )
+    ]
     data = []
     for row in rows:
         # Convert timezone-aware timestamps to naive for DuckDB
         record = []
         for col in columns:
             val = row[col]
-            if hasattr(val, 'tzinfo') and val.tzinfo is not None:
+            if hasattr(val, "tzinfo") and val.tzinfo is not None:
                 val = val.replace(tzinfo=None)
             record.append(val)
         data.append(record)
 
     duck_conn.executemany(
-        f"INSERT INTO search_cache ({', '.join(columns)}) VALUES ({', '.join(['?' for _ in columns])})",
-        data
+        f"INSERT INTO search_cache ({', '.join(columns)}) VALUES ({', '.join(['?' for _ in columns])})", data
     )
     count = len(data)
     print(f"  search_cache: {count} rows")
@@ -146,20 +150,24 @@ async def sync_search_result_url(pg_conn: asyncpg.Connection, duck_conn: duckdb.
         print("  search_result_url: 0 rows (skip)")
         return 0
 
-    columns = [desc[0] for desc in await pg_conn.fetch("SELECT column_name FROM information_schema.columns WHERE table_name = 'search_result_url'")]
+    columns = [
+        desc[0]
+        for desc in await pg_conn.fetch(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = 'search_result_url'"
+        )
+    ]
     data = []
     for row in rows:
         record = []
         for col in columns:
             val = row[col]
-            if hasattr(val, 'tzinfo') and val.tzinfo is not None:
+            if hasattr(val, "tzinfo") and val.tzinfo is not None:
                 val = val.replace(tzinfo=None)
             record.append(val)
         data.append(record)
 
     duck_conn.executemany(
-        f"INSERT INTO search_result_url ({', '.join(columns)}) VALUES ({', '.join(['?' for _ in columns])})",
-        data
+        f"INSERT INTO search_result_url ({', '.join(columns)}) VALUES ({', '.join(['?' for _ in columns])})", data
     )
     count = len(data)
     print(f"  search_result_url: {count} rows")
@@ -173,20 +181,24 @@ async def sync_fetch_cache(pg_conn: asyncpg.Connection, duck_conn: duckdb.DuckDB
         print("  fetch_cache: 0 rows (skip)")
         return 0
 
-    columns = [desc[0] for desc in await pg_conn.fetch("SELECT column_name FROM information_schema.columns WHERE table_name = 'fetch_cache'")]
+    columns = [
+        desc[0]
+        for desc in await pg_conn.fetch(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = 'fetch_cache'"
+        )
+    ]
     data = []
     for row in rows:
         record = []
         for col in columns:
             val = row[col]
-            if hasattr(val, 'tzinfo') and val.tzinfo is not None:
+            if hasattr(val, "tzinfo") and val.tzinfo is not None:
                 val = val.replace(tzinfo=None)
             record.append(val)
         data.append(record)
 
     duck_conn.executemany(
-        f"INSERT INTO fetch_cache ({', '.join(columns)}) VALUES ({', '.join(['?' for _ in columns])})",
-        data
+        f"INSERT INTO fetch_cache ({', '.join(columns)}) VALUES ({', '.join(['?' for _ in columns])})", data
     )
     count = len(data)
     print(f"  fetch_cache: {count} rows")
