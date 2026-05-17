@@ -121,7 +121,7 @@ uv run xft recommend --with-web --refresh-web "企业名称"
 ```text
 data/ Prophet/NewEnt JSON
   → DuckDB warehouse
-  → xft pipeline diligence "企业名称"
+  → xft diligence "企业名称"
   → runtime_runs/.../report.md
 ```
 
@@ -132,7 +132,7 @@ data/ Prophet/NewEnt JSON
 uv run xft recommend --scenario config/scenarios/sales_recommendation "企业名称"
 
 # 尽调场景
-uv run xft pipeline diligence --config config "企业名称"
+uv run xft diligence --config config "企业名称"
 
 # 批量校准
 uv run xft calibrate --limit 30 --batch-id cal-01
@@ -525,7 +525,8 @@ uv run xft web enrich              # Web 搜索、抓取、抽取、缓存
 uv run xft web import              # data/web -> DuckDB Web 表
 uv run xft recommend               # 推荐主入口
 uv run xft diligence               # 企业尽调入口
-uv run xft pipeline                # 统一流水线入口 (recommender / diligence)
+uv run xft recommend               # 推荐主入口
+uv run xft diligence               # 企业尽调入口
 uv run xft calibrate               # 推荐规则批量校准
 uv run xft scenario validate       # 校验场景配置
 uv run xft scenario inspect        # 输出场景解析结果
@@ -614,12 +615,6 @@ uv run xft recommend \
   --skip-existing
 ```
 
-统一流水线入口（支持 recommender / diligence）：
-
-```bash
-uv run xft pipeline recommender --scenario config/scenarios/sales_recommendation "企业名称"
-uv run xft pipeline diligence --config config "企业名称"
-```
 
 批量校准推荐规则：
 
