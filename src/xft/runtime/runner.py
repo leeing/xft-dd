@@ -34,8 +34,11 @@ async def _run_recommender(request: PipelineRunRequest) -> PipelineRunResult:
         refresh_web=request.refresh_web,
         web_config_path=_str_option(request, "web_config_path"),
         web_extract_llm_config_path=_str_option(request, "web_extract_llm_config_path"),
+        scoring_policy_path=_str_option(request, "scoring_policy_path"),
+        evidence_policy_path=_str_option(request, "evidence_policy_path"),
         web_providers=_list_option(request, "web_providers"),
         web_fetch_pages=_bool_or_none_option(request, "web_fetch_pages"),
+        web_force_dimensions=_bool_option(request, "web_force_dimensions", default=False),
         web_use_llm_extraction=_bool_option(request, "web_use_llm_extraction", default=True),
     )
     return PipelineRunResult(

@@ -6,15 +6,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from diligence.config import AppConfig, Dimension
-from diligence.cache.db import reset_engine_for_tests
-from diligence.cache.db import _normalise_asyncpg_url
-from diligence.cache.hashing import content_hash, normalize_markdown
-from diligence.cache.repository import FetchCacheRepo, SearchCacheKey, SearchCacheRepo
-from diligence.models import SearchItem, make_item_id
-from diligence.settings import settings
-from diligence.utils.fetch import enrich_items
-from diligence.utils.minimax_search import run_search
+from xft.config import AppConfig, Dimension
+from xft.cache.db import reset_engine_for_tests
+from xft.cache.db import _normalise_asyncpg_url
+from xft.cache.hashing import content_hash, normalize_markdown
+from xft.cache.repository import FetchCacheRepo, SearchCacheKey, SearchCacheRepo
+from xft.models import SearchItem, make_item_id
+from xft.settings import settings
+from xft.utils.fetch import enrich_items
+from xft.utils.minimax_search import run_search
 
 
 async def _enable_cache(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
@@ -99,7 +99,7 @@ async def test_run_search_uses_l1_cache(monkeypatch: pytest.MonkeyPatch, tmp_pat
     organic = [{"title": "T", "link": "https://example.com/a", "snippet": "S"}]
     await SearchCacheRepo().put_success(key, raw_response={"organic": organic}, organic=organic)
 
-    with patch("diligence.utils.minimax_search.httpx.AsyncClient") as mock_client_cls:
+    with patch("xft.utils.minimax_search.httpx.AsyncClient") as mock_client_cls:
         items = await run_search(query="q", dimension_id="basic_info", timeout=30, max_results=0)
 
     mock_client_cls.assert_not_called()
@@ -116,7 +116,7 @@ async def test_run_search_writes_l1_cache(monkeypatch: pytest.MonkeyPatch, tmp_p
     mock_client.__aexit__ = AsyncMock(return_value=False)
     mock_client.post = AsyncMock(return_value=_response(organic))
 
-    with patch("diligence.utils.minimax_search.httpx.AsyncClient", return_value=mock_client):
+    with patch("xft.utils.minimax_search.httpx.AsyncClient", return_value=mock_client):
         await run_search(query="q-new", dimension_id="basic_info", timeout=30, max_results=0)
 
     key = SearchCacheKey(
@@ -151,7 +151,7 @@ async def test_enrich_items_uses_l2_fetch_cache(monkeypatch: pytest.MonkeyPatch,
     await FetchCacheRepo().put_success("https://example.com/page", "cached full text " * 20)
     items = [_item("https://example.com/page")]
 
-    with patch("diligence.utils.fetch._fetch_page_markdown", new=AsyncMock()) as mock_fetch:
+    with patch("xft.utils.fetch._fetch_page_markdown", new=AsyncMock()) as mock_fetch:
         result = await enrich_items(items, blocked_domains=[], target="佛山市固特家居制品有限公司", crawler=MagicMock())
 
     mock_fetch.assert_not_called()
@@ -159,7 +159,7 @@ async def test_enrich_items_uses_l2_fetch_cache(monkeypatch: pytest.MonkeyPatch,
 
 
 async def test_crawler_mode_requires_cache(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
-    from diligence.crawler_mode import run_crawler_mode
+    from xft.crawler_mode import run_crawler_mode
 
     monkeypatch.setattr(settings, "cache_enabled", False)
     cfg = AppConfig(
@@ -172,7 +172,7 @@ async def test_crawler_mode_requires_cache(monkeypatch: pytest.MonkeyPatch, tmp_
 
 
 async def test_crawler_mode_l1_hit_skips_search_and_fetch(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
-    from diligence.crawler_mode import run_crawler_mode
+    from xft.crawler_mode import run_crawler_mode
 
     await _enable_cache(monkeypatch, tmp_path)
     cfg = AppConfig(
@@ -189,8 +189,8 @@ async def test_crawler_mode_l1_hit_skips_search_and_fetch(monkeypatch: pytest.Mo
     )
     await SearchCacheRepo().put_success(key, raw_response={"organic": []}, organic=[])
 
-    with patch("diligence.crawler_mode.run_search", new=AsyncMock()) as mock_search:
-        with patch("diligence.crawler_mode.enrich_items", new=AsyncMock()) as mock_enrich:
+    with patch("xft.pipeline.diligence.crawler_mode.run_search", new=AsyncMock()) as mock_search:
+        with patch("xft.pipeline.diligence.crawler_mode.enrich_items", new=AsyncMock()) as mock_enrich:
             exit_code = await run_crawler_mode("某公司", cfg, only=None, skip=None)
 
     assert exit_code == 0
@@ -199,7 +199,7 @@ async def test_crawler_mode_l1_hit_skips_search_and_fetch(monkeypatch: pytest.Mo
 
 
 async def test_crawler_mode_l1_miss_searches_and_fetches(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
-    from diligence.crawler_mode import run_crawler_mode_for_target
+    from xft.crawler_mode import run_crawler_mode_for_target
 
     await _enable_cache(monkeypatch, tmp_path)
     cfg = AppConfig(
@@ -211,9 +211,13 @@ async def test_crawler_mode_l1_miss_searches_and_fetches(monkeypatch: pytest.Mon
     item = _item("https://example.com/a")
     enriched = item.model_copy(update={"full_text": "full text " * 20})
 
-    with patch("diligence.crawler_mode.run_search", new=AsyncMock(return_value=[item])) as mock_search:
-        with patch("diligence.crawler_mode.enrich_items", new=AsyncMock(return_value=[enriched])) as mock_enrich:
-            stats = await run_crawler_mode_for_target("某公司", cfg)
+    search_mock = AsyncMock(return_value=[item])
+    enrich_mock = AsyncMock(return_value=[enriched])
+    with (
+        patch("xft.pipeline.diligence.crawler_mode.run_search", new=search_mock) as mock_search,
+        patch("xft.pipeline.diligence.crawler_mode.enrich_items", new=enrich_mock) as mock_enrich,
+    ):
+        stats = await run_crawler_mode_for_target("某公司", cfg)
 
     mock_search.assert_awaited_once()
     mock_enrich.assert_awaited_once()

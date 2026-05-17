@@ -1,174 +1,142 @@
 # TECH_DEBT.md
 
-本文档记录 Sprint G 完成后的技术债务回顾，目的是给后续继续平台化、业务试跑和交付工程化留一张清晰的地图。
+本文档记录 2026-05-17 配置治理 Sprint 后仍然真实存在的技术债务。已完成的历史迁移和配置化事项不再保留为待办。
 
-## 当前状态
+## 当前基线
 
-项目已经完成从单一尽调/推荐脚本到 `xft` 企业分析底座的第一轮架构收敛：
+项目已经完成第一轮平台化收敛：
 
-- `xft.core`：通用模型、scenario bundle、维度分析、配置读取。
-- `xft.warehouse`：DuckDB 企业画像仓库。
-- `xft.evidence`：证据模型、证据仓库、冲突消解。
-- `xft.web`：Web 搜索、抓取、抽取、缓存、入库。
-- `xft.scoring`：配置驱动评分引擎。
-- `xft.runtime`：统一 pipeline request/result、质量报告、交付清单、校准报告。
-- `xft.pipeline.recommender`：销售产品推荐场景。
-- `xft.pipeline.diligence`：旧尽调流水线场景化。
-
-Sprint G 新增了推荐校准工具：
-
-```bash
-uv run python run_calibration.py --limit 10 --batch-id sprint-g-final-10
-```
-
-本地试跑结果：
-
-- 批次：`recommendation_runs/calibration/sprint-g-final-10`
-- 企业数：10
-- 成功：10
-- 平均 Top 推荐分：84.0
-- Top1 分布：`hr_attendance` 5 次、`crm_channel` 5 次
-- 未发现低画像完整度、无推荐、高冲突企业
-
-## 已修复的关键问题
-
-### 1. 推荐分数饱和
-
-试跑前，10 家企业全部 Top1 为 `procurement_srm`，且多个产品都达到 100 分。
-
-原因：
-
-- `dimension_support` 和 `evidence_support` 加分过高。
-- 高完整度企业的 10 个维度几乎全部 supported。
-- 分数饱和后排序退化为产品配置顺序。
-
-已处理：
-
-- 降低通用维度支持和本地证据支持的加分权重。
-- 保留产品规则作为主要区分因素。
-- 同分排序改为优先负向扣分少、正向规则更强、维度支持更强的产品。
-
-### 2. 缺少可重复校准工具
-
-已新增：
-
-- `xft.runtime.calibration`
-- `run_calibration.py`
-- `tests/test_runtime_calibration.py`
-
-后续规则调整可以通过固定批次反复验证，而不是人工逐个翻报告。
+- 根包统一为 `src/xft`，`src/diligence` 旧目录已删除。
+- `xft.pipeline.recommender` 是当前主力销售产品推荐场景。
+- `xft.pipeline.diligence` 是旧尽调报告场景，已隔离为 pipeline。
+- `xft.warehouse`、`xft.evidence`、`xft.web`、`xft.scoring`、`xft.ai`、`xft.cache`、`xft.runtime` 已形成通用基础设施。
+- Scenario bundle 已支持产品、维度、Web、LLM、评分、证据策略和 prompt 的统一配置入口。
+- `scoring_policy.yaml` 与 `evidence_policy.yaml` 已接入运行链路。
+- `xft.runtime.batch`、质量报告、交付清单、失败清单已经可用。
+- 最近验证基线：`ruff` / `mypy` 通过，`pytest` 为 `389 passed`。
 
 ## 高优先级技术债务
 
-### 1. `diligence` 兼容路径仍是复制体
+### 1. Scenario 只能顶层覆盖，不能局部 patch 产品规则
 
-当前 `src/diligence/*` 仍然存在不少旧代码副本，而不是完全转发到 `xft.*`。
+状态：未完成。
+
+现状：
+
+- `scenario.yaml` 支持 `extends` / `overrides`。
+- 但 overrides 主要覆盖顶层路径或简单字段。
+- 如果只想调整某个产品的一条规则，需要复制整份 `products.yaml`。
 
 风险：
 
-- 修复 `xft` 后旧路径可能行为不一致。
-- 测试仍大量引用 `diligence.*`，容易掩盖主线迁移问题。
+- 第二个、第三个业务场景会产生大量重复配置。
+- 产品规则修复需要同步多份 YAML，容易漂移。
 
 建议：
 
-1. 把 `src/diligence/*` 全部改为薄转发层。
-2. 测试主线 import 改为 `xft.*`。
-3. 只保留少量 alias 兼容测试覆盖 `diligence.*`。
-
-### 2. Batch runner 尚未完全平台化
-
-当前已经平台化了 artifact/quality/delivery，但批量执行仍在：
-
-- `xft.pipeline.recommender.batch`
-- `xft.pipeline.diligence.batch`
-
-建议：
-
-- 新增 `xft.runtime.batch`。
-- 让 batch runner 基于 `PipelineRunRequest` / `PipelineRunResult` 执行任意 pipeline。
-- 场景只提供 batch row summarizer。
-
-### 3. `SearchItem` 仍挂在旧 diligence 模型上
-
-`xft.web`、`xft.utils`、`xft.cache` 仍通过 `xft.models.SearchItem` 使用旧搜索模型。
-
-建议：
-
-- 新增 `xft.core.search_models`。
-- 迁移 `SearchItem / DimensionSearchResult / make_item_id`。
-- 根级 `xft.models` 继续兼容转发。
-
-### 4. Scenario YAML 只能顶层覆盖
-
-Sprint F 已支持 scenario 顶层 `extends/overrides`，但无法对 `products.yaml` 内单个产品规则做结构化 patch。
-
-建议：
-
-- 新增 config patch 机制，例如按 `module_id` 合并 product rules。
-- 输出 `scenario_resolved.json` 时附带 resolved products/dimensions/web config hash。
-
-### 5. 校准还缺少业务标注闭环
-
-当前校准只能看分布、分数、冲突和完整度，缺少“业务人员判断 Top1 是否正确”的反馈入口。
-
-建议：
-
-- 新增 `calibration_labels.csv`：
-  - company_name
-  - expected_top_module
-  - acceptable_modules
-  - comment
-- 校准报告计算 Top1 命中率、可接受命中率和错配案例。
+- 增加按 `module_id` 合并的 product patch 机制。
+- 支持 `set`、`append_positive_rules`、`append_negative_rules`、`append_exclusion_rules`、`remove_rules`。
+- `scenario_resolved.json` 输出 patch 后的产品配置 hash。
 
 ## 中优先级技术债务
 
-### 1. Web/LLM 运行指标还没有统一采集
+### 1. Scenario 审计信息还不够完整
 
-质量报告还没有标准化展示：
+状态：未完成。
 
-- search 执行/复用次数
-- fetch 执行/复用次数
-- extraction 执行/复用次数
-- LLM fallback 比例
-- provider 错误分布
+现状：
 
-建议把 `web_cache_report.md/json` 的核心指标接入 `xft.runtime.artifacts`。
+- `scenario_resolved.json` 能写出解析后的路径。
+- 但没有写入配置内容 hash。
+- 单次推荐 run 目录没有独立 `config_manifest.json`。
 
-### 2. 评分参数仍写在代码里
+风险：
 
-Sprint G 将评分常量抽成代码常量，但还没有配置化。
-
-建议：
-
-- 新增 `scoring_policy.yaml`。
-- 将 dimension/evidence/web/conflict/missing 权重迁到配置。
-- scenario 可 override scoring policy。
-
-### 3. 报告文案仍依赖 fallback 模板
-
-无 LLM 模式可跑通，但报告表达比较机械。
+- 交付报告后难以复现“当时到底用的是哪版配置”。
+- 配置改动频繁时，排查推荐差异会变慢。
 
 建议：
 
-- 把 fallback 推荐文案模板配置化。
+1. 对 products、dimensions、web_search、web_extract_llm、scoring_policy、evidence_policy、prompts 计算 hash。
+2. run 目录写 `config_manifest.json`。
+3. batch delivery manifest 引用每个 run 的 config manifest。
+
+### 2. 报告文案仍依赖 fallback 模板
+
+状态：未完成。
+
+现状：
+
+- 无 LLM 模式可以稳定跑通。
+- 但 fallback 推荐文案比较机械。
+
+风险：
+
+- 对业务人员来说，报告可读性和销售可用性还不够。
+
+建议：
+
 - 每个产品模块增加 `pitch_template`。
-- 报告中明确标识“规则模式/LLM 模式/Web 模式”。
+- 报告明确标识规则模式、LLM 模式、Web 模式。
+- 在真实校准后再优化报告，不要早于推荐质量验证。
 
-### 4. 缺少真实 Web 校准批次
+### 3. 真实 Web / LLM 带标注样本仍偏少
 
-Sprint G 只跑了本地画像模式，没有开启 Web/LLM。
+状态：未完成。
+
+现状：
+
+- 第一轮真实链路校准已完成。
+- 已验证默认跳过策略、强制 Web 搜索、crawl4ai 抓取、LLM 抽取过滤、DuckDB 入库和报告读取。
+- 已生成 `web_llm_review_samples.csv`，但还缺业务人员标注后的 5-10 家样本。
+
+风险：
+
+- 当前只能说明链路可跑，不能说明推荐 Top1/可接受命中率已经达到业务标准。
 
 建议：
 
-1. 选 5 家企业跑 `--with-web`。
-2. 检查 Web 证据噪声、冲突和缓存复用。
-3. 再跑 `--with-llm` 验证最终报告表达质量。
+1. 业务人员补 `calibration_labels.csv`。
+2. 跑 5-10 家 `--with-web --with-llm --labels`。
+3. 根据错配案例调整产品规则、评分策略、证据策略和 prompt。
 
-## 建议下一步
+### 4. 根级旧尽调兼容模块仍存在
 
-我建议优先做三件事：
+状态：可接受，暂不优先。
 
-1. **兼容层瘦身**：把 `diligence.*` 全部变成 `xft.*` 转发，减少双代码路径。
-2. **统一 batch runner**：新增 `xft.runtime.batch`，让 recommender/diligence 批量运行共用一套执行协议。
-3. **业务标注校准**：给 Sprint G 的校准工具加 `calibration_labels.csv`，把“业务直觉”纳入可测试指标。
+现状：
 
+- `xft.graph`、`xft.config`、`xft.models`、`xft.nodes.*` 等仍是旧尽调流水线兼容转发。
+- `src/diligence` 已删除，因此这不是双包路径问题。
+
+风险：
+
+- 新开发者可能误用根级兼容入口，而不是 `xft.pipeline.diligence.*`。
+
+建议：
+
+- README 明确新代码不要使用这些根级兼容入口。
+- 等搜索模型下沉后，再评估是否逐步删除 `xft.models` 的旧兼容含义。
+
+## 当前建议优先级
+
+1. **Scenario 产品规则 patch**：多场景前必须做，否则 YAML 复制会快速失控。
+2. **配置审计 manifest**：交付工程化前必须做。
+3. **真实 Web / LLM 带标注样本扩大**：链路已验证，下一步要验证业务命中率。
+
+## 不再作为技术债跟踪的事项
+
+以下事项已经完成，不再列为 debt：
+
+- 根包迁移到 `xft`。
+- 删除 `src/diligence`。
+- `xft.web` / `xft.scoring` 解耦 recommender。
+- 旧尽调流水线迁入 `xft.pipeline.diligence`。
+- 通用 runtime batch。
+- batch quality report / delivery manifest。
+- `scoring_policy.yaml` 配置化。
+- `evidence_policy.yaml` 配置化。
+- 推荐结果中的评分解释和证据解释。
+- 业务标注校准 CLI 闭环。
+- 搜索模型下沉到 `xft.core.search_models`。
+- 真实 Web / LLM 第一轮小批次校准。

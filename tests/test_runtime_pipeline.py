@@ -43,7 +43,7 @@ async def test_run_pipeline_dispatches_recommender(monkeypatch: MonkeyPatch) -> 
             target="广东测试有限公司",
             scenario_path="config/scenarios/sales_recommendation",
             use_web=True,
-            options={"web_providers": ["minimax"]},
+            options={"web_providers": ["minimax"], "web_force_dimensions": True},
         )
     )
 
@@ -69,6 +69,7 @@ async def test_run_pipeline_dispatches_recommender(monkeypatch: MonkeyPatch) -> 
     assert seen["with_web"] is True
     assert seen["use_web_evidence"] is True
     assert seen["web_providers"] == ["minimax"]
+    assert seen["web_force_dimensions"] is True
 
 
 async def test_run_pipeline_dispatches_diligence(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:

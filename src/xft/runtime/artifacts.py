@@ -30,6 +30,7 @@ class BatchQualityReport(BaseModel):
     high_conflict_companies: list[dict[str, Any]] = Field(default_factory=list)
     low_completeness_companies: list[dict[str, Any]] = Field(default_factory=list)
     failed_companies: list[dict[str, Any]] = Field(default_factory=list)
+    web_metrics: dict[str, int] = Field(default_factory=dict)
 
 
 def build_quality_report(batch_id: str, rows: list[dict[str, Any]], *, pipeline: str = "") -> BatchQualityReport:
@@ -65,6 +66,7 @@ def build_quality_report(batch_id: str, rows: list[dict[str, Any]], *, pipeline:
             for row in rows
             if row.get("status") == "failed"
         ],
+        web_metrics=_aggregate_web_metrics(rows),
     )
 
 
@@ -193,6 +195,14 @@ def _render_quality_report(report: BatchQualityReport, *, title: str) -> str:
         )
     else:
         lines.append("- 暂无高冲突企业。")
+    lines.extend(["", "## Web 运行指标", ""])
+    wm = report.web_metrics
+    if wm:
+        lines.append(f"- 搜索: 执行 {wm.get('search_executed', 0)} 次 / 复用 {wm.get('search_reused', 0)} 次")
+        lines.append(f"- 抓取: 执行 {wm.get('fetch_executed', 0)} 次 / 复用 {wm.get('fetch_reused', 0)} 次")
+        lines.append(f"- 抽取: 执行 {wm.get('extraction_executed', 0)} 次 / 复用 {wm.get('extraction_reused', 0)} 次")
+    else:
+        lines.append("- 未启用 Web 补证。")
     lines.extend(["", "## 失败清单", ""])
     if report.failed_companies:
         lines.extend(f"- {item['company_name']}：{item['error']}" for item in report.failed_companies)
@@ -218,6 +228,19 @@ def _int(value: Any) -> int:
         return int(value)
     except (TypeError, ValueError):
         return 0
+
+
+def _aggregate_web_metrics(rows: list[dict[str, Any]]) -> dict[str, int]:
+    """Sum web metrics across all rows."""
+    keys = [
+        "search_executed",
+        "search_reused",
+        "fetch_executed",
+        "fetch_reused",
+        "extraction_executed",
+        "extraction_reused",
+    ]
+    return {key: sum(_int(row.get(f"web_{key}")) for row in rows) for key in keys}
 
 
 def _average(values: list[float]) -> float:

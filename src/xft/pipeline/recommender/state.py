@@ -7,6 +7,7 @@ from typing import Annotated, Any
 
 from typing_extensions import TypedDict
 
+from xft.evidence.policy import EvidencePolicy
 from xft.pipeline.recommender.models import (
     AnalysisDimensionsConfig,
     DimensionAnalysis,
@@ -15,6 +16,7 @@ from xft.pipeline.recommender.models import (
     ProductsConfig,
     RecommendationOutput,
 )
+from xft.scoring.models import ScoringPolicy
 
 
 def merge_dicts(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
@@ -37,6 +39,8 @@ class RecommenderState(TypedDict):
     prompt_paths: dict[str, str]
     products_config: ProductsConfig
     dimensions_config: AnalysisDimensionsConfig
+    evidence_policy: EvidencePolicy
+    scoring_policy: ScoringPolicy
     products: list[ProductModule]
     profile: Annotated[dict[str, Any], merge_dicts]
     dimension_analysis: list[DimensionAnalysis]

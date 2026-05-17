@@ -13,7 +13,7 @@ import httpx
 import structlog
 from sqlalchemy.exc import SQLAlchemyError
 
-from xft.models import SearchItem, make_item_id
+from xft.core.search_models import SearchItem, make_item_id
 from xft.settings import settings
 
 log = structlog.get_logger(__name__)

@@ -152,6 +152,7 @@ def _scoring_run(state: RecommenderState) -> ScoringRunResult:
             company_profile=state.get("profile", {}),
             dimension_analyses=state["dimension_analysis"],
         ),
+        policy=state["scoring_policy"],
     )
 
 

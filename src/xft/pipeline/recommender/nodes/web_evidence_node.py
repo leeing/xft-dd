@@ -8,18 +8,14 @@ import duckdb
 import structlog
 
 from xft.evidence.models import EvidenceRecord
+from xft.evidence.policy import RecommenderEvidencePolicy
 from xft.evidence.repository import EvidenceRepository
 from xft.evidence.resolver import ResolvedDimensionEvidence, resolve_dimension_evidence
 from xft.pipeline.recommender.models import DimensionAnalysis, EvidenceFact
 from xft.pipeline.recommender.state import RecommenderState
 from xft.progress import display
 
-MAX_WEB_EVIDENCE_PER_DIMENSION = 5
-SUPPORTED_QUALITY_THRESHOLD = 45
-PARTIAL_QUALITY_THRESHOLD = 15
-HIGH_CONFIDENCE_QUALITY_THRESHOLD = 60
-MEDIUM_CONFIDENCE_QUALITY_THRESHOLD = 30
-LOW_CONFIDENCE_QUALITY_THRESHOLD = 10
+DEFAULT_RECOMMENDER_EVIDENCE_POLICY = RecommenderEvidencePolicy()
 
 log = structlog.get_logger(__name__)
 
@@ -88,6 +84,7 @@ async def web_evidence_node(state: RecommenderState) -> dict[str, object]:
         resolved = resolve_dimension_evidence(
             dim_evidence,
             missing_fields=analysis.missing_evidence,
+            policy=state["evidence_policy"],
         )
         log.info(
             "web_evidence_node_dimension_resolved",
@@ -105,16 +102,16 @@ async def web_evidence_node(state: RecommenderState) -> dict[str, object]:
         score = resolved.quality_score
         quality_label = (
             "high"
-            if score >= HIGH_CONFIDENCE_QUALITY_THRESHOLD
+            if score >= state["evidence_policy"].recommender.high_confidence_quality_threshold
             else "medium"
-            if score >= MEDIUM_CONFIDENCE_QUALITY_THRESHOLD
+            if score >= state["evidence_policy"].recommender.medium_confidence_quality_threshold
             else "low"
         )
         detail = f"质量 {score:.0f} ({quality_label})"
         if conflicts:
             detail += f" ⚠ {conflicts}处冲突"
         display.branch(f"{analysis.dimension_id}: {web_count}条Web → {detail}")
-        enriched.append(_merge_resolved(analysis, resolved))
+        enriched.append(_merge_resolved(analysis, resolved, policy=state["evidence_policy"].recommender))
 
     return {"dimension_analysis": enriched}
 
@@ -136,8 +133,11 @@ def _fetch_unified_evidence(
 def _merge_resolved(
     analysis: DimensionAnalysis,
     resolved: ResolvedDimensionEvidence,
+    *,
+    policy: RecommenderEvidencePolicy | None = None,
 ) -> DimensionAnalysis:
     """Overwrite dimension analysis fields with resolved evidence."""
+    policy = policy or DEFAULT_RECOMMENDER_EVIDENCE_POLICY
     # Rebuild facts from primary evidence
     primary_facts = [
         EvidenceFact(
@@ -154,26 +154,26 @@ def _merge_resolved(
     # Web evidence = primary_from_web + supplement + confirmation (excluding conflicts)
     primary_from_web = [ev for ev in resolved.primary_evidence if ev.source_type != "local_json"]
     web_evs = (
-        primary_from_web[:MAX_WEB_EVIDENCE_PER_DIMENSION]
-        + resolved.supplement_evidence[:MAX_WEB_EVIDENCE_PER_DIMENSION]
-        + resolved.confirmation_evidence[:MAX_WEB_EVIDENCE_PER_DIMENSION]
+        primary_from_web[: policy.max_web_evidence_per_dimension]
+        + resolved.supplement_evidence[: policy.max_web_evidence_per_dimension]
+        + resolved.confirmation_evidence[: policy.max_web_evidence_per_dimension]
     )
 
     # Infer status from resolved quality
     status: Literal["supported", "partial", "insufficient"]
-    if resolved.quality_score >= SUPPORTED_QUALITY_THRESHOLD:
+    if resolved.quality_score >= policy.supported_quality_threshold:
         status = "supported"
-    elif resolved.quality_score >= PARTIAL_QUALITY_THRESHOLD:
+    elif resolved.quality_score >= policy.partial_quality_threshold:
         status = "partial"
     else:
         status = "insufficient"
 
     confidence: Literal["高", "中", "低", "待补充"]
-    if resolved.quality_score >= HIGH_CONFIDENCE_QUALITY_THRESHOLD:
+    if resolved.quality_score >= policy.high_confidence_quality_threshold:
         confidence = "高"
-    elif resolved.quality_score >= MEDIUM_CONFIDENCE_QUALITY_THRESHOLD:
+    elif resolved.quality_score >= policy.medium_confidence_quality_threshold:
         confidence = "中"
-    elif resolved.quality_score >= LOW_CONFIDENCE_QUALITY_THRESHOLD:
+    elif resolved.quality_score >= policy.low_confidence_quality_threshold:
         confidence = "低"
     else:
         confidence = "待补充"

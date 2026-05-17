@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from xft.evidence.models import EvidenceRecord
+from xft.evidence.policy import EvidencePolicy, ResolverPolicy
 from xft.utils.source_registry import classify_source
 
 Confidence = Literal["高", "中", "低", "待补充", "待核实"]
@@ -25,23 +26,16 @@ class ResolvedDimensionEvidence:
     quality_score: float = 0.0
 
 
-# Priority for conflict resolution: lower = wins
-_SOURCE_PRIORITY: dict[str, int] = {
-    "local_json": 0,
-    "manual": 1,
-    "rule": 2,
-    "web": 3,
-    "llm_extraction": 4,
-}
-
 # Confidence ordering for ranking
 _CONFIDENCE_ORDER: dict[str, int] = {"高": 0, "中": 1, "低": 2, "待核实": 3, "待补充": 4}
+_DEFAULT_RESOLVER_POLICY = ResolverPolicy()
 
 
 def resolve_dimension_evidence(
     evidence_list: list[EvidenceRecord],
     *,
     missing_fields: list[str] | None = None,
+    policy: EvidencePolicy | ResolverPolicy | None = None,
 ) -> ResolvedDimensionEvidence:
     """Merge and resolve conflicts for evidence items within one dimension.
 
@@ -65,7 +59,8 @@ def resolve_dimension_evidence(
     deduped = _deduplicate(evidence_list)
 
     # Step 2: Apply source authority boost
-    boosted = [_apply_source_boost(ev) for ev in deduped]
+    resolver_policy = _resolver_policy(policy)
+    boosted = [_apply_source_boost(ev, resolver_policy) for ev in deduped]
 
     # Step 3: Separate by source type and relation
     primary: list[EvidenceRecord] = []
@@ -80,7 +75,7 @@ def resolve_dimension_evidence(
         by_field.setdefault(ev.source_field, []).append(ev)
 
     for field_evs in by_field.values():
-        _process_field_group(field_evs, primary, supplement, confirmation, conflicts, inferences)
+        _process_field_group(field_evs, primary, supplement, confirmation, conflicts, inferences, resolver_policy)
 
     # If no primary at all, promote best web evidence to primary
     if not primary and (supplement or confirmation):
@@ -94,7 +89,7 @@ def resolve_dimension_evidence(
                 confirmation.remove(best)
 
     # Compute quality score
-    quality = _compute_quality_score(primary, supplement, confirmation, conflicts, inferences)
+    quality = _compute_quality_score(primary, supplement, confirmation, conflicts, inferences, resolver_policy)
 
     return ResolvedDimensionEvidence(
         dimension_id=dimension_id,
@@ -115,12 +110,14 @@ def _process_field_group(  # noqa: PLR0913
     confirmation: list[EvidenceRecord],
     conflicts: list[EvidenceRecord],
     inferences: list[EvidenceRecord],
+    policy: ResolverPolicy,
 ) -> None:
     """Classify evidence within one source_field group and append to result lists."""
-    local_items = [ev for ev in field_evs if ev.source_type == "local_json"]
-    web_items = [ev for ev in field_evs if ev.source_type == "web"]
-    rule_items = [ev for ev in field_evs if ev.source_type == "rule"]
-    other_items = [ev for ev in field_evs if ev.source_type not in ("local_json", "web", "rule")]
+    sorted_evs = sorted(field_evs, key=lambda ev: policy.source_priority.get(ev.source_type, 99))
+    local_items = [ev for ev in sorted_evs if ev.source_type == "local_json"]
+    web_items = [ev for ev in sorted_evs if ev.source_type == "web"]
+    rule_items = [ev for ev in sorted_evs if ev.source_type == "rule"]
+    other_items = [ev for ev in sorted_evs if ev.source_type not in ("local_json", "web", "rule")]
 
     # Local and manual/other primary sources
     for ev in local_items + other_items:
@@ -157,8 +154,9 @@ def _deduplicate(evidence_list: list[EvidenceRecord]) -> list[EvidenceRecord]:
     return result
 
 
-def _apply_source_boost(ev: EvidenceRecord) -> EvidenceRecord:
+def _apply_source_boost(ev: EvidenceRecord, policy: ResolverPolicy | None = None) -> EvidenceRecord:
     """Boost confidence for high-authority web sources."""
+    policy = policy or _DEFAULT_RESOLVER_POLICY
     if ev.source_type in ("local_json", "manual"):
         return ev
 
@@ -168,14 +166,8 @@ def _apply_source_boost(ev: EvidenceRecord) -> EvidenceRecord:
 
     info = classify_source(url)
 
-    # Authority boost: high authority elevates confidence by one step
-    boost_map: dict[str, dict[str, Confidence]] = {
-        "high": {"低": "中", "中": "高", "待补充": "中", "待核实": "中"},
-        "medium": {"低": "中", "待补充": "低", "待核实": "低"},
-    }
-
-    if info.authority_level in boost_map:
-        new_confidence = boost_map[info.authority_level].get(ev.confidence)
+    if info.authority_level in policy.authority_boost:
+        new_confidence = policy.authority_boost[info.authority_level].get(ev.confidence)
         if new_confidence:
             return ev.model_copy(update={"confidence": new_confidence})
 
@@ -189,18 +181,28 @@ def _pick_best_evidence(evidence_list: list[EvidenceRecord]) -> EvidenceRecord |
     return min(evidence_list, key=lambda ev: _CONFIDENCE_ORDER.get(ev.confidence, 5))
 
 
-def _compute_quality_score(
+def _compute_quality_score(  # noqa: PLR0913
     primary: list[EvidenceRecord],
     supplement: list[EvidenceRecord],
     confirmation: list[EvidenceRecord],
     conflicts: list[EvidenceRecord],
     inferences: list[EvidenceRecord],
+    policy: ResolverPolicy | None = None,
 ) -> float:
     """Compute a dimension evidence quality score (0-100)."""
+    weights = (policy or _DEFAULT_RESOLVER_POLICY).quality_score
     score = 0.0
-    score += len(primary) * 15
-    score += len(confirmation) * 10
-    score += len(supplement) * 5
-    score += len(inferences) * 3
-    score -= len(conflicts) * 10
-    return max(0.0, min(100.0, score))
+    score += len(primary) * weights.primary
+    score += len(confirmation) * weights.confirmation
+    score += len(supplement) * weights.supplement
+    score += len(inferences) * weights.inference
+    score -= len(conflicts) * weights.conflict_penalty
+    return max(weights.min_score, min(weights.max_score, score))
+
+
+def _resolver_policy(policy: EvidencePolicy | ResolverPolicy | None) -> ResolverPolicy:
+    if isinstance(policy, EvidencePolicy):
+        return policy.resolver
+    if policy is not None:
+        return policy
+    return _DEFAULT_RESOLVER_POLICY

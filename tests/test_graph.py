@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 
-from diligence.config import AppConfig, Dimension
+from xft.config import AppConfig, Dimension
 
 
 def _make_cfg() -> AppConfig:
@@ -41,7 +41,7 @@ def _make_httpx_client(organic: list[dict]) -> MagicMock:
 
 async def test_run_company_graph_produces_artifacts(tmp_path: Path) -> None:
     """Full pipeline: run_company_graph saves all 4 artifact files."""
-    from diligence.graph import run_company_graph
+    from xft.graph import run_company_graph
 
     cfg = _make_cfg()
     output_dir = str(tmp_path / "run_001")
@@ -65,9 +65,9 @@ async def test_run_company_graph_produces_artifacts(tmp_path: Path) -> None:
         ]
     )
 
-    with patch("diligence.utils.minimax_search.httpx.AsyncClient", return_value=_make_httpx_client(organic)):
-        with patch("diligence.nodes.summarize_node.get_ai_client", return_value=mock_client):
-            with patch("diligence.nodes.merge_node.get_ai_client", return_value=mock_client):
+    with patch("xft.utils.minimax_search.httpx.AsyncClient", return_value=_make_httpx_client(organic)):
+        with patch("xft.nodes.summarize_node.get_ai_client", return_value=mock_client):
+            with patch("xft.nodes.merge_node.get_ai_client", return_value=mock_client):
                 result = await run_company_graph(target="某公司", config=cfg, output_dir=output_dir)
 
     assert result.status in ("success", "partial")
@@ -80,7 +80,7 @@ async def test_run_company_graph_produces_artifacts(tmp_path: Path) -> None:
 
 async def test_run_company_graph_run_id_unique(tmp_path: Path) -> None:
     """Two sequential runs of the same target produce different run_ids."""
-    from diligence.graph import run_company_graph
+    from xft.graph import run_company_graph
 
     cfg = _make_cfg()
     ai_output = json.dumps({"summary": "s", "confidence": "待核实", "uncertain_facts": [], "evidence_item_ids": []})
@@ -99,9 +99,9 @@ async def test_run_company_graph_run_id_unique(tmp_path: Path) -> None:
     results = []
     for i in range(2):
         out_dir = str(tmp_path / f"run_{i:03d}")
-        with patch("diligence.utils.minimax_search.httpx.AsyncClient", return_value=_make_httpx_client([])):
-            with patch("diligence.nodes.summarize_node.get_ai_client", return_value=make_mock()):
-                with patch("diligence.nodes.merge_node.get_ai_client", return_value=make_mock()):
+        with patch("xft.utils.minimax_search.httpx.AsyncClient", return_value=_make_httpx_client([])):
+            with patch("xft.nodes.summarize_node.get_ai_client", return_value=make_mock()):
+                with patch("xft.nodes.merge_node.get_ai_client", return_value=make_mock()):
                     r = await run_company_graph("某公司", cfg, out_dir)
                     results.append(r)
         await asyncio.sleep(1)
@@ -111,7 +111,7 @@ async def test_run_company_graph_run_id_unique(tmp_path: Path) -> None:
 
 async def test_run_company_graph_required_fail_sets_flag(tmp_path: Path) -> None:
     """When basic_info (required=True) search fails entirely, required_failed is True."""
-    from diligence.graph import run_company_graph
+    from xft.graph import run_company_graph
 
     cfg = _make_cfg()
 
@@ -133,9 +133,9 @@ async def test_run_company_graph_required_fail_sets_flag(tmp_path: Path) -> None
         return_value=MagicMock(choices=[MagicMock(message=MagicMock(content=ai_report))])
     )
 
-    with patch("diligence.utils.minimax_search.httpx.AsyncClient", return_value=failing_client):
-        with patch("diligence.nodes.summarize_node.get_ai_client", return_value=mock_sum):
-            with patch("diligence.nodes.merge_node.get_ai_client", return_value=mock_merge):
+    with patch("xft.utils.minimax_search.httpx.AsyncClient", return_value=failing_client):
+        with patch("xft.nodes.summarize_node.get_ai_client", return_value=mock_sum):
+            with patch("xft.nodes.merge_node.get_ai_client", return_value=mock_merge):
                 result = await run_company_graph("某公司", cfg, str(tmp_path / "run_fail"))
 
     assert result.required_failed is True

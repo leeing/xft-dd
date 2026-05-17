@@ -55,8 +55,15 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--refresh-web", action="store_true", help="ignore cached web_evidence and search Web again")
     parser.add_argument("--web-config")
     parser.add_argument("--web-extract-llm-config")
+    parser.add_argument("--scoring-policy")
+    parser.add_argument("--evidence-policy")
     parser.add_argument("--web-providers", help="comma-separated web provider names")
     parser.add_argument("--no-web-fetch", action="store_true", help="do not crawl pages during --with-web")
+    parser.add_argument(
+        "--force-web-dimensions",
+        action="store_true",
+        help="search even when local JSON already supports a dimension",
+    )
     parser.add_argument("--no-web-llm-extraction", action="store_true", help="use fallback Web evidence extraction")
     parser.add_argument("--verbose", action="store_true", help="show detailed structlog output")
     return parser.parse_args()
@@ -116,8 +123,11 @@ async def _main() -> int:  # noqa: C901
                 refresh_web=args.refresh_web,
                 web_config_path=args.web_config,
                 web_extract_llm_config_path=args.web_extract_llm_config,
+                scoring_policy_path=args.scoring_policy,
+                evidence_policy_path=args.evidence_policy,
                 web_providers=_csv(args.web_providers),
                 web_fetch_pages=False if args.no_web_fetch else None,
+                web_force_dimensions=args.force_web_dimensions,
                 web_use_llm_extraction=not args.no_web_llm_extraction,
                 continue_on_error=args.continue_on_error,
             ),
@@ -151,8 +161,11 @@ async def _main() -> int:  # noqa: C901
             refresh_web=args.refresh_web,
             web_config_path=args.web_config,
             web_extract_llm_config_path=args.web_extract_llm_config,
+            scoring_policy_path=args.scoring_policy,
+            evidence_policy_path=args.evidence_policy,
             web_providers=_csv(args.web_providers),
             web_fetch_pages=False if args.no_web_fetch else None,
+            web_force_dimensions=args.force_web_dimensions,
             web_use_llm_extraction=not args.no_web_llm_extraction,
         )
         sys.stdout.write(f"[{single_result.status}] {single_result.company_name} -> {single_result.output_dir}\n")

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from diligence.models import CostRecord
-from diligence.state import keep_nonempty_str, merge_cost, merge_dicts
+from xft.models import CostRecord
+from xft.state import keep_nonempty_str, merge_cost, merge_dicts
 
 
 # ── merge_dicts ───────────────────────────────────────────────────────────────

@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 from datetime import UTC, datetime
 
-from diligence.models import (
+from xft.models import (
     BatchRunMeta,
     CompanyRunResult,
     DimensionSearchResult,

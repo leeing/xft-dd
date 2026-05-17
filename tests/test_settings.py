@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from diligence.settings import Settings, _SM4_PREFIX, _decode_key, _sm4_decrypt, _sm4_encrypt
+from xft.settings import Settings, _SM4_PREFIX, _decode_key, _sm4_decrypt, _sm4_encrypt
 
 
 # ── Core crypto roundtrip ──────────────────────────────────────────────────
@@ -169,7 +169,7 @@ def test_settings_sql_cache_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_cmd_encode_output_has_prefix(capsys: pytest.CaptureFixture) -> None:
     """keys encode writes SM4:-prefixed ciphertext to stdout."""
-    from diligence.keys import _cmd_encode
+    from xft.keys import _cmd_encode
 
     _cmd_encode("my-secret")
     out = capsys.readouterr().out.strip()
@@ -178,12 +178,12 @@ def test_cmd_encode_output_has_prefix(capsys: pytest.CaptureFixture) -> None:
 
 def test_cmd_check_encrypted(tmp_path: pytest.TempPathFactory, capsys: pytest.CaptureFixture) -> None:
     """keys check reports 'encrypted' for SM4:-prefixed keys."""
-    from diligence.keys import _cmd_check
+    from xft.keys import _cmd_check
 
     env_file = tmp_path / ".env"  # type: ignore[operator]
     env_file.write_text(f"MINIMAX_API_KEY={_SM4_PREFIX}abc123\n", encoding="utf-8")
 
-    with patch("diligence.keys.Path") as mock_path_cls:
+    with patch("xft.keys.Path") as mock_path_cls:
         mock_path_cls.return_value = env_file
         _cmd_check()
 
@@ -193,12 +193,12 @@ def test_cmd_check_encrypted(tmp_path: pytest.TempPathFactory, capsys: pytest.Ca
 
 def test_cmd_check_plaintext_warns(tmp_path: pytest.TempPathFactory, capsys: pytest.CaptureFixture) -> None:
     """keys check flags plaintext keys with a warning."""
-    from diligence.keys import _cmd_check
+    from xft.keys import _cmd_check
 
     env_file = tmp_path / ".env"  # type: ignore[operator]
     env_file.write_text("MINIMAX_API_KEY=some-value\n", encoding="utf-8")
 
-    with patch("diligence.keys.Path") as mock_path_cls:
+    with patch("xft.keys.Path") as mock_path_cls:
         mock_path_cls.return_value = env_file
         _cmd_check()
 

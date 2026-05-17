@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from diligence.models import SearchItem, make_item_id
-from diligence.utils.minimax_search import dedup_items, normalize_url, run_search
+from xft.models import SearchItem, make_item_id
+from xft.utils.minimax_search import dedup_items, normalize_url, run_search
 
 
 def _make_item(
@@ -46,7 +46,7 @@ def mock_search_success():
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=False)
     mock_client.post = AsyncMock(return_value=_make_response(organic))
-    with patch("diligence.utils.minimax_search.httpx.AsyncClient", return_value=mock_client):
+    with patch("xft.utils.minimax_search.httpx.AsyncClient", return_value=mock_client):
         yield mock_client
 
 
@@ -56,7 +56,7 @@ def mock_search_timeout():
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=False)
     mock_client.post = AsyncMock(side_effect=httpx.TimeoutException("timed out"))
-    with patch("diligence.utils.minimax_search.httpx.AsyncClient", return_value=mock_client):
+    with patch("xft.utils.minimax_search.httpx.AsyncClient", return_value=mock_client):
         yield mock_client
 
 
@@ -81,8 +81,8 @@ async def test_run_search_uses_api_key() -> None:
     mock_client.__aexit__ = AsyncMock(return_value=False)
     mock_client.post = AsyncMock(return_value=_make_response(organic))
 
-    with patch("diligence.utils.minimax_search.httpx.AsyncClient", return_value=mock_client):
-        with patch("diligence.utils.minimax_search.settings") as mock_settings:
+    with patch("xft.utils.minimax_search.httpx.AsyncClient", return_value=mock_client):
+        with patch("xft.utils.minimax_search.settings") as mock_settings:
             mock_settings.minimax_api_key = "test-key-xyz"
             mock_settings.minimax_base_url = "https://api.minimaxi.chat/v1"
             await run_search(query="q", dimension_id="basic_info", timeout=30)
@@ -102,7 +102,7 @@ async def test_run_search_max_results_truncated() -> None:
     mock_client.__aexit__ = AsyncMock(return_value=False)
     mock_client.post = AsyncMock(return_value=_make_response(organic))
 
-    with patch("diligence.utils.minimax_search.httpx.AsyncClient", return_value=mock_client):
+    with patch("xft.utils.minimax_search.httpx.AsyncClient", return_value=mock_client):
         items = await run_search(query="q", dimension_id="basic_info", timeout=30, max_results=3)
 
     assert len(items) == 3
@@ -118,7 +118,7 @@ async def test_run_search_max_results_zero_keeps_all() -> None:
     mock_client.__aexit__ = AsyncMock(return_value=False)
     mock_client.post = AsyncMock(return_value=_make_response(organic))
 
-    with patch("diligence.utils.minimax_search.httpx.AsyncClient", return_value=mock_client):
+    with patch("xft.utils.minimax_search.httpx.AsyncClient", return_value=mock_client):
         items = await run_search(query="q", dimension_id="basic_info", timeout=30, max_results=0)
 
     assert len(items) == 10

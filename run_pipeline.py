@@ -48,6 +48,8 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--dimensions-config", help="recommender dimensions config")
     parser.add_argument("--web-config", help="recommender web search config")
     parser.add_argument("--web-extract-llm-config", help="recommender web extraction LLM config")
+    parser.add_argument("--scoring-policy", help="recommender scoring policy config")
+    parser.add_argument("--evidence-policy", help="recommender evidence policy config")
     parser.add_argument("--web-providers", help="comma-separated web provider names")
     parser.add_argument("--no-web-fetch", action="store_true")
     parser.add_argument("--no-web-llm-extraction", action="store_true")
@@ -62,6 +64,8 @@ async def _main() -> int:
         "dimensions_config_path": args.dimensions_config,
         "web_config_path": args.web_config,
         "web_extract_llm_config_path": args.web_extract_llm_config,
+        "scoring_policy_path": args.scoring_policy,
+        "evidence_policy_path": args.evidence_policy,
         "web_providers": _csv(args.web_providers),
         "web_fetch_pages": False if args.no_web_fetch else None,
         "web_use_llm_extraction": not args.no_web_llm_extraction,

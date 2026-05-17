@@ -6,7 +6,7 @@ from typing import Protocol
 
 import httpx
 
-from xft.models import SearchItem
+from xft.core.search_models import SearchItem
 from xft.settings import settings
 from xft.utils.metaso import fetch_metaso_items, fetch_metaso_search_items
 from xft.utils.minimax_search import run_search

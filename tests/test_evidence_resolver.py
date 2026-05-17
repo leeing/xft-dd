@@ -5,14 +5,15 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import cast
 
-from diligence.evidence.models import (
+from xft.evidence.models import (
     AuthorityLevel,
     EvidenceConfidence,
     EvidenceRecord,
     EvidenceRelation,
     EvidenceSourceType,
 )
-from diligence.evidence.resolver import (
+from xft.evidence.policy import EvidencePolicy
+from xft.evidence.resolver import (
     _deduplicate,
     resolve_dimension_evidence,
 )
@@ -171,6 +172,29 @@ class TestResolveDimensionEvidence:
         resolved = resolve_dimension_evidence(evs)
         # 2*15 (primary) + 1*10 (confirmation) + 1*5 (supplement) + 1*3 (inference) = 48
         assert resolved.quality_score == 48.0
+
+    def test_quality_score_uses_policy_weights(self) -> None:
+        evs = [
+            _ev(source_type="local_json", claim="A"),
+            _ev(source_type="web", claim="B", relation_to_profile="confirmation"),
+        ]
+        policy = EvidencePolicy.model_validate(
+            {
+                "resolver": {
+                    "quality_score": {
+                        "primary": 20,
+                        "confirmation": 7,
+                        "supplement": 0,
+                        "inference": 0,
+                        "conflict_penalty": 0,
+                    }
+                }
+            }
+        )
+
+        resolved = resolve_dimension_evidence(evs, policy=policy)
+
+        assert resolved.quality_score == 27.0
 
     def test_missing_fields_preserved(self) -> None:
         evs = [

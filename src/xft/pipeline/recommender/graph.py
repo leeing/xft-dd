@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,7 @@ import duckdb
 import structlog
 from langgraph.graph import END, START, StateGraph
 
+from xft.evidence.policy import load_evidence_policy
 from xft.pipeline.recommender.config_loader import load_dimensions_config, load_products_config
 from xft.pipeline.recommender.models import RecommendationRunResult
 from xft.pipeline.recommender.nodes.data_gather_node import data_gather_node
@@ -21,7 +23,9 @@ from xft.pipeline.recommender.nodes.web_evidence_node import web_evidence_node
 from xft.pipeline.recommender.scenario import DEFAULT_PROMPTS, load_scenario
 from xft.pipeline.recommender.state import RecommenderState
 from xft.progress import display
+from xft.scoring.policy_loader import load_scoring_policy
 from xft.web import run_web_enrichment
+from xft.web.models import WebRunMetrics
 
 log = structlog.get_logger(__name__)
 
@@ -68,8 +72,11 @@ async def run_recommendation(  # noqa: PLR0913
     refresh_web: bool = False,
     web_config_path: str | None = None,
     web_extract_llm_config_path: str | None = None,
+    scoring_policy_path: str | None = None,
+    evidence_policy_path: str | None = None,
     web_providers: list[str] | None = None,
     web_fetch_pages: bool | None = None,
+    web_force_dimensions: bool = False,
     web_use_llm_extraction: bool = True,
 ) -> RecommendationRunResult:
     display.header(company_name)
@@ -84,9 +91,15 @@ async def run_recommendation(  # noqa: PLR0913
     web_extract_path = web_extract_llm_config_path or (
         scenario.web_extract_llm_path if scenario else "config/recommender/web_extract_llm.yaml"
     )
+    scoring_path = scoring_policy_path or (scenario.scoring_policy_path if scenario else "config/scoring_policy.yaml")
+    evidence_path = evidence_policy_path or (
+        scenario.evidence_policy_path if scenario else "config/evidence_policy.yaml"
+    )
     prompt_paths = scenario.prompt_paths if scenario else DEFAULT_PROMPTS.copy()
     products_config = load_products_config(products_path)
     dimensions_config = load_dimensions_config(dimensions_path)
+    scoring_policy = load_scoring_policy(scoring_path)
+    evidence_policy = load_evidence_policy(evidence_path)
     root = output_dir or (scenario.output_dir if scenario else None) or products_config.output_dir
     rid = run_id or make_recommendation_run_id(company_name)
     has_cached = _has_web_evidence(warehouse_db, company_name)
@@ -99,19 +112,22 @@ async def run_recommendation(  # noqa: PLR0913
             has_cached_web_evidence=has_cached,
         )
         display.info(f"Web 证据: 缓存{'' if has_cached else '不'}存在, 开始搜索")
-        await run_web_enrichment(
+        web_result = await run_web_enrichment(
             company_name=company_name,
             warehouse_db=warehouse_db,
             scenario_path=scenario_path,
             web_config_path=web_search_path,
             web_extract_llm_config_path=web_extract_path,
             dimensions_config_path=dimensions_path,
+            evidence_policy_path=evidence_path,
             providers=web_providers,
             refresh=refresh_web,
+            force_dimensions=web_force_dimensions,
             load_to_duckdb=True,
             use_llm_extraction=web_use_llm_extraction,
             fetch_pages=web_fetch_pages,
         )
+        _write_web_metrics(root, rid, web_result.metrics)
         use_web_evidence = True
     elif with_web:
         log.info(
@@ -142,6 +158,8 @@ async def run_recommendation(  # noqa: PLR0913
         "prompt_paths": prompt_paths,
         "products_config": products_config,
         "dimensions_config": dimensions_config,
+        "evidence_policy": evidence_policy,
+        "scoring_policy": scoring_policy,
         "products": products_config.products,
         "profile": {},
         "dimension_analysis": [],
@@ -173,6 +191,17 @@ async def run_recommendation(  # noqa: PLR0913
         report_path=final.get("report_path"),
         result_path=final.get("result_path"),
         error="; ".join(final.get("errors", [])) or None,
+    )
+
+
+def _write_web_metrics(output_root: str | None, run_id: str, metrics: WebRunMetrics | None) -> None:
+    if metrics is None or not output_root:
+        return
+    out = Path(output_root) / run_id / "web_metrics.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(
+        json.dumps(metrics.model_dump(mode="json"), ensure_ascii=False, indent=2),
+        encoding="utf-8",
     )
 
 

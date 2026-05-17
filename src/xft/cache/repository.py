@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from xft.cache.db import ensure_tables, get_sessionmaker
 from xft.cache.hashing import content_hash, stable_hash, stable_json_hash
 from xft.cache.models import fetch_cache, search_cache, search_result_url
-from xft.models import SearchItem, make_item_id
+from xft.core.search_models import SearchItem, make_item_id
 from xft.settings import settings
 from xft.utils.minimax_search import normalize_url
 from xft.utils.source_registry import classify_source
