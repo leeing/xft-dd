@@ -55,6 +55,8 @@ src/xft/pipeline/recommender/
 
 这是当前主力流水线。
 
+**推荐原理（规则引擎与 LLM 分工）见 [SCORING.md](SCORING.md)。**
+
 ### 2. 企业尽调流水线
 
 入口：
@@ -90,11 +92,11 @@ src/xft/pipeline/diligence/
   nodes/
 ```
 
-这是保留的旧尽调场景，仍需要保证可运行，但当前产品化优先级低于推荐流水线。
+这是保留的尽调场景，仍需要保证可运行，但当前产品化优先级低于推荐流水线。
 
 ## 命令入口
 
-当前没有根目录 `.py` 脚本，也没有 `scripts/compat/` 兼容入口。唯一用户入口是：
+唯一用户入口是：
 
 ```bash
 uv run xft <command>
