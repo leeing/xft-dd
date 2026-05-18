@@ -17,6 +17,7 @@ def render_report(state: RecommenderState) -> str:
             *_render_profile_summary(state),
             *_render_evidence_summary(state),
             *_render_dimension_summary(state),
+            *_render_business_result(state),
             *_render_recommendations(state),
         ]
     )
@@ -120,6 +121,35 @@ def _render_recommendations(state: RecommenderState) -> list[str]:
         lines.append("暂无明确数据缺口，建议围绕推荐模块进行深度需求访谈。")
     lines.append("")
 
+    return lines
+
+
+def _render_business_result(state: RecommenderState) -> list[str]:
+    business = state.get("business_recommendation")
+    if business is None or business.selected_module is None:
+        return []
+    selected = business.selected_module
+    lines = [
+        "## 业务推荐结果",
+        "",
+        f"- 推荐模块：{selected.module_name}",
+        f"- 接受度：{selected.acceptance_result}",
+        f"- 命中属性：{selected.attributes_number} 个",
+        f"- 命中指标：{selected.indicators_number} 个",
+        f"- 结论：{selected.conclusion}",
+        "",
+    ]
+    matched_labels = [item for item in selected.label_results if item.result == "matched"]
+    if matched_labels:
+        lines.append("### 命中标签")
+        for label in matched_labels:
+            indicators = [
+                item.indicator_name
+                for item in label.indicator_results
+                if item.result == "matched"
+            ]
+            lines.append(f"- {label.label_name}：{label.key_indicator_verify}（{'、'.join(indicators)}）")
+        lines.append("")
     return lines
 
 

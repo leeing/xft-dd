@@ -1,0 +1,797 @@
+version: "1.0"
+scenario: sales_recommendation
+
+scoring:
+  indicator_scores:
+    matched: 10
+    possible: 5
+    unknown: 0
+    not_matched: 0
+  label_scores:
+    matched: 30
+    possible: 15
+    unknown: 0
+    not_matched: 0
+
+acceptance_policy:
+  levels:
+    - result: 高
+      min_matched_labels: 3
+      conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为高。
+    - result: 中高
+      min_matched_labels: 2
+      conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为中高。
+    - result: 低
+      min_matched_labels: 0
+      conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为低。
+
+modules:
+  - module_id: daily_reimbursement
+    module_name: 日常报销
+    priority: 90
+    base_score: 40
+    labels:
+      - label_id: production_sales_integrated
+        label_name: 产销一体属性
+        description: 企业同时具备生产制造和销售渠道、客户维护、市场拓展等经营特征。
+        min_matched_indicators: 2
+        indicators:
+          - indicator_id: dealer_maintenance_sales
+            indicator_name: 经销商维护型业务员属性
+            evaluator: llm
+            standard: 招聘JD关键词≥2次，或跨区域销售岗位≥3个，或存在经销商/渠道维护线索。
+            prompt: |
+              请判断企业是否存在经销商维护、区域销售、渠道维护或业务员外勤销售特征。
+              只能基于证据判断，不得编造。
+            evidence_hints:
+              - 区域销售
+              - 经销商
+              - 渠道维护
+              - 业务员
+              - 市场拓展
+          - indicator_id: sales_staff_ratio
+            indicator_name: 销售人员占比
+            evaluator: llm
+            standard: 销售人员占比10%-30%，或存在明确销售团队/岗位线索。
+            prompt: |
+              请判断企业是否存在较明确的销售团队、市场团队或业务拓展岗位。
+              如无法计算比例，可基于招聘岗位和公开信息判断是否可能满足。
+            evidence_hints:
+              - 销售人员
+              - 市场人员
+              - 业务拓展
+              - 销售经理
+          - indicator_id: c_end_product_category
+            indicator_name: 销售的C端商品细分行业
+            evaluator: llm
+            standard: 主营产品面向终端消费、渠道销售或零售场景。
+            prompt: |
+              请判断企业主营产品是否具有C端消费品、渠道销售或零售属性。
+            evidence_hints:
+              - 家电
+              - 消费电子
+              - 食品
+              - 日用品
+              - 小家电
+
+      - label_id: after_sales_attribute
+        label_name: 售后属性
+        description: 企业产品交付后需要安装、维修、调试、质保、驻场或客户现场服务。
+        min_matched_indicators: 1
+        indicators:
+          - indicator_id: technical_complexity
+            indicator_name: 技术含量
+            evaluator: rule
+            standard: 企业存在专利、科技资质或技术复杂型产品。
+            rule:
+              source_field: ip_counts.patent
+              op: ">"
+              value: 0
+          - indicator_id: service_support
+            indicator_name: 服务支持
+            evaluator: llm
+            standard: 官网、招聘、经营范围或新闻中存在质保、维修、安装、客户服务等描述。
+            prompt: |
+              请判断企业是否存在安装、维修、售后、质保、客户现场服务等线索。
+            evidence_hints:
+              - 售后
+              - 安装
+              - 维修
+              - 质保
+              - 客户服务
+
+      - label_id: tech_attribute
+        label_name: 科技属性
+        description: 企业具备研发、专利、科技资质、高技术制造或技术密集型产品特征。
+        min_matched_indicators: 1
+        indicators:
+          - indicator_id: tech_certification
+            indicator_name: 科技企业-科技资质认证
+            evaluator: llm
+            standard: 企业具备高新技术企业、专精特新、科技型中小企业等资质。
+            prompt: |
+              请判断企业是否具备科技资质认证，例如高新技术企业、专精特新、科技型中小企业等。
+            evidence_hints:
+              - 高新技术企业
+              - 专精特新
+              - 科技型中小企业
+              - 科技企业资质
+          - indicator_id: ip_assets
+            indicator_name: 知识产权数量多
+            evaluator: rule
+            standard: 存在专利、软著或其他知识产权资产。
+            rule:
+              source_field: ip_counts.patent
+              op: ">"
+              value: 0
+
+    marketing_points:
+      production_sales_integrated:
+        recommendation: |
+          自有销售渠道建设、客户维护、展会宣传、团队活动等场景，容易产生招待费、礼品费、广告费、展会费、交通通讯补贴等费用。
+        sale_rule: |
+          企业命中产销一体属性，销售和渠道相关费用较多，可从费用报销规范化和票据管理切入。
+        kyc_questions:
+          - 是否需要维护重点客户，是否产生招待费、礼品费或团队活动费用？
+          - 是否经常参加展会、宣传活动，相关费用目前如何管理？
+          - 销售人员是否有交通补贴、通讯补贴，是否需要票据报销？
+      after_sales_attribute:
+        recommendation: |
+          售后工程师经常前往客户现场，可能产生市内交通、通讯、维修配件垫资、服务耗材等费用。
+        sale_rule: |
+          企业命中售后属性，可从售后人员费用报销、配件垫资和现场服务费用管理切入。
+        kyc_questions:
+          - 售后工程师交通补贴是否要凭票报销，是否要和行程关联？
+          - 是否存在工程师维修时垫钱购买配件，事后报销的场景？
+      tech_attribute:
+        recommendation: |
+          研发、实验、打样、设备维护过程中，可能产生零星采购、耗材补充、配件垫付等报销场景。
+        sale_rule: |
+          企业命中科技属性，可从研发费用归集、票据验真、研发项目费用关联等角度切入。
+        kyc_questions:
+          - 是否存在工程师为抢时间先行采购小工具、芯片、试剂、耗材后报销的场景？
+
+  - module_id: attendance
+    module_name: 假勤管理
+    priority: 88
+    base_score: 38
+    labels:
+      - label_id: manufacturing_attendance
+        label_name: 制造业通用考勤
+        description: 制造业企业存在工种差异、考勤统计、加班休假和人工统计压力。
+        min_matched_indicators: 1
+        indicators:
+          - indicator_id: manufacturing_industry
+            indicator_name: 行业
+            evaluator: rule
+            standard: 企业属于制造业或生产加工型企业。
+            rule:
+              source_field: industry
+              op: contains
+              value: 制造
+          - indicator_id: multi_job_types
+            indicator_name: 多类型工种
+            evaluator: llm
+            standard: 招聘或经营信息中存在生产、研发、行政、物流、销售、售后等多类型岗位。
+            evidence_hints:
+              - 生产
+              - 研发
+              - 行政
+              - 物流
+              - 销售
+              - 售后
+      - label_id: attendance_tech_attribute
+        label_name: 科技属性
+        description: 科技制造企业通常存在计时、计件、研发行政与生产岗位混合管理。
+        min_matched_indicators: 1
+        indicators:
+          - indicator_id: tech_certification
+            indicator_name: 科技企业-科技资质认证
+            evaluator: llm
+            standard: 企业具备高新技术企业、专精特新、科技型中小企业等科技资质。
+            evidence_hints:
+              - 高新技术企业
+              - 专精特新
+              - 科技企业资质
+          - indicator_id: ip_assets
+            indicator_name: 知识产权数量多
+            evaluator: rule
+            standard: 企业存在专利、软著或其他知识产权资产。
+            rule:
+              source_field: ip_counts.patent
+              op: ">"
+              value: 0
+      - label_id: multi_branch
+        label_name: 多分支机构
+        description: 企业存在多个分支、厂区、子公司或跨区域经营迹象。
+        min_matched_indicators: 1
+        indicators:
+          - indicator_id: branch_count
+            indicator_name: 分支机构数量
+            evaluator: rule
+            standard: 分支机构数量达到3个及以上，或存在多地办公/生产线索。
+            rule:
+              source_field: branch_count
+              op: ">="
+              value: 3
+          - indicator_id: cross_region_operation
+            indicator_name: 跨区域经营
+            evaluator: llm
+            standard: 存在跨区域分支、厂区、办事处、服务网点或外勤协作线索。
+            evidence_hints:
+              - 分公司
+              - 办事处
+              - 生产基地
+              - 外勤
+      - label_id: shift_scheduling
+        label_name: 倒班排班
+        description: 企业存在车间排班、倒班、班次调整或生产线班组管理需求。
+        min_matched_indicators: 1
+        indicators:
+          - indicator_id: shift_work
+            indicator_name: 倒班制用工
+            evaluator: llm
+            standard: 企业存在倒班、排班、夜班、轮班、生产线班组等线索。
+            evidence_hints:
+              - 倒班
+              - 排班
+              - 夜班
+              - 轮班
+              - 生产线
+      - label_id: overseas_export
+        label_name: 出口海外
+        description: 出口或海外业务企业可能存在验厂、考勤合规和数据追溯需求。
+        min_matched_indicators: 1
+        indicators:
+          - indicator_id: export_business
+            indicator_name: 核心业务属性
+            evaluator: llm
+            standard: 经营范围、标签或官网中存在出口、海外、跨境、国际客户等线索。
+            evidence_hints:
+              - 出口
+              - 海外
+              - 跨境
+              - 国际
+          - indicator_id: cross_border_label
+            indicator_name: 商品服务有出口特征
+            evaluator: llm
+            standard: 企业具有跨境、外贸、进出口或海外服务贸易标签。
+            evidence_hints:
+              - 跨境
+              - 外贸
+              - 进出口
+              - 服务贸易
+    marketing_points:
+      manufacturing_attendance:
+        recommendation: |
+          制造业常见固定班、加班、请休假、计时与计件并存，考勤结果人工汇总容易耗时和出错。
+        sale_rule: |
+          企业命中制造业通用考勤属性，可从考勤规则自动统计、班次加班请休假联动切入。
+        kyc_questions:
+          - 目前有没有上考勤系统，平时怎样统计考勤？
+          - 是否存在不同岗位不同考勤规则？
+      attendance_tech_attribute:
+        recommendation: |
+          科技制造企业机械化和协同程度较高，研发、行政、生产岗位考勤规则不同，系统适配度较高。
+        sale_rule: |
+          企业命中科技属性，可从计时考勤、岗位差异规则和数字化管理接受度切入。
+        kyc_questions:
+          - 车间算工资以计件为主，还是也需要考勤计时？
+      multi_branch:
+        recommendation: |
+          多分支机构企业可能需要跨厂区打卡、外勤打卡、分子公司考勤报表和集团统一查看。
+        sale_rule: |
+          企业命中多分支机构属性，可介绍多厂区数据实时同步和统一考勤统计。
+        kyc_questions:
+          - 分支机构考勤是统一管理还是各自独立管理？
+      shift_scheduling:
+        recommendation: |
+          倒班排班企业人工登记容易缺漏和错排，可通过系统排班、打卡记录关联班次、分权限排班切入。
+        sale_rule: |
+          企业命中倒班排班属性，可从班次管理、排班权限和打卡关联切入。
+        kyc_questions:
+          - 车间是否有排班、倒班情况？谁负责排班？
+      overseas_export:
+        recommendation: |
+          出口企业常有验厂需求，关注考勤数据真实、防篡改、可追溯和合规统计。
+        sale_rule: |
+          企业命中出口海外属性，可从验厂考勤统计和数据追溯切入。
+        kyc_questions:
+          - 是否存在客户验厂要求？考勤合规目前怎么应对？
+
+  - module_id: travel_reimbursement
+    module_name: 差旅报销
+    priority: 86
+    base_score: 38
+    labels:
+      - label_id: travel_after_sales_attribute
+        label_name: 售后属性
+        description: 售后、安装、维修和客户现场支持会带来差旅、市内交通、住宿和补贴需求。
+        min_matched_indicators: 1
+        indicators:
+          - indicator_id: after_sales_dispatch
+            indicator_name: 售后派驻属性
+            evaluator: llm
+            standard: 存在售后工程师、现场服务、安装调试、客户现场支持等线索。
+            evidence_hints:
+              - 售后
+              - 安装
+              - 维修
+              - 现场服务
+              - 客户现场
+          - indicator_id: technical_complexity
+            indicator_name: 技术含量
+            evaluator: rule
+            standard: 企业存在专利、科技资质或技术复杂型产品。
+            rule:
+              source_field: ip_counts.patent
+              op: ">"
+              value: 0
+      - label_id: travel_production_sales_integrated
+        label_name: 产销一体属性
+        description: 产销一体企业常有区域销售、渠道维护、客户拜访和展会差旅。
+        min_matched_indicators: 1
+        indicators:
+          - indicator_id: sales_channel
+            indicator_name: 经销商维护型业务员属性
+            evaluator: llm
+            standard: 存在区域销售、渠道维护、客户拜访或经销商管理线索。
+            evidence_hints:
+              - 区域销售
+              - 渠道
+              - 经销商
+              - 客户拜访
+          - indicator_id: sales_staff_ratio
+            indicator_name: 销售人员占比
+            evaluator: llm
+            standard: 存在销售、市场、业务拓展团队或岗位线索。
+            evidence_hints:
+              - 销售
+              - 市场
+              - 业务拓展
+      - label_id: overseas_travel_reimbursement
+        label_name: 出口海外报销
+        description: 海外拓展、境外客户、外贸团队会带来跨境差旅和外币报销需求。
+        min_matched_indicators: 1
+        indicators:
+          - indicator_id: overseas_business
+            indicator_name: 海外拓展模式
+            evaluator: llm
+            standard: 存在海外、出口、跨境、国际客户、境外团队或境外销售渠道线索。
+            evidence_hints:
+              - 海外
+              - 出口
+              - 跨境
+              - 国际
+              - 外贸
+          - indicator_id: overseas_team
+            indicator_name: 海外团队配置
+            evaluator: llm
+            standard: 招聘或官网中存在外贸、海外销售、国际业务、境外服务岗位。
+            evidence_hints:
+              - 外贸
+              - 海外销售
+              - 国际业务
+              - 境外
+    marketing_points:
+      travel_after_sales_attribute:
+        recommendation: |
+          售后人员经常到客户现场，容易产生交通、住宿、餐补、通讯和维修相关垫付费用。
+        sale_rule: |
+          企业命中售后属性，可从售后差旅申请、费用标准和行程关联报销切入。
+        kyc_questions:
+          - 售后工程师是否经常去客户现场？差旅费用现在怎么报销？
+      travel_production_sales_integrated:
+        recommendation: |
+          区域销售和渠道维护会产生客户拜访、展会、交通住宿和招待相关费用。
+        sale_rule: |
+          企业命中产销一体属性，可从销售差旅、客户拜访费用和预算控制切入。
+        kyc_questions:
+          - 销售人员是否经常跨区域拜访客户或参加展会？
+      overseas_travel_reimbursement:
+        recommendation: |
+          海外业务可能产生境外差旅、外币票据、跨境补贴和国际客户拜访费用。
+        sale_rule: |
+          企业命中出口海外报销属性，可从境外差旅标准、外币报销和审批合规切入。
+        kyc_questions:
+          - 是否存在境外客户拜访、海外展会或外贸团队差旅？
+
+  - module_id: corporate_payment
+    module_name: 对公报账
+    priority: 82
+    base_score: 36
+    labels:
+      - label_id: frequent_corporate_payment
+        label_name: 对公付款需求多
+        description: 企业采购、供应商、项目、跨区域或跨境结算复杂，对公付款和报账需求较多。
+        min_matched_indicators: 2
+        indicators:
+          - indicator_id: manufacturing_or_supply_chain
+            indicator_name: 行业细分
+            evaluator: llm
+            standard: 属于制造、工程、设备、贸易、供应链或采购密集型行业。
+            evidence_hints:
+              - 制造
+              - 工程
+              - 设备
+              - 采购
+              - 供应链
+          - indicator_id: product_procurement
+            indicator_name: 产品类型标签
+            evaluator: llm
+            standard: 经营范围中存在原材料、设备、配件、工程服务、项目交付等采购或付款场景。
+            evidence_hints:
+              - 原材料
+              - 设备
+              - 配件
+              - 工程
+              - 项目
+          - indicator_id: bidding_signal
+            indicator_name: 产业链位置
+            evaluator: rule
+            standard: 存在招投标或项目型业务线索。
+            rule:
+              source_field: bidding_total
+              op: ">"
+              value: 0
+          - indicator_id: cross_region_purchase
+            indicator_name: 跨区域 / 跨境采购
+            evaluator: llm
+            standard: 存在跨区域采购、跨境采购、供应商协同或多地结算线索。
+            evidence_hints:
+              - 跨区域
+              - 跨境
+              - 供应商
+              - 采购
+    marketing_points:
+      frequent_corporate_payment:
+        recommendation: |
+          采购、供应商和项目付款多的企业，容易出现付款申请、合同附件、发票、审批和银行支付割裂。
+        sale_rule: |
+          企业命中对公付款需求多属性，可从付款申请、供应商收款信息、附件归档和支付审批切入。
+        kyc_questions:
+          - 供应商付款目前是否需要线下走单和人工核对？
+          - 付款申请、合同、发票和银行支付是否能关联起来？
+
+  - module_id: personal_tax
+    module_name: 个税管理
+    priority: 80
+    base_score: 35
+    labels:
+      - label_id: group_manufacturing
+        label_name: 多分支机构/集团化制造企业
+        description: 多分支、多厂区或集团化制造企业存在跨主体人员、薪酬和个税管理复杂度。
+        min_matched_indicators: 1
+        indicators:
+          - indicator_id: branch_count
+            indicator_name: 分支机构
+            evaluator: rule
+            standard: 分支机构数量达到3个及以上，或存在多地经营线索。
+            rule:
+              source_field: branch_count
+              op: ">="
+              value: 3
+          - indicator_id: manufacturing_industry
+            indicator_name: 官网信息
+            evaluator: rule
+            standard: 企业属于制造业或生产加工型企业。
+            rule:
+              source_field: industry
+              op: contains
+              value: 制造
+      - label_id: multi_legal_entity_group
+        label_name: 多法人主体的企业集团
+        description: 多法人、多子公司或股权结构复杂企业存在集团薪酬、申报和合并管理需求。
+        min_matched_indicators: 1
+        indicators:
+          - indicator_id: outbound_investment
+            indicator_name: 企业图谱
+            evaluator: rule
+            standard: 存在对外投资或多主体股权结构线索。
+            rule:
+              source_field: outbound_investment_count
+              op: ">"
+              value: 0
+          - indicator_id: group_name
+            indicator_name: 名称与股权
+            evaluator: llm
+            standard: 企业名称、股权或企业图谱存在集团、控股、多法人主体线索。
+            evidence_hints:
+              - 集团
+              - 控股
+              - 子公司
+              - 对外投资
+      - label_id: state_owned_enterprise
+        label_name: 国有企业
+        description: 国资背景企业通常对薪酬个税合规、审批和数据留痕要求更高。
+        min_matched_indicators: 1
+        indicators:
+          - indicator_id: state_owned_signal
+            indicator_name: 国有企业
+            evaluator: llm
+            standard: 企业类型、股东或标签中存在国有、国资、央企、地方国企等线索。
+            evidence_hints:
+              - 国有
+              - 国资
+              - 央企
+              - 地方国企
+      - label_id: foreign_invested
+        label_name: 外资背景
+        description: 外资企业可能存在外籍员工、跨境薪酬和合规申报要求。
+        min_matched_indicators: 1
+        indicators:
+          - indicator_id: foreign_signal
+            indicator_name: 外资背景
+            evaluator: llm
+            standard: 企业类型、股东、注册资本或标签中存在外资、港澳台、境外股东等线索。
+            evidence_hints:
+              - 外资
+              - 港澳台
+              - 境外
+              - 中外合资
+      - label_id: listed_or_pre_ipo
+        label_name: 上市公司或拟上市公司
+        description: 上市或拟上市企业通常对薪税合规、披露和管理规范要求更高。
+        min_matched_indicators: 1
+        indicators:
+          - indicator_id: listed_signal
+            indicator_name: 股票代码
+            evaluator: rule
+            standard: 企业已上市或存在股票代码。
+            rule:
+              source_field: is_listed
+              op: "=="
+              value: true
+          - indicator_id: ipo_signal
+            indicator_name: PO动态
+            evaluator: llm
+            standard: 存在上市、拟上市、IPO、辅导备案、法定信披等线索。
+            evidence_hints:
+              - 上市
+              - IPO
+              - 辅导备案
+              - 信披
+    marketing_points:
+      group_manufacturing:
+        recommendation: |
+          多分支或制造企业人员结构复杂，个税专项附加、薪资发放和申报主体容易分散。
+        sale_rule: |
+          企业命中多分支机构/集团化制造属性，可从多主体人员个税申报和薪税数据统一切入。
+        kyc_questions:
+          - 多地员工个税申报是否由总部统一处理？
+      multi_legal_entity_group:
+        recommendation: |
+          多法人主体企业可能存在跨主体任职、合并管理、薪资拆分和申报一致性问题。
+        sale_rule: |
+          企业命中多法人主体属性，可从集团化薪税台账和主体协同切入。
+        kyc_questions:
+          - 是否存在员工跨主体任职或多法人薪资发放？
+      state_owned_enterprise:
+        recommendation: |
+          国资背景企业通常重视薪税合规、审批留痕和数据规范。
+        sale_rule: |
+          企业命中国有属性，可从合规、留痕和统一申报流程切入。
+        kyc_questions:
+          - 个税申报和薪资审批是否需要严格留痕？
+      foreign_invested:
+        recommendation: |
+          外资背景企业可能涉及外籍人员、跨境补贴、全球薪酬口径和合规申报。
+        sale_rule: |
+          企业命中外资背景，可从外籍员工和跨境薪税合规切入。
+        kyc_questions:
+          - 是否存在外籍员工或跨境薪酬补贴？
+      listed_or_pre_ipo:
+        recommendation: |
+          上市或拟上市企业对薪酬个税、福利和合规披露更敏感。
+        sale_rule: |
+          企业命中上市或拟上市属性，可从薪税合规和内控规范切入。
+        kyc_questions:
+          - 薪税数据是否需要支持审计、内控或信披要求？
+
+  - module_id: input_invoice
+    module_name: 进项发票
+    priority: 78
+    base_score: 34
+    labels:
+      - label_id: complex_supply_chain
+        label_name: 供应链复杂或供应商众多
+        description: 采购和供应商复杂企业需要进项发票采集、查验、认证和抵扣管理。
+        min_matched_indicators: 1
+        indicators:
+          - indicator_id: manufacturing_procurement
+            indicator_name: 所属行业
+            evaluator: rule
+            standard: 制造业、工程、贸易或采购密集型企业通常存在较多进项票。
+            rule:
+              source_field: industry
+              op: contains
+              value: 制造
+          - indicator_id: supplier_signal
+            indicator_name: 供应商集中度
+            evaluator: llm
+            standard: 存在供应商、采购、原材料、外协、零部件等线索。
+            evidence_hints:
+              - 供应商
+              - 采购
+              - 原材料
+              - 外协
+              - 零部件
+          - indicator_id: business_product
+            indicator_name: 业务与产品
+            evaluator: llm
+            standard: 产品生产或项目交付需要较多物料、配件、设备或服务采购。
+            evidence_hints:
+              - 生产
+              - 配件
+              - 设备
+              - 材料
+      - label_id: input_multi_legal_entity_group
+        label_name: 多法人主体的企业集团
+        description: 多主体企业存在多抬头、多账套和进项发票归属管理需求。
+        min_matched_indicators: 1
+        indicators:
+          - indicator_id: outbound_investment
+            indicator_name: 企业图谱
+            evaluator: rule
+            standard: 存在对外投资或多主体线索。
+            rule:
+              source_field: outbound_investment_count
+              op: ">"
+              value: 0
+          - indicator_id: group_signal
+            indicator_name: 名称与股权
+            evaluator: llm
+            standard: 企业名称或股权中存在集团、控股、子公司、多法人主体线索。
+            evidence_hints:
+              - 集团
+              - 控股
+              - 子公司
+      - label_id: input_listed_or_pre_ipo
+        label_name: 上市公司或拟上市公司
+        description: 上市或拟上市企业对进项发票合规、认证抵扣和审计留痕要求更高。
+        min_matched_indicators: 1
+        indicators:
+          - indicator_id: listed_signal
+            indicator_name: 股票代码
+            evaluator: rule
+            standard: 企业已上市或存在股票代码。
+            rule:
+              source_field: is_listed
+              op: "=="
+              value: true
+          - indicator_id: ipo_signal
+            indicator_name: 法定信披
+            evaluator: llm
+            standard: 存在上市、拟上市、IPO、辅导备案、法定信披等线索。
+            evidence_hints:
+              - 上市
+              - IPO
+              - 信披
+    marketing_points:
+      complex_supply_chain:
+        recommendation: |
+          供应链复杂企业进项发票来源多，容易出现查验、认证、抵扣、抬头和归属管理压力。
+        sale_rule: |
+          企业命中供应链复杂属性，可从进项票采集、验真、认证抵扣和供应商对账切入。
+        kyc_questions:
+          - 进项发票目前如何收集、查验和认证抵扣？
+      input_multi_legal_entity_group:
+        recommendation: |
+          多主体企业可能存在多抬头、多账套、发票归属和跨主体协同问题。
+        sale_rule: |
+          企业命中多法人主体属性，可从多主体进项票归集和权限管理切入。
+        kyc_questions:
+          - 是否存在多个开票抬头或多法人主体共同采购？
+      input_listed_or_pre_ipo:
+        recommendation: |
+          上市或拟上市企业对进项发票合规、审计追溯和抵扣准确性要求更高。
+        sale_rule: |
+          企业命中上市属性，可从进项票合规留痕和审计追溯切入。
+        kyc_questions:
+          - 进项发票数据是否需要支持审计或内控检查？
+
+  - module_id: output_invoice
+    module_name: 销项发票
+    priority: 76
+    base_score: 34
+    labels:
+      - label_id: high_frequency_invoicing
+        label_name: 高频开票
+        description: 交易频繁、客户多、渠道多或政策试点企业存在较高销项开票管理需求。
+        min_matched_indicators: 1
+        indicators:
+          - indicator_id: business_model
+            indicator_name: 行业与产品特性
+            evaluator: llm
+            standard: 业务面向大量客户、渠道、电商、零售、服务或频繁交易场景。
+            evidence_hints:
+              - 客户
+              - 渠道
+              - 电商
+              - 零售
+              - 服务
+          - indicator_id: recruitment_signal
+            indicator_name: 招聘与团队配置
+            evaluator: llm
+            standard: 招聘或业务描述中存在销售、客服、财务开票、渠道运营等岗位线索。
+            evidence_hints:
+              - 销售
+              - 客服
+              - 开票
+              - 渠道运营
+          - indicator_id: cross_border_or_policy
+            indicator_name: 政策与试点身份
+            evaluator: llm
+            standard: 存在全电票、跨境、电商、服务贸易或政策试点相关线索。
+            evidence_hints:
+              - 全电票
+              - 跨境
+              - 电商
+              - 服务贸易
+      - label_id: digitalization_stage
+        label_name: 数字化投入与阶段
+        description: 已启动ERP、业财一体化或核心系统升级的企业更需要开票协同。
+        min_matched_indicators: 1
+        indicators:
+          - indicator_id: erp_project
+            indicator_name: 已启动业财一体化项目
+            evaluator: llm
+            standard: 存在ERP、业财一体化、财务系统、开票系统或数字化项目线索。
+            evidence_hints:
+              - ERP
+              - 业财一体化
+              - 财务系统
+              - 数字化
+              - 开票系统
+          - indicator_id: system_recruitment
+            indicator_name: 招聘与团队配置
+            evaluator: llm
+            standard: 存在IT、信息化、财务系统、ERP实施、数据管理等岗位线索。
+            evidence_hints:
+              - IT
+              - 信息化
+              - ERP实施
+              - 数据管理
+      - label_id: output_multi_legal_entity_group
+        label_name: 多法人主体的企业集团
+        description: 多主体企业存在多开票主体、客户抬头、税控权限和销项数据汇总需求。
+        min_matched_indicators: 1
+        indicators:
+          - indicator_id: outbound_investment
+            indicator_name: 企业图谱
+            evaluator: rule
+            standard: 存在对外投资或多主体线索。
+            rule:
+              source_field: outbound_investment_count
+              op: ">"
+              value: 0
+          - indicator_id: group_signal
+            indicator_name: 名称与股权
+            evaluator: llm
+            standard: 企业名称或股权中存在集团、控股、子公司、多法人主体线索。
+            evidence_hints:
+              - 集团
+              - 控股
+              - 子公司
+    marketing_points:
+      high_frequency_invoicing:
+        recommendation: |
+          高频开票企业容易出现客户开票信息维护、批量开票、红冲、作废和对账压力。
+        sale_rule: |
+          企业命中高频开票属性，可从销项发票批量开具、客户抬头维护和开票对账切入。
+        kyc_questions:
+          - 开票是否频繁？客户抬头和税号如何维护？
+      digitalization_stage:
+        recommendation: |
+          数字化建设中的企业需要开票、订单、财务和客户数据协同。
+        sale_rule: |
+          企业命中数字化投入属性，可从开票系统与ERP/财务系统集成切入。
+        kyc_questions:
+          - 当前开票系统是否和财务、订单或ERP打通？
+      output_multi_legal_entity_group:
+        recommendation: |
+          多主体企业可能存在多个开票主体、不同税控设备和销项数据汇总问题。
+        sale_rule: |
+          企业命中多法人主体属性，可从多主体销项发票集中管理切入。
+        kyc_questions:
+          - 是否存在多个开票主体或多账套开票管理？

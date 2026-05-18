@@ -10,6 +10,7 @@ from pathlib import Path
 from xft.core.config_loader import load_dimensions_config
 from xft.core.scenario import load_scenario
 from xft.evidence.policy import load_evidence_policy
+from xft.pipeline.recommender.business_config_loader import load_business_recommendation_config
 from xft.pipeline.recommender.config_loader import load_products_config, write_products_resolved_config
 from xft.scoring.policy_loader import load_scoring_policy
 from xft.web.config_loader import load_web_extract_llm_config, load_web_search_config
@@ -56,6 +57,7 @@ def _validate(args: argparse.Namespace) -> int:
         web_extract = load_web_extract_llm_config(args.scenario)
         scoring = load_scoring_policy(args.scenario)
         evidence = load_evidence_policy(args.scenario)
+        business = load_business_recommendation_config(args.scenario)
     except (OSError, TypeError, ValueError) as exc:
         sys.stderr.write(f"invalid scenario: {exc}\n")
         return 1
@@ -69,6 +71,7 @@ def _validate(args: argparse.Namespace) -> int:
         "web_extract_enabled": web_extract.enabled,
         "scoring_policy_version": scoring.version,
         "evidence_policy_version": evidence.version,
+        "business_modules": len(business.modules) if business else 0,
     }
     sys.stdout.write(json.dumps(payload, ensure_ascii=False, indent=2))
     sys.stdout.write("\n")

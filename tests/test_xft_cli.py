@@ -33,6 +33,7 @@ def test_xft_scenario_validate(capsys: pytest.CaptureFixture[str]) -> None:
     assert payload["scenario_id"] == "sales_recommendation"
     assert payload["products"] > 0
     assert payload["dimensions"] > 0
+    assert payload["business_modules"] > 0
 
 
 def test_xft_scenario_inspect_writes_output(tmp_path: Path) -> None:

@@ -246,7 +246,10 @@ def summarize_run(result: RecommendationRunResult) -> dict[str, Any]:
     """Build one standardized summary row from a completed recommendation run."""
     output_dir = Path(result.output_dir)
     profile = _read_json(output_dir / "profile.json")
-    payload = _read_json(output_dir / "result.json")
+    business_payload = _read_json(output_dir / "result.json")
+    payload = _read_json(output_dir / "internal_result.json")
+    if not payload:
+        payload = business_payload
     raw_recommendations = payload.get("recommendations")
     recommendations: list[Any] = raw_recommendations if isinstance(raw_recommendations, list) else []
     top = recommendations[0] if recommendations and isinstance(recommendations[0], dict) else {}
@@ -265,7 +268,7 @@ def summarize_run(result: RecommendationRunResult) -> dict[str, Any]:
             "scenario": payload.get("scenario", ""),
             "scenario_name": payload.get("scenario_name", ""),
             "top_module_id": top.get("module_id", ""),
-            "top_module_name": top.get("module_name", ""),
+            "top_module_name": business_payload.get("Module") or top.get("module_name", ""),
             "top_score": top.get("score", ""),
             "recommendation_count": len(recommendations),
             "profile_completeness": profile.get("profile_completeness", payload.get("profile_completeness", "")),

@@ -321,10 +321,13 @@ async def test_run_recommendation_accepts_scenario_bundle(
     )
 
     assert result.status in ("success", "partial")
-    payload = json.loads((Path(result.output_dir) / "result.json").read_text(encoding="utf-8"))
+    payload = json.loads((Path(result.output_dir) / "internal_result.json").read_text(encoding="utf-8"))
     assert payload["scenario"] == "sales_recommendation"
     assert payload["scenario_name"] == "销售产品推荐"
     assert payload["recommendations"]
+    business_payload = json.loads((Path(result.output_dir) / "result.json").read_text(encoding="utf-8"))
+    assert business_payload["CompanyName"] == "广东德美精细化工集团股份有限公司"
+    assert "AcceptanceResult" in business_payload
     resolved = json.loads((Path(result.output_dir) / "scenario_resolved.json").read_text(encoding="utf-8"))
     assert len(resolved["products_effective_hash"]) == 64
     manifest = json.loads((Path(result.output_dir) / "config_manifest.json").read_text(encoding="utf-8"))
