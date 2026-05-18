@@ -16,6 +16,40 @@ XFT 当前是一个 **命令行驱动的企业分析与推荐平台**。
 
 ## 两条流水线
 
+## 总体架构图
+
+```mermaid
+flowchart TB
+    user["业务人员 / 运营人员"] --> cli["uv run xft <command>"]
+
+    cli --> wh["warehouse build"]
+    cli --> rec["recommend 推荐流水线"]
+    cli --> web["web enrich/import"]
+    cli --> dd["diligence 尽调流水线"]
+
+    data["data/ 企业 JSON"] --> wh
+    wh --> duck["cache/company_warehouse.duckdb"]
+
+    duck --> rec
+    web_cache["data/web/ Web 原始与中间缓存"] --> web
+    web --> duck
+
+    rec --> out["recommendation_runs/..."]
+    dd --> ddout["runs/..."]
+
+    out --> result["result.json 业务交付"]
+    out --> internal["internal_result.json 内部评分"]
+    out --> labels["business_label_result.json 标签判断"]
+    out --> report["report.md 人读报告"]
+```
+
+核心原则：
+
+- `warehouse` 负责把本地 JSON 沉淀成可查询的 DuckDB 企业画像。
+- `web` 负责搜索、抓取、抽取、缓存和入库，不直接决定最终推荐。
+- `recommend` 负责把企业画像、证据和场景配置转成业务推荐结果。
+- `business_modules.yaml` 是业务交付层配置，`products.yaml` 是内部评分和兜底配置。
+
 ### 1. 产品推荐流水线
 
 入口：
@@ -60,6 +94,46 @@ src/xft/pipeline/recommender/
 这是当前主力流水线。
 
 **推荐原理（规则引擎与 LLM 分工）见 [SCORING.md](SCORING.md)。**
+
+### 产品推荐详细数据流
+
+```mermaid
+flowchart LR
+    profile["company_profile 企业画像"] --> gather["data_gather"]
+    evidence["unified_evidence 本地/Web证据"] --> gather
+    gather --> dim["dimension_analyze 维度分析"]
+    dim --> webnode{"是否启用 Web 证据"}
+    webnode -->|否| match["llm_match / 规则兜底匹配"]
+    webnode -->|是| webev["web_evidence 合并 DuckDB Web 证据"]
+    webev --> match
+    match --> recnode["llm_recommend / 规则评分兜底"]
+    recnode --> biz["business_recommend rule + LLM 标签判断"]
+    biz --> save["save"]
+    save --> result["result.json"]
+    save --> internal["internal_result.json"]
+    save --> labelres["business_label_result.json"]
+    save --> md["report.md"]
+```
+
+推荐流水线里有两套互相对齐的结果：
+
+```text
+internal_result.json
+  来自 products.yaml + scoring_policy.yaml
+  用于内部评分、排序、证据链、调试和兜底
+
+result.json
+  来自 business_modules.yaml
+  用于业务交付、前端展示、销售话术和 KYC 问题
+```
+
+二者通过同一个 `module_id` 对齐。例如：
+
+```text
+products.yaml              module_id: attendance
+business_modules.yaml      module_id: attendance
+result.json                Module: 假勤管理
+```
 
 ### 2. 企业尽调流水线
 
@@ -170,6 +244,27 @@ src/xft/utils/
 src/xft/ai/
 ```
 
+Web 子系统的原则：
+
+```mermaid
+flowchart TB
+    plan["Web 规划: 哪些维度需要补证"] --> search["搜索 provider: minimax/metaso 等"]
+    search --> raw["保存原始搜索响应"]
+    raw --> fetch{"是否抓取页面"}
+    fetch -->|是| pages["保存网页正文/Markdown"]
+    fetch -->|否| snippets["只使用标题和摘要"]
+    pages --> extract["LLM / fallback 证据抽取"]
+    snippets --> extract
+    extract --> cache["data/web 缓存"]
+    cache --> import["web import / 自动入库"]
+    import --> duck["DuckDB web_* + unified_evidence"]
+```
+
+- 本地 JSON 信息充足时，Web 可以按策略跳过。
+- Web 原始搜索、抓取正文、抽取结果都会缓存，避免反复抓取。
+- Web 与本地 JSON 冲突时，默认以本地 JSON 为准，并在证据中提示冲突。
+- 推荐时使用的是入库后的 Web 证据，不直接把大量原始网页塞进最终报告。
+
 ### 推荐报告
 
 ```text
@@ -254,6 +349,32 @@ business_modules.yaml
 | `llm` | 需要综合行业、经营范围、标签、招聘和证据语义的业务判断 |
 
 运行 `--no-llm` 时，`llm` 指标会使用配置里的 `evidence_hints` 做本地兜底判断，保证离线烟测可运行。
+
+业务标签判断原理：
+
+```mermaid
+flowchart LR
+    facts["企业画像 + 维度证据 + Web证据"] --> ind["指标判断 indicator"]
+    ind --> rule["evaluator: rule 确定性字段规则"]
+    ind --> llm["evaluator: llm 证据约束推理"]
+    rule --> indres["BusinessIndicatorResult"]
+    llm --> indres
+    indres --> label["标签聚合 label"]
+    label --> module["模块聚合 module"]
+    module --> resultjson["业务版 result.json"]
+```
+
+每个指标统一输出：
+
+```json
+{
+  "result": "matched / possible / not_matched / unknown",
+  "confidence": "高 / 中 / 低",
+  "current_status": "当前企业实际情况",
+  "evidence": ["支撑证据"],
+  "evaluator": "rule / llm"
+}
+```
 
 当前销售推荐业务层覆盖 7 个模块：
 

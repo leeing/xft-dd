@@ -35,6 +35,14 @@
 | `config_manifest.json` | 本次运行使用的配置文件和 hash，方便复现 |
 | `scenario_resolved.json` | 场景配置解析结果 |
 
+最常看的顺序是：
+
+```text
+result.json → 看最终推荐给业务/前端的结果
+business_label_result.json → 看标签和指标为什么命中
+internal_result.json → 看内部评分、证据链和工程调试信息
+```
+
 批量运行时，会额外生成批次汇总：
 
 | 文件 | 用途 |
@@ -218,12 +226,32 @@ uv run xft diligence --batch company.txt
 config/scenarios/sales_recommendation/
 ```
 
+### 3.1 先理解三层配置
+
+推荐配置分三层。日常业务调优优先从第一层开始，只有发现数据或证据不够时，再往下看。
+
+| 层级 | 主要文件 | 解决什么问题 | 业务人员常用程度 |
+|------|----------|--------------|------------------|
+| 业务结果层 | `business_modules.yaml` | 最终推荐哪个模块、命中哪些标签、输出哪些营销点和 KYC 问题 | 最高 |
+| 内部评分层 | `products.yaml`、`scoring_policy.yaml` | 内部候选产品如何打分、排序、兜底 | 中 |
+| 证据与数据层 | `analysis_dimensions.yaml`、`evidence_policy.yaml`、`web_search.yaml`、`web_extract_llm.yaml` | 从哪些字段和 Web 证据判断企业特征 | 中 |
+
+通俗说：
+
+```text
+business_modules.yaml 决定“业务上怎么说”
+products.yaml 决定“内部怎么排序”
+analysis_dimensions.yaml / web_search.yaml 决定“系统看哪些证据”
+```
+
+### 3.2 配置文件速查
+
 常用配置文件如下：
 
 | 想调整什么 | 修改哪个文件 |
 |------------|--------------|
-| 推荐哪些产品、产品权重、命中规则 | `products.yaml` |
 | 最终业务结果、标签、指标、营销点、KYC 问题 | `business_modules.yaml` |
+| 内部推荐哪些产品、产品权重、命中规则 | `products.yaml` |
 | 分析哪些维度、读取哪些字段、Web 搜索关键词 | `analysis_dimensions.yaml` |
 | 评分加减分策略 | `scoring_policy.yaml` |
 | 证据可信度、冲突处理、是否跳过 Web | `evidence_policy.yaml` |
@@ -232,7 +260,7 @@ config/scenarios/sales_recommendation/
 | LLM 提示词 | `prompts/*.md` |
 | 场景入口和文件路径 | `scenario.yaml` |
 
-### 3.1 场景入口：`scenario.yaml`
+### 3.3 场景入口：`scenario.yaml`
 
 `scenario.yaml` 用来声明这个场景要使用哪些配置文件。
 
@@ -265,7 +293,7 @@ prompts:
 uv run xft recommend --scenario config/scenarios/sales_recommendation "企业名称"
 ```
 
-### 3.2 推荐的调优流程
+### 3.4 推荐的调优流程
 
 不要一上来就改很多文件。建议按这个顺序来：
 
@@ -304,22 +332,133 @@ uv run xft calibrate \
   --limit 10
 ```
 
-### 3.3 常见调优目标
+### 3.5 常见调优目标
 
 | 业务现象 | 优先改哪里 | 不建议先改哪里 |
 |----------|------------|----------------|
-| 某个产品经常推荐过高 | `products.yaml` 的 `base_score`、`positive_rules`、`negative_rules` | prompt |
-| 某个产品经常推荐过低 | `products.yaml` 增加加分规则或提高权重 | 全局评分策略 |
+| `result.json` 推荐模块不符合业务预期 | `business_modules.yaml` 的标签、指标、接受度规则 | Python 代码 |
+| 命中了不该命中的业务标签 | `business_modules.yaml` 的 `min_matched_indicators`、`standard`、`evidence_hints` | Web provider |
+| 销售话术或 KYC 问题不合适 | `business_modules.yaml` 的 `marketing_points` | Prompt |
+| 某个产品内部评分经常过高 | `products.yaml` 的 `base_score`、`positive_rules`、`negative_rules` | Prompt |
+| 某个产品内部评分经常过低 | `products.yaml` 增加加分规则或提高权重 | 全局评分策略 |
 | 报告缺少某类判断依据 | `analysis_dimensions.yaml` 增加维度字段、缺失证据或搜索词 | 产品权重 |
 | 本地数据够多但仍频繁搜索 Web | `evidence_policy.yaml` 的 Web 跳过阈值 | Web provider |
 | Web 结果噪声太多 | `analysis_dimensions.yaml` 的搜索词、`web_search.yaml` 的 provider/页数 | 产品规则 |
 | Web 证据抽取不符合业务口径 | `prompts/extract_evidence_system.md` | 评分策略 |
-| 整体分数偏高或偏低 | `scoring_policy.yaml` | 单个产品规则 |
+| 内部整体分数偏高或偏低 | `scoring_policy.yaml` | 单个产品规则 |
 | 想做一个新行业/新客群场景 | 新建 `config/scenarios/<新场景>/scenario.yaml`，用 `extends` + `patches` | 复制整份代码 |
 
-### 3.4 调产品推荐：`products.yaml`
+### 3.6 调业务结果：`business_modules.yaml`
+
+`business_modules.yaml` 是业务人员最重要的配置文件。它决定最终业务版 `result.json`。
+
+它的结构是：
+
+```text
+模块 module
+  → 业务标签 label
+    → 判断指标 indicator
+      → 判断方式 evaluator: rule 或 llm
+  → 标签命中后的营销点 marketing_points
+```
+
+当前销售推荐场景已覆盖 7 个业务模块：
+
+| `module_id` | 模块 |
+|-------------|------|
+| `attendance` | 假勤管理 |
+| `travel_reimbursement` | 差旅报销 |
+| `corporate_payment` | 对公报账 |
+| `personal_tax` | 个税管理 |
+| `daily_reimbursement` | 日常报销 |
+| `input_invoice` | 进项发票 |
+| `output_invoice` | 销项发票 |
+
+一个最小示例：
+
+```yaml
+modules:
+  - module_id: daily_reimbursement
+    module_name: 日常报销
+    labels:
+      - label_id: tech_attribute
+        label_name: 科技属性
+        min_matched_indicators: 1
+        indicators:
+          - indicator_id: ip_assets
+            indicator_name: 知识产权数量多
+            evaluator: rule
+            standard: 存在专利、软著或其他知识产权资产。
+            rule:
+              source_field: ip_counts.patent
+              op: ">"
+              value: 0
+          - indicator_id: tech_certification
+            indicator_name: 科技企业-科技资质认证
+            evaluator: llm
+            standard: 企业具备高新技术企业、专精特新、科技型中小企业等资质。
+            evidence_hints:
+              - 高新技术企业
+              - 专精特新
+```
+
+字段含义：
+
+| 字段 | 含义 |
+|------|------|
+| `module_id` | 模块稳定 ID，建议和 `products.yaml` 里的模块 ID 对齐 |
+| `label_id` | 业务属性标签 ID，例如 `tech_attribute` |
+| `min_matched_indicators` | 一个标签至少命中几个指标才算“满足” |
+| `indicator_id` | 指标 ID，例如 `ip_assets` |
+| `evaluator` | 判断方式，`rule` 表示确定性规则，`llm` 表示 LLM 结合证据推理 |
+| `standard` | 判断标准，会进入最终 `result.json` 的 `QuantitativeStandard` |
+| `evidence_hints` | `--no-llm` 兜底或 LLM 判断时使用的关键词提示 |
+| `marketing_points` | 标签命中后输出的推荐理由、销售规则和 KYC 问题 |
+
+`rule` 适合明确字段：
+
+```yaml
+rule:
+  source_field: ip_counts.patent
+  op: ">"
+  value: 0
+```
+
+`llm` 适合业务语义判断：
+
+```yaml
+evaluator: llm
+prompt: |
+  请判断企业是否存在经销商维护、区域销售、渠道维护或业务员外勤销售特征。
+```
+
+运行 `--no-llm` 时，LLM 指标不会调用模型，会使用 `evidence_hints` 在本地画像里做保守兜底判断。
+
+最终输出关系：
+
+| 输出字段 | 来源 |
+|----------|------|
+| `Module` | 选中的 `module_name` |
+| `LabelResult` | 命中的指标判断结果 |
+| `Acceptance` | 命中的业务属性标签 |
+| `MarketingPoint` | 命中标签对应的 `marketing_points` |
+| `AttributesNumber` | 当前模块下满足的标签数量，运行时计算 |
+| `IndicatorsNumber` | 当前模块下满足的指标数量，运行时计算 |
+| `AcceptanceResult` | `acceptance_policy` 根据标签数量计算 |
+
+业务人员最常改的是：
+
+- 新增或删除某个标签下的 `indicators`。
+- 把某个指标从 `rule` 改成 `llm`。
+- 修改 `min_matched_indicators`，让标签更宽松或更严格。
+- 修改 `standard`，让判断标准更贴近业务。
+- 修改 `marketing_points`，让推荐理由和 KYC 问题更像销售话术。
+
+### 3.7 调内部产品评分：`products.yaml`
 
 当你觉得“推荐了不该推荐的产品”或“该推荐的产品没上来”，优先改 `products.yaml`。
+
+注意：`products.yaml` 影响 `internal_result.json` 的内部评分和兜底排序；`result.json` 的业务标签和营销点主要由 `business_modules.yaml` 决定。两个文件通过同一个 `module_id` 对齐。
 
 一个产品模块最常调的是：
 
@@ -362,105 +501,7 @@ negative_rules:
 - 如果一个产品完全上不来，先看它的 `target_needs` 是否能被维度支持。
 - `reason` 会进入解释链路，写给业务人员看，不要写成技术字段说明。
 
-### 3.5 调业务结果：`business_modules.yaml`
-
-`result.json` 主要由 `business_modules.yaml` 生成。这个文件用来描述：
-
-```text
-模块 → 业务属性标签 → 指标 → 判断方式(rule/llm) → 营销点/KYC问题
-```
-
-一个最小示例：
-
-```yaml
-modules:
-  - module_id: daily_reimbursement
-    module_name: 日常报销
-    labels:
-      - label_id: tech_attribute
-        label_name: 科技属性
-        min_matched_indicators: 1
-        indicators:
-          - indicator_id: ip_assets
-            indicator_name: 知识产权数量多
-            evaluator: rule
-            standard: 存在专利、软著或其他知识产权资产。
-            rule:
-              source_field: ip_counts.patent
-              op: ">"
-              value: 0
-          - indicator_id: tech_certification
-            indicator_name: 科技企业-科技资质认证
-            evaluator: llm
-            standard: 企业具备高新技术企业、专精特新、科技型中小企业等资质。
-            evidence_hints:
-              - 高新技术企业
-              - 专精特新
-```
-
-字段含义：
-
-| 字段 | 含义 |
-|------|------|
-| `module_id` | 模块稳定 ID，建议和 `products.yaml` 里的模块 ID 对齐 |
-| `label_id` | 业务属性标签 ID，例如 `tech_attribute` |
-| `indicator_id` | 指标 ID，例如 `ip_assets` |
-| `evaluator` | 判断方式，`rule` 表示确定性规则，`llm` 表示 LLM 结合证据推理 |
-| `standard` | 判断标准，会进入最终 `result.json` 的 `QuantitativeStandard` |
-| `evidence_hints` | 离线或 LLM 判断时使用的关键词提示 |
-| `marketing_points` | 标签命中后输出的推荐理由、销售规则和 KYC 问题 |
-
-`rule` 适合明确字段：
-
-```yaml
-rule:
-  source_field: ip_counts.patent
-  op: ">"
-  value: 0
-```
-
-`llm` 适合业务语义判断：
-
-```yaml
-evaluator: llm
-prompt: |
-  请判断企业是否存在经销商维护、区域销售、渠道维护或业务员外勤销售特征。
-```
-
-运行 `--no-llm` 时，LLM 指标不会调用模型，会使用 `evidence_hints` 在本地画像里做保守兜底判断。
-
-最终输出关系：
-
-| 输出字段 | 来源 |
-|----------|------|
-| `Module` | 选中的 `module_name` |
-| `LabelResult` | 命中的指标判断结果 |
-| `Acceptance` | 命中的业务属性标签 |
-| `MarketingPoint` | 命中标签对应的 `marketing_points` |
-| `AttributesNumber` | 当前模块下满足的标签数量，运行时计算 |
-| `IndicatorsNumber` | 当前模块下满足的指标数量，运行时计算 |
-| `AcceptanceResult` | `acceptance_policy` 根据标签数量计算 |
-
-业务人员最常改的是：
-
-- 新增或删除某个标签下的 `indicators`。
-- 把某个指标从 `rule` 改成 `llm`。
-- 修改 `standard`，让判断标准更贴近业务。
-- 修改 `marketing_points`，让推荐理由和 KYC 问题更像销售话术。
-
-当前销售推荐场景已覆盖 7 个业务模块：
-
-| `module_id` | 模块 |
-|-------------|------|
-| `attendance` | 假勤管理 |
-| `travel_reimbursement` | 差旅报销 |
-| `corporate_payment` | 对公报账 |
-| `personal_tax` | 个税管理 |
-| `daily_reimbursement` | 日常报销 |
-| `input_invoice` | 进项发票 |
-| `output_invoice` | 销项发票 |
-
-### 3.6 调分析维度：`analysis_dimensions.yaml`
+### 3.8 调分析维度：`analysis_dimensions.yaml`
 
 当你觉得“系统没有看懂企业的某类特征”，改 `analysis_dimensions.yaml`。
 
@@ -503,7 +544,7 @@ web_search_queries:
 - `confidence` 不要随便写高。行业、规模、经营范围通常是弱线索；官网产品、客户案例、公告通常更强。
 - `insufficient_evidence` 很重要，它能让报告明确“为什么还不能高置信判断”。
 
-### 3.7 调评分口径：`scoring_policy.yaml`
+### 3.9 调评分口径：`scoring_policy.yaml`
 
 当你觉得“不是某个产品错了，而是整体分数偏高/偏低”，再改 `scoring_policy.yaml`。
 
@@ -528,7 +569,7 @@ web_search_queries:
 - 如果存在冲突还被高分推荐，提高 `penalties.conflict_per_item`。
 - 如果缺失信息导致扣分过重，降低 `missing_evidence_cap`。
 
-### 3.8 调证据使用策略：`evidence_policy.yaml`
+### 3.10 调证据使用策略：`evidence_policy.yaml`
 
 当你关注“证据够不够、是否要搜 Web、冲突怎么处理”时，改 `evidence_policy.yaml`。
 
@@ -550,7 +591,7 @@ web_search_queries:
 - 如果 Web 和本地冲突，默认以本地 JSON 为准。不要轻易把 `web` 的优先级排到 `local_json` 前面。
 - `manual` 适合人工确认后的证据，优先级可以高于普通规则和 Web。
 
-### 3.9 调 Web 搜索：`web_search.yaml`
+### 3.11 调 Web 搜索：`web_search.yaml`
 
 当你觉得“Web 搜不到、搜太多、噪声太大、抓取太慢”，改 `web_search.yaml` 和维度里的 `web_search_queries`。
 
@@ -581,7 +622,7 @@ uv run xft web enrich --refresh-fetch "企业名称"        # 仅重新抓取网
 uv run xft web enrich --refresh-extraction "企业名称"   # 仅重新抽取证据
 ```
 
-### 3.10 调 LLM 和 Prompt
+### 3.12 调 LLM 和 Prompt
 
 当你觉得“推荐理由写得不对、Web 证据抽取口径不对、模型过度推断”，改 `prompts/*.md`。
 
@@ -601,7 +642,7 @@ uv run xft web enrich --refresh-extraction "企业名称"   # 仅重新抽取证
 - 如果输出太发散，保持 `temperature: 0`。
 - 修改 Web 抽取 prompt 后，使用 `--refresh-extraction` 重新抽取。
 
-### 3.11 新增一个业务场景
+### 3.13 新增一个业务场景
 
 如果只是新客群、新行业、新销售策略，不建议复制整套配置。优先用 `extends` 继承已有场景，只写差异。
 
@@ -634,7 +675,7 @@ uv run xft scenario validate config/scenarios/bank_marketing
 uv run xft scenario inspect config/scenarios/bank_marketing
 ```
 
-### 3.12 如何判断调优是否有效
+### 3.14 如何判断调优是否有效
 
 单家公司适合看解释是否合理：
 
