@@ -35,8 +35,9 @@ DuckDB company_profile
   -> web_evidence（可选）
   -> llm_match / 规则兜底
   -> llm_recommend / 规则兜底
+  -> business_recommend（rule + LLM 标签判断）
   -> save
-  -> recommendation_runs/.../report.md + result.json
+  -> recommendation_runs/.../report.md + result.json + internal_result.json
 ```
 
 代码位置：
@@ -51,6 +52,9 @@ src/xft/pipeline/recommender/
   nodes/
   report_renderer.py
   recommendation_normalizer.py
+  business_models.py
+  business_evaluator.py
+  business_result_renderer.py
 ```
 
 这是当前主力流水线。
@@ -173,11 +177,21 @@ company_profile + unified_evidence + scenario config
   -> xft recommend
   -> recommendation_runs/<scenario>/<run_id>/
        profile.json
+       internal_result.json
+       business_label_result.json
        result.json
        report.md
        config_manifest.json
        scenario_resolved.json
 ```
+
+输出文件分工：
+
+| 文件 | 说明 |
+|------|------|
+| `internal_result.json` | 内部推荐结果，保留原规则引擎/LLM 推荐、分数、证据链和评分摘要 |
+| `business_label_result.json` | 业务标签判断中间结果，记录每个指标由 `rule` 还是 `llm` 判断 |
+| `result.json` | 面向业务/前端的最终格式，包含 `Module`、`LabelResult`、`MarketingPoint`、`AcceptanceResult` |
 
 ## 配置体系
 
@@ -189,6 +203,7 @@ company_profile + unified_evidence + scenario config
 config/scenarios/sales_recommendation/
   scenario.yaml
   products.yaml
+  business_modules.yaml
   analysis_dimensions.yaml
   scoring_policy.yaml
   evidence_policy.yaml
@@ -209,6 +224,7 @@ config/scenarios/bank_marketing/scenario.yaml
 |------|----------|
 | `scenario.yaml` | 场景入口，声明配置文件和输出目录 |
 | `products.yaml` | 产品模块、权重、命中规则、排除规则 |
+| `business_modules.yaml` | 业务版结果配置：模块、标签、指标、rule/LLM 判断、营销点、KYC 问题 |
 | `analysis_dimensions.yaml` | 分析维度、本地字段、Web 搜索词 |
 | `scoring_policy.yaml` | 全局评分策略 |
 | `evidence_policy.yaml` | 证据优先级、质量分、Web 跳过策略、冲突策略 |
@@ -217,6 +233,39 @@ config/scenarios/bank_marketing/scenario.yaml
 | `prompts/*.md` | LLM 提示词 |
 
 目标是：业务人员可以通过配置验证和调优大部分推荐逻辑，不需要改 Python 代码。
+
+### 业务标签层
+
+`business_modules.yaml` 是当前新增的业务交付层配置。它不替代原 `products.yaml`，而是在同一个推荐链路中使用相同的 `module_id` 补充业务结果：
+
+```text
+products.yaml
+  -> internal_result.json（工程评分、证据链、兜底）
+
+business_modules.yaml
+  -> result.json（业务标签、营销点、KYC 问题）
+```
+
+其中每个指标可以选择判断器：
+
+| evaluator | 用途 |
+|-----------|------|
+| `rule` | 字段明确、阈值明确的判断，例如 `ip_counts.patent > 0` |
+| `llm` | 需要综合行业、经营范围、标签、招聘和证据语义的业务判断 |
+
+运行 `--no-llm` 时，`llm` 指标会使用配置里的 `evidence_hints` 做本地兜底判断，保证离线烟测可运行。
+
+当前销售推荐业务层覆盖 7 个模块：
+
+```text
+attendance              假勤管理
+travel_reimbursement    差旅报销
+corporate_payment       对公报账
+personal_tax            个税管理
+daily_reimbursement     日常报销
+input_invoice           进项发票
+output_invoice          销项发票
+```
 
 ## 共享基础设施
 
