@@ -257,22 +257,14 @@ class TestBuildShareholderRows:
     """Tests for shareholder extraction from two sources."""
 
     def test_shareholder_json(self) -> None:
-        raw = {
-            "shareholder.json": {
-                "data": {"list": [{"investorName": "张三", "subscribeAmount": 100}]}
-            }
-        }
+        raw = {"shareholder.json": {"data": {"list": [{"investorName": "张三", "subscribeAmount": 100}]}}}
         rows = build_shareholder_rows("CC", raw)
         assert len(rows) == 1
         assert rows[0]["shareholder_name"] == "张三"
         assert rows[0]["subscribe_amount"] == "100"
 
     def test_equity_structure_json(self) -> None:
-        raw = {
-            "equity_structure.json": {
-                "data": [{"name": "李四", "amomon": 200, "investmentRate": 0.5}]
-            }
-        }
+        raw = {"equity_structure.json": {"data": [{"name": "李四", "amomon": 200, "investmentRate": 0.5}]}}
         rows = build_shareholder_rows("CC", raw)
         assert len(rows) == 1
         assert rows[0]["shareholder_name"] == "李四"
@@ -284,11 +276,7 @@ class TestBuildIpSummaryRow:
     """Tests for IP summary builder."""
 
     def test_counts_from_intellectual(self) -> None:
-        raw = {
-            "intellectual.json": {
-                "data": {"intellectual": [{"name": "专利查询", "messageNo": 10}]}
-            }
-        }
+        raw = {"intellectual.json": {"data": {"intellectual": [{"name": "专利查询", "messageNo": 10}]}}}
         row = build_ip_summary_row("CC", raw)
         assert row["patent_count"] == 10
         assert row["trademark_count"] == 0  # fallback to by_name returns 0
@@ -326,9 +314,7 @@ class TestBuildRecruitmentRows:
 
     def test_basic(self) -> None:
         raw = {
-            "recruit_message.json": {
-                "data": {"list": [{"title": "Java工程师", "city": "深圳", "oriSalary": "15-25K"}]}
-            }
+            "recruit_message.json": {"data": {"list": [{"title": "Java工程师", "city": "深圳", "oriSalary": "15-25K"}]}}
         }
         rows = build_recruitment_rows("CC", raw)
         assert len(rows) == 1
@@ -361,9 +347,7 @@ class TestBuildQualificationRows:
 
     def test_query_qualification(self) -> None:
         raw = {
-            "query_qualification.json": {
-                "data": [{"labNm": "ISO9001", "ancNm": "质量管理", "pblhDt": "2024-01-15"}]
-            }
+            "query_qualification.json": {"data": [{"labNm": "ISO9001", "ancNm": "质量管理", "pblhDt": "2024-01-15"}]}
         }
         rows = build_qualification_rows("CC", raw)
         assert len(rows) == 1
@@ -372,9 +356,7 @@ class TestBuildQualificationRows:
 
     def test_certification_json(self) -> None:
         raw = {
-            "certification.json": {
-                "data": {"list": [{"certificateName": "高新技术企业", "startDate": "2023-06-01"}]}
-            }
+            "certification.json": {"data": {"list": [{"certificateName": "高新技术企业", "startDate": "2023-06-01"}]}}
         }
         rows = build_qualification_rows("CC", raw)
         assert len(rows) == 1
@@ -411,9 +393,7 @@ class TestBuildOutboundInvestmentRows:
 
     def test_basic(self) -> None:
         raw = {
-            "query_investor.json": {
-                "data": {"list": [{"companyName": "子公司A", "amount": 500, "regStatus": "存续"}]}
-            }
+            "query_investor.json": {"data": {"list": [{"companyName": "子公司A", "amount": 500, "regStatus": "存续"}]}}
         }
         rows = build_outbound_investment_rows("CC", raw)
         assert len(rows) == 1
