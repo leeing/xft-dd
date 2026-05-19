@@ -25,6 +25,30 @@ TABLES_IN_LOAD_ORDER: tuple[str, ...] = (
 )
 
 
+UNIFIED_EVIDENCE_DDL = """
+CREATE TABLE IF NOT EXISTS unified_evidence (
+  evidence_id TEXT PRIMARY KEY,
+  credit_code TEXT,
+  company_name TEXT NOT NULL,
+  dimension_id TEXT,
+  source_type TEXT NOT NULL,
+  source_name TEXT,
+  source_path TEXT,
+  source_url TEXT,
+  source_field TEXT,
+  claim TEXT NOT NULL,
+  value TEXT,
+  confidence TEXT NOT NULL,
+  authority_level TEXT,
+  relation_to_profile TEXT NOT NULL,
+  conflict_note TEXT,
+  resolution TEXT,
+  raw_ref JSON,
+  created_at TIMESTAMP NOT NULL
+)
+"""
+
+
 DDL: tuple[str, ...] = (
     """
     CREATE TABLE IF NOT EXISTS raw_company_json (
@@ -270,28 +294,7 @@ DDL: tuple[str, ...] = (
       updated_at TIMESTAMP NOT NULL
     )
     """,
-    """
-    CREATE TABLE IF NOT EXISTS unified_evidence (
-      evidence_id TEXT PRIMARY KEY,
-      credit_code TEXT,
-      company_name TEXT NOT NULL,
-      dimension_id TEXT,
-      source_type TEXT NOT NULL,
-      source_name TEXT,
-      source_path TEXT,
-      source_url TEXT,
-      source_field TEXT,
-      claim TEXT NOT NULL,
-      value TEXT,
-      confidence TEXT NOT NULL,
-      authority_level TEXT,
-      relation_to_profile TEXT NOT NULL,
-      conflict_note TEXT,
-      resolution TEXT,
-      raw_ref JSON,
-      created_at TIMESTAMP NOT NULL
-    )
-    """,
+    UNIFIED_EVIDENCE_DDL,
 )
 
 

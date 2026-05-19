@@ -111,11 +111,7 @@ def _render_business_result(state: RecommenderState) -> list[str]:
     if matched_labels:
         lines.append("### 命中标签")
         for label in matched_labels:
-            indicators = [
-                item.indicator_name
-                for item in label.indicator_results
-                if item.result == "matched"
-            ]
+            indicators = [item.indicator_name for item in label.indicator_results if item.result == "matched"]
             lines.append(f"- {label.label_name}：{label.key_indicator_verify}（{'、'.join(indicators)}）")
         lines.append("")
     return lines
@@ -190,13 +186,7 @@ def _result_text(result: str) -> str:
 def _render_next_steps(state: RecommenderState) -> list[str]:
     business = state.get("business_recommendation")
     lines = ["## 下一步核实清单", ""]
-    gaps = sorted(
-        {
-            gap
-            for analysis in state["dimension_analysis"]
-            for gap in analysis.missing_evidence
-        }
-    )
+    gaps = sorted({gap for analysis in state["dimension_analysis"] for gap in analysis.missing_evidence})
     if business and business.selected_module:
         selected = business.selected_module
         lines.append(f"1. 围绕「{selected.module_name}」确认预算、现有系统、审批链路和落地时间。")

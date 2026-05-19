@@ -11,6 +11,7 @@ import duckdb
 import structlog
 from langgraph.graph import END, START, StateGraph
 
+from xft.constants import DEFAULT_SCENARIO, DEFAULT_WAREHOUSE
 from xft.core.scenario import DEFAULT_PROMPTS, load_scenario
 from xft.evidence.policy import load_evidence_policy
 from xft.pipeline.recommender.business_config_loader import load_business_recommendation_config
@@ -30,7 +31,6 @@ from xft.web.models import WebRunMetrics
 log = structlog.get_logger(__name__)
 
 _cache: dict[str, Any] = {}
-DEFAULT_SCENARIO = "config/recommend/sales_recommendation"
 
 
 def _get_graph() -> Any:
@@ -59,7 +59,7 @@ def make_recommendation_run_id(company_name: str) -> str:
 async def run_recommendation(  # noqa: PLR0913
     *,
     company_name: str,
-    warehouse_db: str = "cache/company_warehouse.duckdb",
+    warehouse_db: str = DEFAULT_WAREHOUSE,
     scenario_path: str | None = None,
     dimensions_config_path: str | None = None,
     output_dir: str | None = None,

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-__all__ = ["run_recommendation"]
+from xft.constants import DEFAULT_SCENARIO, DEFAULT_WAREHOUSE
+
+__all__ = ["run_recommendation", "DEFAULT_SCENARIO", "DEFAULT_WAREHOUSE"]
 
 
 async def run_recommendation(*args: Any, **kwargs: Any) -> Any:

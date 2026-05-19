@@ -12,17 +12,16 @@ import structlog
 from dotenv import load_dotenv
 
 from xft.cli.common import csv
+from xft.constants import DEFAULT_SCENARIO, DEFAULT_WAREHOUSE
 from xft.pipeline.recommender import run_recommendation
 from xft.pipeline.recommender.batch import BatchOptions, run_recommendation_batch
-
-DEFAULT_SCENARIO = "config/recommend/sales_recommendation"
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="run product recommendation from DuckDB company_profile")
     parser.add_argument("company_name", nargs="?")
     parser.add_argument("--company-list", help="text file with one company name per line")
-    parser.add_argument("--warehouse", default="cache/company_warehouse.duckdb")
+    parser.add_argument("--warehouse", default=DEFAULT_WAREHOUSE)
     parser.add_argument("--scenario", default=DEFAULT_SCENARIO, help="scenario bundle directory or scenario.yaml")
     parser.add_argument("--dimensions-config", help="advanced override for dimensions config")
     parser.add_argument("--output-dir")

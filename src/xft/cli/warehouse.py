@@ -6,6 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from xft.constants import DEFAULT_WAREHOUSE
 from xft.warehouse import load_prophet_data
 from xft.web import load_web_cache_to_duckdb
 
@@ -15,11 +16,11 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
     build = sub.add_parser("build", help="load Prophet enterprise JSON into DuckDB")
     build.add_argument("--input", default="data", help="Prophet data root directory")
-    build.add_argument("--output", default="cache/company_warehouse.duckdb", help="DuckDB output path")
+    build.add_argument("--output", default=DEFAULT_WAREHOUSE, help="DuckDB output path")
     build.add_argument("--append", action="store_true", help="append to existing tables instead of rebuilding")
     web_import = sub.add_parser("web-import", help="load data/web cache into DuckDB")
     web_import.add_argument("--input", default="data/web")
-    web_import.add_argument("--warehouse", default="cache/company_warehouse.duckdb")
+    web_import.add_argument("--warehouse", default=DEFAULT_WAREHOUSE)
     web_import.add_argument("--rebuild", action="store_true")
     return parser
 

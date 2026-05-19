@@ -9,6 +9,7 @@ from typing import Any
 
 import structlog
 
+from xft.constants import DEFAULT_SCENARIO, DEFAULT_WAREHOUSE
 from xft.core.config_loader import load_dimensions_config
 from xft.core.dimension_analyzer import analyze_dimensions
 from xft.core.scenario import load_scenario
@@ -46,7 +47,6 @@ from xft.web.search_service import run_provider_query
 from xft.web.web_loader import load_web_cache_to_duckdb
 
 log = structlog.get_logger(__name__)
-DEFAULT_SCENARIO = "config/recommend/sales_recommendation"
 
 
 def make_web_run_id(company_name: str) -> str:
@@ -57,7 +57,7 @@ def make_web_run_id(company_name: str) -> str:
 async def run_web_enrichment(  # noqa: C901, PLR0912, PLR0913, PLR0915
     *,
     company_name: str,
-    warehouse_db: str = "cache/company_warehouse.duckdb",
+    warehouse_db: str = DEFAULT_WAREHOUSE,
     scenario_path: str | None = None,
     web_config_path: str | None = None,
     web_extract_llm_config_path: str | None = None,

@@ -86,11 +86,7 @@ def _marketing_points(module: BusinessModuleConfig | None, matched_labels: list[
         point = module.marketing_points.get(label.label_id)
         if point is None:
             continue
-        indicators = [
-            item.indicator_name
-            for item in label.indicator_results
-            if item.result == "matched"
-        ]
+        indicators = [item.indicator_name for item in label.indicator_results if item.result == "matched"]
         points.append(
             {
                 "Recommendation": point.recommendation.strip(),
