@@ -38,10 +38,10 @@ def test_xft_scenario_validate(capsys: pytest.CaptureFixture[str]) -> None:
 def test_xft_scenario_inspect_writes_output(tmp_path: Path) -> None:
     output = tmp_path / "scenario_resolved.json"
 
-    assert xft_main(["scenario", "inspect", "config/recommend/bank_marketing", "--output", str(output)]) == 0
+    assert xft_main(["scenario", "inspect", "config/recommend/sales_recommendation", "--output", str(output)]) == 0
 
     payload = json.loads(output.read_text(encoding="utf-8"))
-    assert payload["id"] == "bank_marketing"
+    assert payload["id"] == "sales_recommendation"
     assert "business_modules_path" in payload
 
 

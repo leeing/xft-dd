@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -10,19 +9,7 @@ from xft.pipeline.recommender.business_result_renderer import render_business_re
 from xft.pipeline.recommender.report_renderer import render_report
 from xft.pipeline.recommender.state import RecommenderState
 from xft.progress import display
-
-
-def _json_default(value: Any) -> str:
-    return str(value)
-
-
-def _write_json(path: Path, value: Any) -> None:
-    path.write_text(json.dumps(value, ensure_ascii=False, indent=2, default=_json_default), encoding="utf-8")
-
-
-def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
-    text = "\n".join(json.dumps(row, ensure_ascii=False, default=_json_default) for row in rows)
-    path.write_text(text + ("\n" if text else ""), encoding="utf-8")
+from xft.utils.file_io import read_json, write_json, write_jsonl
 
 
 def _llm_metrics(events: list[dict[str, Any]]) -> dict[str, Any]:
@@ -63,21 +50,21 @@ async def save_node(state: RecommenderState) -> dict[str, object]:
     result_path = out_dir / "result.json"
     report_path = out_dir / "report.md"
 
-    _write_json(profile_path, state.get("profile", {}))
+    write_json(profile_path, state.get("profile", {}))
     llm_events = state.get("llm_call_events", [])
-    _write_jsonl(llm_calls_path, llm_events)
-    _write_json(llm_metrics_path, _llm_metrics(llm_events))
-    _write_json(dimensions_path, [item.model_dump() for item in state["dimension_analysis"]])
+    write_jsonl(llm_calls_path, llm_events)
+    write_json(llm_metrics_path, _llm_metrics(llm_events))
+    write_json(dimensions_path, [item.model_dump() for item in state["dimension_analysis"]])
     business = state.get("business_recommendation")
     business_label_payload = business.model_dump() if business else {"warning": "business result not generated"}
-    _write_json(business_label_path, business_label_payload)
+    write_json(business_label_path, business_label_payload)
     business_payload = render_business_result_json(
         profile=state.get("profile", {}),
         business_result=business,
         config=state.get("business_config"),
     )
-    _write_json(result_path, business_payload)
-    _write_json(decision_trace_path, _decision_trace(state, llm_events))
+    write_json(result_path, business_payload)
+    write_json(decision_trace_path, _decision_trace(state, llm_events))
     report_path.write_text(render_report(state), encoding="utf-8")
 
     status = "failed" if state.get("errors") else "partial" if state.get("needs_web_enrichment") else "success"
@@ -90,7 +77,7 @@ async def save_node(state: RecommenderState) -> dict[str, object]:
 
 
 def _decision_trace(state: RecommenderState, llm_events: list[dict[str, Any]]) -> dict[str, Any]:
-    web_trace = _read_json(Path(state["web_trace_path"])) if state.get("web_trace_path") else {}
+    web_trace = read_json(Path(state["web_trace_path"])) if state.get("web_trace_path") else {}
     return {
         "company_name": state["company_name"],
         "run_id": state["run_id"],
@@ -132,10 +119,3 @@ def _business_rule_trace(state: RecommenderState) -> list[dict[str, Any]]:
             }
         )
     return rows
-
-
-def _read_json(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    value = json.loads(path.read_text(encoding="utf-8"))
-    return value if isinstance(value, dict) else {}

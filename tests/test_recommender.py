@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from xft.pipeline.recommender.config_loader import load_dimensions_config
+from xft.core.config_loader import load_dimensions_config
 from xft.core.dimension_analyzer import analyze_dimensions
 from xft.pipeline.recommender.graph import run_recommendation
 from xft.pipeline.recommender.models import AnalysisDimension, EvidenceTemplate

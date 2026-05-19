@@ -11,6 +11,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from xft.utils.file_io import read_jsonl
 from xft.web.models import (
     WebEvidenceRecord,
     WebFetchConfig,
@@ -98,10 +99,6 @@ class ExtractionCacheKey(BaseModel):
         return stable_hash(self.model_dump(mode="json"))
 
 
-# Backward-compatible import name used by the first cache implementation.
-WebCacheKey = SearchCacheKey
-
-
 @dataclass(frozen=True)
 class CachedQuery:
     """A cached provider query and its normalized search results."""
@@ -177,8 +174,8 @@ def load_cached_queries(
     Without runtime config, this returns the legacy (dimension_id, provider, query)
     keys so older call sites and cache indexes remain usable.
     """
-    queries = [WebSearchQueryRecord.model_validate(row) for row in _read_jsonl(run_dir / "queries.jsonl")]
-    results = [WebSearchResultRecord.model_validate(row) for row in _read_jsonl(run_dir / "search_results.jsonl")]
+    queries = [WebSearchQueryRecord.model_validate(row) for row in read_jsonl(run_dir / "queries.jsonl")]
+    results = [WebSearchResultRecord.model_validate(row) for row in read_jsonl(run_dir / "search_results.jsonl")]
     by_query_id: dict[str, list[WebSearchResultRecord]] = {}
     for result in results:
         by_query_id.setdefault(result.query_id, []).append(result)
@@ -216,10 +213,10 @@ def load_cached_extractions(
     runtime: CacheRuntimeConfig,
 ) -> dict[str, CachedExtraction]:
     """Load reusable extraction evidence keyed by ExtractionCacheKey hash."""
-    results = [WebSearchResultRecord.model_validate(row) for row in _read_jsonl(run_dir / "search_results.jsonl")]
-    evidence = [WebEvidenceRecord.model_validate(row) for row in _read_jsonl(run_dir / "web_evidence.jsonl")]
-    requests = _payloads_by_dimension(_read_jsonl(run_dir / "extraction_requests.jsonl"))
-    extraction_results = _payloads_by_dimension(_read_jsonl(run_dir / "extraction_results.jsonl"))
+    results = [WebSearchResultRecord.model_validate(row) for row in read_jsonl(run_dir / "search_results.jsonl")]
+    evidence = [WebEvidenceRecord.model_validate(row) for row in read_jsonl(run_dir / "web_evidence.jsonl")]
+    requests = _payloads_by_dimension(read_jsonl(run_dir / "extraction_requests.jsonl"))
+    extraction_results = _payloads_by_dimension(read_jsonl(run_dir / "extraction_results.jsonl"))
     results_by_dimension: dict[str, list[WebSearchResultRecord]] = {}
     evidence_by_dimension: dict[str, list[WebEvidenceRecord]] = {}
     for result in results:
@@ -270,17 +267,15 @@ def write_cache_index(
         for run_dir in sorted(path for path in company_dir.iterdir() if path.is_dir()):
             if not (run_dir / "manifest.json").exists():
                 continue
-            run_queries = [WebSearchQueryRecord.model_validate(row) for row in _read_jsonl(run_dir / "queries.jsonl")]
+            run_queries = [WebSearchQueryRecord.model_validate(row) for row in read_jsonl(run_dir / "queries.jsonl")]
             run_results = [
-                WebSearchResultRecord.model_validate(row) for row in _read_jsonl(run_dir / "search_results.jsonl")
+                WebSearchResultRecord.model_validate(row) for row in read_jsonl(run_dir / "search_results.jsonl")
             ]
             result_count_by_query: dict[str, int] = {}
             for result in run_results:
                 result_count_by_query[result.query_id] = result_count_by_query.get(result.query_id, 0) + 1
-            run_pages = [WebPageRecord.model_validate(row) for row in _read_jsonl(run_dir / "fetched_pages.jsonl")]
-            run_evidence = [
-                WebEvidenceRecord.model_validate(row) for row in _read_jsonl(run_dir / "web_evidence.jsonl")
-            ]
+            run_pages = [WebPageRecord.model_validate(row) for row in read_jsonl(run_dir / "fetched_pages.jsonl")]
+            run_evidence = [WebEvidenceRecord.model_validate(row) for row in read_jsonl(run_dir / "web_evidence.jsonl")]
             results_by_dimension: dict[str, list[WebSearchResultRecord]] = {}
             evidence_by_dimension: dict[str, int] = {}
             for result in run_results:
@@ -514,7 +509,7 @@ def copy_cached_page_artifacts(
     result_ids = {record.result_id for record in records}
     cached_pages = [
         WebPageRecord.model_validate(row)
-        for row in _read_jsonl(source_run_dir / "fetched_pages.jsonl")
+        for row in read_jsonl(source_run_dir / "fetched_pages.jsonl")
         if row.get("result_id") in result_ids
     ]
     for record in records:
@@ -541,19 +536,6 @@ def count_jsonl_rows(path: Path) -> int:
     if not path.exists():
         return 0
     return sum(1 for line in path.read_text(encoding="utf-8").splitlines() if line.strip())
-
-
-def _read_jsonl(path: Path) -> list[dict[str, Any]]:
-    if not path.exists():
-        return []
-    rows: list[dict[str, Any]] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        value = json.loads(line)
-        if isinstance(value, dict):
-            rows.append(value)
-    return rows
 
 
 def _payloads_by_dimension(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:

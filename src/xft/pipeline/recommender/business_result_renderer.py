@@ -9,6 +9,7 @@ from xft.pipeline.recommender.business_models import (
     BusinessRecommendationConfig,
     BusinessRecommendationResult,
 )
+from xft.utils.misc import result_text
 
 
 def render_business_result_json(
@@ -58,7 +59,7 @@ def render_business_result_json(
                 "QuantitativeStandard": indicator.standard,
                 "CurrentStatus": indicator.current_status,
                 "ProfileName": indicator.indicator_name,
-                "AnalysisResults": _business_result_text(indicator.result),
+                "AnalysisResults": result_text(indicator.result),
                 "LabelType": indicator.label_name,
             }
             for indicator in matched_indicators
@@ -108,12 +109,3 @@ def _core_business_areas(profile: dict[str, Any]) -> str:
     if text:
         return text
     return str(profile.get("industry_big") or profile.get("industry") or "")
-
-
-def _business_result_text(result: str) -> str:
-    return {
-        "matched": "满足",
-        "possible": "可能满足",
-        "not_matched": "不满足",
-        "unknown": "证据不足",
-    }.get(result, result)

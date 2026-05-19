@@ -157,7 +157,7 @@ async def extract_evidence_batch(  # noqa: PLR0913
         task = llm_config.tasks.get("web_evidence_extract")
         client = get_ai_client()
         response = await client.chat.completions.create(
-            model=_configured_model(llm_config),
+            model=configured_model(llm_config),
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": json.dumps(request_payload, ensure_ascii=False, default=str)},
@@ -277,7 +277,7 @@ def _records_from_claims(
                 web_value=claim.web_value,
                 conflict_note=claim.conflict_note,
                 resolution=normalize_resolution(claim.resolution, is_conflict=claim.type == "conflict"),
-                extraction_model=_configured_model(llm_config),
+                extraction_model=configured_model(llm_config),
                 extraction_prompt_version=llm_config.version,
                 raw_response_path=result.raw_response_path,
                 created_at=datetime.now(UTC),
@@ -286,7 +286,7 @@ def _records_from_claims(
     return evidence
 
 
-def _configured_model(llm_config: WebExtractLLMConfig) -> str:
+def configured_model(llm_config: WebExtractLLMConfig) -> str:
     provider = llm_config.providers.get(llm_config.provider, {})
     value = provider.get("default_model")
     return str(value or "MiniMax-M2.7-Highspeed")

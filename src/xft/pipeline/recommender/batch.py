@@ -22,6 +22,7 @@ from xft.runtime.artifacts import (
     write_failed_companies,
     write_quality_report,
 )
+from xft.utils.file_io import read_json, write_json
 
 DEFAULT_BATCH_OUTPUT = "recommendation_runs/batches"
 SUMMARY_FIELDS = [
@@ -165,7 +166,7 @@ async def run_recommendation_batch(  # noqa: PLR0913
         warehouse_db=options.warehouse_db,
         options=_options_payload(options, limit=limit, skip_existing=skip_existing),
     )
-    _write_json(batch_dir / "batch_manifest.json", manifest.model_dump(mode="json"))
+    write_json(batch_dir / "batch_manifest.json", manifest.model_dump(mode="json"))
     (batch_dir / "companies.txt").write_text("\n".join(selected) + ("\n" if selected else ""), encoding="utf-8")
 
     rows: list[dict[str, Any]] = []
@@ -212,7 +213,7 @@ async def run_recommendation_batch(  # noqa: PLR0913
 
     status = batch_status(rows)
     manifest = manifest.model_copy(update={"finished_at": datetime.now(UTC), "status": status})
-    _write_json(batch_dir / "batch_manifest.json", manifest.model_dump(mode="json"))
+    write_json(batch_dir / "batch_manifest.json", manifest.model_dump(mode="json"))
     summary_json, summary_csv = write_batch_summary(batch_dir, rows)
     failed_path = write_failed_companies(batch_dir, rows)
     quality_json, quality_md = write_quality_report(
@@ -249,9 +250,9 @@ async def run_recommendation_batch(  # noqa: PLR0913
 def summarize_run(result: RecommendationRunResult) -> dict[str, Any]:
     """Build one standardized summary row from a completed recommendation run."""
     output_dir = Path(result.output_dir)
-    profile = _read_json(output_dir / "profile.json")
-    business_payload = _read_json(output_dir / "result.json")
-    business_label = _read_json(output_dir / "business_label_result.json")
+    profile = read_json(output_dir / "profile.json")
+    business_payload = read_json(output_dir / "result.json")
+    business_label = read_json(output_dir / "business_label_result.json")
     selected = business_label.get("selected_module")
     selected_module: dict[str, Any] = selected if isinstance(selected, dict) else {}
     modules = business_label.get("modules")
@@ -292,7 +293,7 @@ def write_batch_summary(batch_dir: Path, rows: list[dict[str, Any]]) -> tuple[Pa
     """Write batch_summary.json and batch_summary.csv."""
     json_path = batch_dir / "batch_summary.json"
     csv_path = batch_dir / "batch_summary.csv"
-    _write_json(json_path, [_ordered_row(row) for row in rows])
+    write_json(json_path, [_ordered_row(row) for row in rows])
     with csv_path.open("w", encoding="utf-8", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=SUMMARY_FIELDS)
         writer.writeheader()
@@ -451,17 +452,6 @@ def _options_payload(options: BatchOptions, *, limit: int | None, skip_existing:
         "limit": limit,
         "skip_existing": skip_existing,
     }
-
-
-def _read_json(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    value = json.loads(path.read_text(encoding="utf-8"))
-    return value if isinstance(value, dict) else {}
-
-
-def _write_json(path: Path, value: Any) -> None:
-    path.write_text(json.dumps(value, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
 
 
 def _ordered_row(row: dict[str, Any]) -> dict[str, Any]:

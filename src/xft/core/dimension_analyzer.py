@@ -10,6 +10,7 @@ from xft.display import format_profile_value
 from xft.evidence.local_builder import build_local_evidence, build_rule_evidence
 from xft.evidence.models import EvidenceRecord
 from xft.evidence.policy import DimensionAnalysisPolicy, EvidencePolicy
+from xft.utils.misc import contains, get_nested
 
 SUPPORTED_FACTS_THRESHOLD = 3
 SUPPLY_CHAIN_EMPLOYEE_THRESHOLD = 200
@@ -18,16 +19,6 @@ TECH_IP_THRESHOLD = 20
 RISK_COUNT_THRESHOLD = 20
 DIGITAL_EMPLOYEE_THRESHOLD = 300
 DIGITAL_BRANCH_THRESHOLD = 3
-
-
-def _get_nested(profile: dict[str, Any], path: str) -> Any:
-    cur: Any = profile
-    for part in path.split("."):
-        if isinstance(cur, dict):
-            cur = cur.get(part)
-        else:
-            return None
-    return cur
 
 
 def _has_value(value: Any) -> bool:
@@ -51,7 +42,7 @@ def analyze_dimensions(
         facts: list[EvidenceFact] = []
         local_evidence: list[EvidenceRecord] = []
         for template in dim.evidence_templates:
-            value = _get_nested(profile, template.field)
+            value = get_nested(profile, template.field)
             if not _has_value(value):
                 continue
             claim = f"{template.label}：{format_profile_value(value, field=template.field)}"
@@ -111,7 +102,7 @@ def analyze_dimensions(
 def _build_rule_inferences(rules: list[SupportRule], profile: dict[str, Any]) -> list[str]:
     inferences: list[str] = []
     for rule in rules:
-        value = _get_nested(profile, rule.field)
+        value = get_nested(profile, rule.field)
         if _rule_matches(value, rule):
             inferences.append(rule.claim)
     return inferences
@@ -123,7 +114,7 @@ def _rule_matches(value: Any, rule: SupportRule) -> bool:
     if not _has_value(value):
         return False
     matchers: dict[str, Callable[[], bool]] = {
-        "contains": lambda: _contains(value, rule.value),
+        "contains": lambda: contains(value, rule.value),
         ">": lambda: _compare_numbers(value, rule.value, rule.op),
         ">=": lambda: _compare_numbers(value, rule.value, rule.op),
         "<": lambda: _compare_numbers(value, rule.value, rule.op),
@@ -133,14 +124,6 @@ def _rule_matches(value: Any, rule: SupportRule) -> bool:
     }
     matcher = matchers.get(rule.op)
     return bool(matcher()) if matcher else False
-
-
-def _contains(value: Any, expected: Any) -> bool:
-    if isinstance(value, dict):
-        return any(_contains(item, expected) for item in value.values())
-    if isinstance(value, list):
-        return any(_contains(item, expected) for item in value)
-    return str(expected) in str(value)
 
 
 def _compare_numbers(value: Any, expected: Any, op: str) -> bool:

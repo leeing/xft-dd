@@ -8,6 +8,7 @@ from typing import Any
 
 from xft.constants import DEFAULT_WAREHOUSE
 from xft.evidence.models import normalize_resolution
+from xft.utils.file_io import read_json, read_jsonl
 from xft.warehouse.duckdb_client import connect
 from xft.warehouse.schema import UNIFIED_EVIDENCE_DDL
 from xft.web.models import WebLoadSummary
@@ -165,21 +166,21 @@ def load_web_cache_to_duckdb(
             conn.execute("DELETE FROM unified_evidence WHERE source_type = 'web'")
         runs = queries = results = pages = evidence = 0
         for run_dir in _iter_run_dirs(root):
-            manifest = _read_json(run_dir / "manifest.json")
+            manifest = read_json(run_dir / "manifest.json")
             if not manifest:
                 continue
             _insert_run(conn, run_dir, manifest)
             runs += 1
-            for row in _read_jsonl(run_dir / "queries.jsonl"):
+            for row in read_jsonl(run_dir / "queries.jsonl"):
                 _insert_query(conn, row)
                 queries += 1
-            for row in _read_jsonl(run_dir / "search_results.jsonl"):
+            for row in read_jsonl(run_dir / "search_results.jsonl"):
                 _insert_result(conn, row)
                 results += 1
-            for row in _read_jsonl(run_dir / "fetched_pages.jsonl"):
+            for row in read_jsonl(run_dir / "fetched_pages.jsonl"):
                 _insert_page(conn, row)
                 pages += 1
-            for row in _read_jsonl(run_dir / "web_evidence.jsonl"):
+            for row in read_jsonl(run_dir / "web_evidence.jsonl"):
                 _insert_evidence(conn, row)
                 _insert_unified_web_evidence(conn, row)
                 evidence += 1
@@ -201,26 +202,6 @@ def _count_rows(conn: Any, table: str) -> int:
         msg = f"unknown web table: {table}"
         raise ValueError(msg)
     return int(conn.execute(f"SELECT count(*) FROM {table}").fetchone()[0])  # noqa: S608
-
-
-def _read_json(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    value = json.loads(path.read_text(encoding="utf-8"))
-    return value if isinstance(value, dict) else {}
-
-
-def _read_jsonl(path: Path) -> list[dict[str, Any]]:
-    if not path.exists():
-        return []
-    rows: list[dict[str, Any]] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        value = json.loads(line)
-        if isinstance(value, dict):
-            rows.append(value)
-    return rows
 
 
 def _json_text(value: Any) -> str:

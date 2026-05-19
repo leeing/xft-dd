@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Iterable
 from time import perf_counter
 from typing import Any
 
@@ -36,6 +35,7 @@ from xft.pipeline.recommender.business_models import (
 from xft.pipeline.recommender.models import DimensionAnalysis
 from xft.progress import display
 from xft.settings import settings
+from xft.utils.misc import contains, get_nested
 
 LLM_TIMEOUT_SECONDS = 45
 MAX_EVIDENCE_ITEMS = 24
@@ -477,7 +477,7 @@ def _evaluate_rule_indicator(
     if indicator.rule is None:
         msg = f"missing rule config: {indicator.indicator_id}"
         raise ValueError(msg)
-    value = _get_path(profile, indicator.rule.source_field)
+    value = get_nested(profile, indicator.rule.source_field)
     matched = _compare(value, indicator.rule.op, indicator.rule.value)
     result: BusinessResult = "matched" if matched else "not_matched"
     evidence = [f"{indicator.rule.source_field} = {_display_value(value)}"] if value not in (None, "", [], {}) else []
@@ -706,24 +706,14 @@ def _key_indicator_verify(matched: int, possible: int) -> str:
     return "证据不足"
 
 
-def _get_path(value: Any, path: str) -> Any:
-    current = value
-    for part in path.split("."):
-        if isinstance(current, dict):
-            current = current.get(part)
-        else:
-            return None
-    return current
-
-
 def _compare(value: Any, op: str, expected: Any) -> bool:  # noqa: PLR0911
     if op == "exists":
         return value not in (None, "", [], {})
     if op == "contains":
-        return _contains(value, expected)
+        return contains(value, expected)
     if op == "contains_any":
         values = expected if isinstance(expected, list) else [expected]
-        return any(_contains(value, item) for item in values)
+        return any(contains(value, item) for item in values)
     if op in ("==", "!="):
         result = _normalize(value) == _normalize(expected)
         return result if op == "==" else not result
@@ -740,18 +730,6 @@ def _compare(value: Any, op: str, expected: Any) -> bool:  # noqa: PLR0911
     if op == "<=":
         return left <= right
     return False
-
-
-def _contains(value: Any, expected: Any) -> bool:
-    if value is None:
-        return False
-    if isinstance(value, str):
-        return str(expected) in value
-    if isinstance(value, dict):
-        return _contains(list(value.values()), expected)
-    if isinstance(value, Iterable):
-        return any(str(expected) in str(item) for item in value)
-    return str(expected) in str(value)
 
 
 def _normalize(value: Any) -> Any:
