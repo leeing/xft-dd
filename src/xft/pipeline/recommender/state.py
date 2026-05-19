@@ -34,6 +34,8 @@ class RecommenderState(TypedDict):
     output_root: str
     run_id: str
     use_llm: bool
+    llm_debug: bool
+    llm_concurrency: int
     use_web_evidence: bool
     scenario_id: str | None
     scenario_name: str | None

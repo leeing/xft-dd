@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Iterable
+from time import perf_counter
 from typing import Any
 
 from openai import OpenAIError
@@ -24,10 +26,12 @@ from xft.pipeline.recommender.business_models import (
     BusinessResult,
 )
 from xft.pipeline.recommender.models import DimensionAnalysis
+from xft.progress import display
 from xft.settings import settings
 
 LLM_TIMEOUT_SECONDS = 45
 MAX_EVIDENCE_ITEMS = 24
+RAW_PREVIEW_CHARS = 500
 
 
 class _LlmIndicatorPayload(BaseModel):
@@ -37,13 +41,15 @@ class _LlmIndicatorPayload(BaseModel):
     evidence: list[str] = []
 
 
-async def evaluate_business_recommendation(
+async def evaluate_business_recommendation(  # noqa: PLR0913
     *,
     config: BusinessRecommendationConfig | None,
     company_name: str,
     profile: dict[str, Any],
     dimension_analysis: list[DimensionAnalysis],
     use_llm: bool,
+    llm_debug: bool = False,
+    llm_concurrency: int = 4,
 ) -> BusinessRecommendationResult | None:
     """Evaluate the optional business recommendation layer."""
     if config is None:
@@ -52,15 +58,26 @@ async def evaluate_business_recommendation(
     warnings: list[str] = []
     modules: list[BusinessModuleResult] = []
     all_indicators: list[BusinessIndicatorResult] = []
-    for module in config.modules:
-        module_result, module_warnings = await _evaluate_module(
-            config=config,
-            module=module,
-            company_name=company_name,
-            profile=profile,
-            dimension_analysis=dimension_analysis,
-            use_llm=use_llm,
-        )
+    concurrency = max(1, llm_concurrency)
+    semaphore = asyncio.Semaphore(concurrency)
+    if llm_debug and use_llm and (settings.llm_api_key or settings.minimax_api_key):
+        display.info(f"LLM 业务指标并发: {concurrency}")
+    module_results = await asyncio.gather(
+        *[
+            _evaluate_module(
+                config=config,
+                module=module,
+                company_name=company_name,
+                profile=profile,
+                dimension_analysis=dimension_analysis,
+                use_llm=use_llm,
+                llm_debug=llm_debug,
+                semaphore=semaphore,
+            )
+            for module in config.modules
+        ]
+    )
+    for module_result, module_warnings in module_results:
         warnings.extend(module_warnings)
         modules.append(module_result)
         for label in module_result.label_results:
@@ -84,19 +101,28 @@ async def _evaluate_module(  # noqa: PLR0913
     profile: dict[str, Any],
     dimension_analysis: list[DimensionAnalysis],
     use_llm: bool,
+    llm_debug: bool,
+    semaphore: asyncio.Semaphore,
 ) -> tuple[BusinessModuleResult, list[str]]:
     warnings: list[str] = []
     labels: list[BusinessLabelResult] = []
-    for label in module.labels:
-        label_result, label_warnings = await _evaluate_label(
-            config=config,
-            module=module,
-            label=label,
-            company_name=company_name,
-            profile=profile,
-            dimension_analysis=dimension_analysis,
-            use_llm=use_llm,
-        )
+    label_results = await asyncio.gather(
+        *[
+            _evaluate_label(
+                config=config,
+                module=module,
+                label=label,
+                company_name=company_name,
+                profile=profile,
+                dimension_analysis=dimension_analysis,
+                use_llm=use_llm,
+                llm_debug=llm_debug,
+                semaphore=semaphore,
+            )
+            for label in module.labels
+        ]
+    )
+    for label_result, label_warnings in label_results:
         warnings.extend(label_warnings)
         labels.append(label_result)
 
@@ -128,12 +154,14 @@ async def _evaluate_label(  # noqa: PLR0913
     profile: dict[str, Any],
     dimension_analysis: list[DimensionAnalysis],
     use_llm: bool,
+    llm_debug: bool,
+    semaphore: asyncio.Semaphore,
 ) -> tuple[BusinessLabelResult, list[str]]:
     warnings: list[str] = []
     indicators: list[BusinessIndicatorResult] = []
-    for indicator in label.indicators:
-        try:
-            result = await _evaluate_indicator(
+    indicator_results = await asyncio.gather(
+        *[
+            _evaluate_indicator_with_fallback(
                 config=config,
                 module=module,
                 label=label,
@@ -142,24 +170,15 @@ async def _evaluate_label(  # noqa: PLR0913
                 profile=profile,
                 dimension_analysis=dimension_analysis,
                 use_llm=use_llm,
+                llm_debug=llm_debug,
+                semaphore=semaphore,
             )
-        except (
-            OpenAIError,
-            json.JSONDecodeError,
-            ValidationError,
-            OSError,
-            RuntimeError,
-            TypeError,
-            ValueError,
-        ) as exc:
-            warnings.append(f"{module.module_id}.{label.label_id}.{indicator.indicator_id}: {exc}")
-            result = _fallback_indicator_result(
-                config=config,
-                module=module,
-                label=label,
-                indicator=indicator,
-                profile=profile,
-            )
+            for indicator in label.indicators
+        ]
+    )
+    for result, warning in indicator_results:
+        if warning:
+            warnings.append(warning)
         indicators.append(result)
 
     matched = sum(1 for item in indicators if item.result == "matched")
@@ -190,6 +209,55 @@ async def _evaluate_label(  # noqa: PLR0913
     )
 
 
+async def _evaluate_indicator_with_fallback(  # noqa: PLR0913
+    *,
+    config: BusinessRecommendationConfig,
+    module: BusinessModuleConfig,
+    label: BusinessLabelConfig,
+    indicator: BusinessIndicatorConfig,
+    company_name: str,
+    profile: dict[str, Any],
+    dimension_analysis: list[DimensionAnalysis],
+    use_llm: bool,
+    llm_debug: bool,
+    semaphore: asyncio.Semaphore,
+) -> tuple[BusinessIndicatorResult, str | None]:
+    try:
+        result = await _evaluate_indicator(
+            config=config,
+            module=module,
+            label=label,
+            indicator=indicator,
+            company_name=company_name,
+            profile=profile,
+            dimension_analysis=dimension_analysis,
+            use_llm=use_llm,
+            llm_debug=llm_debug,
+            semaphore=semaphore,
+        )
+    except (
+        OpenAIError,
+        json.JSONDecodeError,
+        ValidationError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        if llm_debug:
+            display.fail(f"LLM 调用失败 [业务指标:{_indicator_key(module, label, indicator)}] {_exc_summary(exc)}")
+        result = _fallback_indicator_result(
+            config=config,
+            module=module,
+            label=label,
+            indicator=indicator,
+            profile=profile,
+        )
+        return result, f"{_indicator_key(module, label, indicator)}: {_exc_summary(exc)}"
+    else:
+        return result, None
+
+
 async def _evaluate_indicator(  # noqa: PLR0913
     *,
     config: BusinessRecommendationConfig,
@@ -200,19 +268,23 @@ async def _evaluate_indicator(  # noqa: PLR0913
     profile: dict[str, Any],
     dimension_analysis: list[DimensionAnalysis],
     use_llm: bool,
+    llm_debug: bool,
+    semaphore: asyncio.Semaphore,
 ) -> BusinessIndicatorResult:
     if indicator.evaluator == "rule":
         return _evaluate_rule_indicator(config, module, label, indicator, profile)
     if use_llm and (settings.llm_api_key or settings.minimax_api_key):
-        return await _evaluate_llm_indicator(
-            config=config,
-            module=module,
-            label=label,
-            indicator=indicator,
-            company_name=company_name,
-            profile=profile,
-            dimension_analysis=dimension_analysis,
-        )
+        async with semaphore:
+            return await _evaluate_llm_indicator(
+                config=config,
+                module=module,
+                label=label,
+                indicator=indicator,
+                company_name=company_name,
+                profile=profile,
+                dimension_analysis=dimension_analysis,
+                llm_debug=llm_debug,
+            )
     return _fallback_indicator_result(config=config, module=module, label=label, indicator=indicator, profile=profile)
 
 
@@ -252,7 +324,9 @@ async def _evaluate_llm_indicator(  # noqa: PLR0913
     company_name: str,
     profile: dict[str, Any],
     dimension_analysis: list[DimensionAnalysis],
+    llm_debug: bool,
 ) -> BusinessIndicatorResult:
+    key = _indicator_key(module, label, indicator)
     payload = {
         "company_name": company_name,
         "company_profile": _compact_profile(profile),
@@ -274,6 +348,11 @@ async def _evaluate_llm_indicator(  # noqa: PLR0913
         "证据不足时输出 unknown。current_status 要能直接给业务人员阅读。"
     )
     client = get_ai_client()
+    if llm_debug:
+        display.info(
+            f"LLM 调用开始 [业务指标:{key}] model={settings.llm_model}, timeout={LLM_TIMEOUT_SECONDS}s"
+        )
+    started = perf_counter()
     resp = await client.chat.completions.create(
         model=settings.llm_model,
         messages=[
@@ -285,6 +364,11 @@ async def _evaluate_llm_indicator(  # noqa: PLR0913
     )
     raw = resp.choices[0].message.content or "{}"
     parsed = _LlmIndicatorPayload.model_validate(json.loads(extract_json(raw)))
+    if llm_debug:
+        display.info(
+            f"LLM 调用完成 [业务指标:{key}] {perf_counter() - started:.2f}s, "
+            f"result={parsed.result}, confidence={parsed.confidence}, raw={_preview(raw)}"
+        )
     return _indicator_result(
         config=config,
         module=module,
@@ -295,6 +379,26 @@ async def _evaluate_llm_indicator(  # noqa: PLR0913
         current_status=parsed.current_status,
         evidence=parsed.evidence,
     )
+
+
+def _indicator_key(
+    module: BusinessModuleConfig,
+    label: BusinessLabelConfig,
+    indicator: BusinessIndicatorConfig,
+) -> str:
+    return f"{module.module_id}.{label.label_id}.{indicator.indicator_id}"
+
+
+def _preview(text: str, limit: int = RAW_PREVIEW_CHARS) -> str:
+    compact = " ".join(text.split())
+    if len(compact) <= limit:
+        return compact
+    return compact[:limit] + "..."
+
+
+def _exc_summary(exc: BaseException) -> str:
+    text = str(exc).strip()
+    return f"{type(exc).__name__}: {text[:180]}" if text else type(exc).__name__
 
 
 def _fallback_indicator_result(

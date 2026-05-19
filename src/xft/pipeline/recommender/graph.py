@@ -87,6 +87,8 @@ async def run_recommendation(  # noqa: PLR0913
     web_fetch_pages: bool | None = None,
     web_force_dimensions: bool = False,
     web_use_llm_extraction: bool = True,
+    llm_debug: bool = False,
+    llm_concurrency: int = 4,
 ) -> RecommendationRunResult:
     display.header(company_name)
     scenario = load_scenario(scenario_path) if scenario_path else None
@@ -145,6 +147,8 @@ async def run_recommendation(  # noqa: PLR0913
         refresh_web=refresh_web,
         web_force_dimensions=web_force_dimensions,
         web_use_llm_extraction=web_use_llm_extraction,
+        llm_debug=llm_debug,
+        llm_concurrency=llm_concurrency,
     )
     has_cached = _has_web_evidence(warehouse_db, company_name)
     if with_web and (refresh_web or not has_cached):
@@ -196,6 +200,8 @@ async def run_recommendation(  # noqa: PLR0913
         "output_root": root,
         "run_id": rid,
         "use_llm": use_llm,
+        "llm_debug": llm_debug,
+        "llm_concurrency": llm_concurrency,
         "use_web_evidence": use_web_evidence,
         "scenario_id": scenario.config.id if scenario else products_config.scenario,
         "scenario_name": scenario.config.name if scenario else None,
@@ -278,6 +284,8 @@ def _write_config_manifest(  # noqa: PLR0913
     refresh_web: bool,
     web_force_dimensions: bool,
     web_use_llm_extraction: bool,
+    llm_debug: bool,
+    llm_concurrency: int,
 ) -> Path:
     files = {
         "products": file_ref(products_path),
@@ -309,6 +317,8 @@ def _write_config_manifest(  # noqa: PLR0913
             "refresh_web": refresh_web,
             "web_force_dimensions": web_force_dimensions,
             "web_use_llm_extraction": web_use_llm_extraction,
+            "llm_debug": llm_debug,
+            "llm_concurrency": llm_concurrency,
         },
         files=files,
         effective_hashes={

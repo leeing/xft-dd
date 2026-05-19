@@ -91,6 +91,8 @@ class BatchOptions:
     web_fetch_pages: bool | None = None
     web_force_dimensions: bool = False
     web_use_llm_extraction: bool = True
+    llm_debug: bool = False
+    llm_concurrency: int = 4
     continue_on_error: bool = True
 
 
@@ -196,6 +198,8 @@ async def run_recommendation_batch(  # noqa: PLR0913
                 web_fetch_pages=options.web_fetch_pages,
                 web_force_dimensions=options.web_force_dimensions,
                 web_use_llm_extraction=options.web_use_llm_extraction,
+                llm_debug=options.llm_debug,
+                llm_concurrency=options.llm_concurrency,
             )
             row = summarize_run(result)
         except (OSError, RuntimeError, ValueError, TypeError, KeyError) as exc:
@@ -395,6 +399,8 @@ def _options_payload(options: BatchOptions, *, limit: int | None, skip_existing:
         "web_fetch_pages": options.web_fetch_pages,
         "web_force_dimensions": options.web_force_dimensions,
         "web_use_llm_extraction": options.web_use_llm_extraction,
+        "llm_debug": options.llm_debug,
+        "llm_concurrency": options.llm_concurrency,
         "scoring_policy_path": options.scoring_policy_path,
         "evidence_policy_path": options.evidence_policy_path,
         "continue_on_error": options.continue_on_error,

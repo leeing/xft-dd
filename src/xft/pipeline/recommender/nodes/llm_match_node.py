@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 
 from openai import OpenAIError
@@ -21,6 +22,7 @@ MATCH_SCORE_THRESHOLD = 55
 HIGH_CONFIDENCE_SCORE_THRESHOLD = 75
 MEDIUM_CONFIDENCE_SCORE_THRESHOLD = 60
 LLM_TIMEOUT_SECONDS = 60
+RAW_PREVIEW_CHARS = 500
 
 
 class _MatchList(BaseModel):
@@ -124,6 +126,18 @@ def _fallback_match(products: list[ProductModule], analyses: list[DimensionAnaly
     return results
 
 
+def _preview(text: str, limit: int = RAW_PREVIEW_CHARS) -> str:
+    compact = " ".join(text.split())
+    if len(compact) <= limit:
+        return compact
+    return compact[:limit] + "..."
+
+
+def _exc_summary(exc: BaseException) -> str:
+    text = str(exc).strip()
+    return f"{type(exc).__name__}: {text[:180]}" if text else type(exc).__name__
+
+
 async def llm_match_node(state: RecommenderState) -> dict[str, object]:
     display.phase(4, 5, "产品匹配")
     products = state["products"]
@@ -140,6 +154,12 @@ async def llm_match_node(state: RecommenderState) -> dict[str, object]:
             "dimension_analysis": [item.model_dump() for item in analyses],
             "products": [item.model_dump() for item in products],
         }
+        if state.get("llm_debug", False):
+            display.info(
+                f"LLM 调用开始 [产品匹配] model={settings.llm_model}, products={len(products)}, "
+                f"dimensions={len(analyses)}, timeout={LLM_TIMEOUT_SECONDS}s"
+            )
+        started = perf_counter()
         client = get_ai_client()
         resp = await client.chat.completions.create(
             model=settings.llm_model,
@@ -153,10 +173,12 @@ async def llm_match_node(state: RecommenderState) -> dict[str, object]:
         raw = resp.choices[0].message.content or "{}"
         parsed: Any = json.loads(extract_json(raw))
         matches = _MatchList.model_validate(parsed).matches
+        if state.get("llm_debug", False):
+            display.info(f"LLM 调用完成 [产品匹配] {perf_counter() - started:.2f}s, raw={_preview(raw)}")
         display.ok(f"LLM 分析完成 → {len(matches)} 个候选产品")
-    except (OpenAIError, json.JSONDecodeError, ValidationError, OSError, KeyError, TypeError, ValueError):
+    except (OpenAIError, json.JSONDecodeError, ValidationError, OSError, KeyError, TypeError, ValueError) as exc:
         matches = _fallback_match(products, analyses)
-        display.info(f"LLM 失败, 规则兜底 → {len(matches)} 个候选产品")
+        display.info(f"LLM 失败 ({_exc_summary(exc)}), 规则兜底 → {len(matches)} 个候选产品")
     for m in matches:
         icon = "✓" if m.matched else "✗"
         display.branch(f"{icon} {m.module_name}: 得分 {m.score} ({m.confidence})")

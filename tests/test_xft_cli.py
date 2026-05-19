@@ -95,6 +95,9 @@ def test_recommend_smoke_command_uses_offline_no_llm(monkeypatch: pytest.MonkeyP
                 "cache/company_warehouse.duckdb",
                 "--scenario",
                 "config/scenarios/sales_recommendation",
+                "--llm-debug",
+                "--llm-concurrency",
+                "2",
                 "烟测公司",
             ]
         )
@@ -104,6 +107,8 @@ def test_recommend_smoke_command_uses_offline_no_llm(monkeypatch: pytest.MonkeyP
     assert captured["use_llm"] is False
     assert captured["with_web"] is False
     assert captured["use_web_evidence"] is False
+    assert captured["llm_debug"] is True
+    assert captured["llm_concurrency"] == 2
 
 
 def test_diligence_smoke_command_dry_run_no_external_calls(

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 
 from openai import OpenAIError
@@ -33,11 +34,24 @@ from xft.settings import settings
 
 LLM_TIMEOUT_SECONDS = 60
 RECOMMEND_SCORE_THRESHOLD = 55
+RAW_PREVIEW_CHARS = 500
 
 
 class _RecommendationPayload(BaseModel):
     summary: str
     recommendations: list[RecommendationItem]
+
+
+def _preview(text: str, limit: int = RAW_PREVIEW_CHARS) -> str:
+    compact = " ".join(text.split())
+    if len(compact) <= limit:
+        return compact
+    return compact[:limit] + "..."
+
+
+def _exc_summary(exc: BaseException) -> str:
+    text = str(exc).strip()
+    return f"{type(exc).__name__}: {text[:180]}" if text else type(exc).__name__
 
 
 def _priority_by_id(products: list[ProductModule]) -> dict[str, int]:
@@ -321,6 +335,12 @@ async def llm_recommend_node(state: RecommenderState) -> dict[str, object]:
             "match_results": [item.model_dump() for item in state["match_results"]],
             "product_priorities": priorities,
         }
+        if state.get("llm_debug", False):
+            display.info(
+                f"LLM 调用开始 [推荐生成] model={settings.llm_model}, "
+                f"matches={len(state['match_results'])}, timeout={LLM_TIMEOUT_SECONDS}s"
+            )
+        started = perf_counter()
         client = get_ai_client()
         resp = await client.chat.completions.create(
             model=settings.llm_model,
@@ -332,6 +352,8 @@ async def llm_recommend_node(state: RecommenderState) -> dict[str, object]:
             timeout=LLM_TIMEOUT_SECONDS,
         )
         raw = resp.choices[0].message.content or "{}"
+        if state.get("llm_debug", False):
+            display.info(f"LLM 调用完成 [推荐生成] {perf_counter() - started:.2f}s, raw={_preview(raw)}")
         parsed: Any = json.loads(extract_json(raw))
         fallback = _fallback_recommendation(state)
         scoring = _scoring_run(state)
@@ -352,9 +374,9 @@ async def llm_recommend_node(state: RecommenderState) -> dict[str, object]:
         )
         recommendation = _with_explainability(recommendation, state, scoring)
         display.ok(f"LLM 推荐完成 → {len(recommendation.recommendations)} 个推荐产品")
-    except (OpenAIError, json.JSONDecodeError, ValidationError, OSError, KeyError, TypeError, ValueError):
+    except (OpenAIError, json.JSONDecodeError, ValidationError, OSError, KeyError, TypeError, ValueError) as exc:
         recommendation = _fallback_recommendation(state)
-        display.info(f"LLM 失败, 规则兜底 → {len(recommendation.recommendations)} 个推荐")
+        display.info(f"LLM 失败 ({_exc_summary(exc)}), 规则兜底 → {len(recommendation.recommendations)} 个推荐")
     for rec in recommendation.recommendations[:5]:
         display.branch(f"#{rec.rank} {rec.module_name}: {rec.score}分 — {rec.suggested_pitch[:60]}...")
     return {"recommendation": recommendation}

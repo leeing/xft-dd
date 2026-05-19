@@ -45,6 +45,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-web-fetch", action="store_true", help="do not crawl pages during --with-web")
     parser.add_argument("--force-web-dimensions", action="store_true")
     parser.add_argument("--no-web-llm-extraction", action="store_true")
+    parser.add_argument("--llm-debug", action="store_true", help="print LLM call timing, errors, and response previews")
+    parser.add_argument(
+        "--llm-concurrency",
+        type=int,
+        default=4,
+        help="max concurrent LLM calls for business indicators",
+    )
     parser.add_argument("--verbose", action="store_true", help="show detailed structlog output")
     return parser
 
@@ -107,6 +114,8 @@ async def _main_async(argv: list[str] | None = None) -> int:  # noqa: C901
                 web_fetch_pages=False if args.no_web_fetch else None,
                 web_force_dimensions=args.force_web_dimensions,
                 web_use_llm_extraction=not args.no_web_llm_extraction,
+                llm_debug=args.llm_debug,
+                llm_concurrency=args.llm_concurrency,
                 continue_on_error=args.continue_on_error,
             ),
         )
@@ -145,6 +154,8 @@ async def _main_async(argv: list[str] | None = None) -> int:  # noqa: C901
             web_fetch_pages=False if args.no_web_fetch else None,
             web_force_dimensions=args.force_web_dimensions,
             web_use_llm_extraction=not args.no_web_llm_extraction,
+            llm_debug=args.llm_debug,
+            llm_concurrency=args.llm_concurrency,
         )
         sys.stdout.write(f"[{single_result.status}] {single_result.company_name} -> {single_result.output_dir}\n")
         if single_result.report_path:

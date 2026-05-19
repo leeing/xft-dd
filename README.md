@@ -92,6 +92,18 @@ uv run xft warehouse build --input data --output cache/company_warehouse.duckdb
 uv run xft recommend --no-llm "企业名称"
 ```
 
+不带 `--scenario` 时，CLI 默认使用 `config/scenarios/sales_recommendation` 场景。也就是默认读取这个目录下的：
+
+- `scenario.yaml`
+- `products.yaml`
+- `business_modules.yaml`
+- `analysis_dimensions.yaml`
+- `scoring_policy.yaml`
+- `evidence_policy.yaml`
+- `web_search.yaml`
+- `web_extract_llm.yaml`
+- `prompts/*.md`
+
 例如：
 
 ```bash
@@ -105,6 +117,16 @@ uv run xft recommend --no-llm "广东德美精细化工集团股份有限公司"
 ```bash
 uv run xft recommend "企业名称"
 ```
+
+测试验证期建议打开 LLM 调试输出：
+
+```bash
+uv run xft recommend --llm-debug --llm-concurrency 4 "企业名称"
+```
+
+`--llm-debug` 会打印每次 LLM 调用的阶段、模型、耗时、错误类型和响应预览。模型内部隐藏思考链不会打印；如果模型接口显式返回可见 reasoning 文本，会随响应预览一起出现。
+
+`--llm-concurrency` 控制业务标签中多个 LLM 指标的并发调用数，默认是 `4`。产品匹配和推荐生成因为前后依赖，仍会按顺序执行。
 
 ### 1.6 运行带 Web 补证的推荐
 
@@ -643,6 +665,8 @@ uv run xft web enrich --refresh-extraction "企业名称"   # 仅重新抽取证
 - 如果 Web 抽取混入无关公司，在 `extract_evidence_system.md` 中强化“必须确认目标企业名称”。
 - 如果输出太发散，保持 `temperature: 0`。
 - 修改 Web 抽取 prompt 后，使用 `--refresh-extraction` 重新抽取。
+- 如果外部 LLM 失败但不知道原因，运行时加 `--llm-debug`，终端会显示失败阶段、异常类型和兜底路径。
+- 如果业务标签判断太慢，可以适当提高 `--llm-concurrency`；如果接口限流或不稳定，就调低到 `1` 或 `2`。
 
 ### 3.13 新增一个业务场景
 

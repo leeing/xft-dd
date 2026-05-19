@@ -19,6 +19,8 @@ async def business_recommend_node(state: RecommenderState) -> dict[str, object]:
         profile=state.get("profile", {}),
         dimension_analysis=state["dimension_analysis"],
         use_llm=state.get("use_llm", True),
+        llm_debug=state.get("llm_debug", False),
+        llm_concurrency=state.get("llm_concurrency", 4),
     )
     if result and result.selected_module:
         selected = result.selected_module
