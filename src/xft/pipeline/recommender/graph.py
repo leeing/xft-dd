@@ -176,6 +176,7 @@ async def run_recommendation(  # noqa: PLR0913
             fetch_pages=web_fetch_pages,
         )
         _write_web_metrics(root, rid, web_result.metrics)
+        web_trace_path = str(Path(web_result.output_dir) / "decision_trace_web.json") if web_result.output_dir else ""
         use_web_evidence = True
     elif with_web:
         log.info(
@@ -204,6 +205,7 @@ async def run_recommendation(  # noqa: PLR0913
         "llm_concurrency": llm_concurrency,
         "llm_call_events": [],
         "use_web_evidence": use_web_evidence,
+        "web_trace_path": locals().get("web_trace_path", ""),
         "scenario_id": scenario.config.id if scenario else products_config.scenario,
         "scenario_name": scenario.config.name if scenario else None,
         "prompt_paths": prompt_paths,

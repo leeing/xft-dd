@@ -360,6 +360,9 @@ async def llm_recommend_node(state: RecommenderState) -> dict[str, object]:
                 request=request_summary,
                 response_preview=preview_text(raw),
                 response_text=raw,
+                system_prompt=system_prompt,
+                user_payload=payload,
+                parameters={"temperature": 0.1, "timeout_seconds": LLM_TIMEOUT_SECONDS},
             )
         )
         if state.get("llm_debug", False):
@@ -394,6 +397,9 @@ async def llm_recommend_node(state: RecommenderState) -> dict[str, object]:
                     status="failed",
                     elapsed_seconds=perf_counter() - started,
                     request=locals().get("request_summary", {}),
+                    system_prompt=locals().get("system_prompt", ""),
+                    user_payload=locals().get("payload"),
+                    parameters={"temperature": 0.1, "timeout_seconds": LLM_TIMEOUT_SECONDS},
                     error=exc,
                 )
             )

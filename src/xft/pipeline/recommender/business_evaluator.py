@@ -280,6 +280,7 @@ async def _evaluate_indicator_with_fallback(  # noqa: PLR0913
                         "label_id": label.label_id,
                         "indicator_id": indicator.indicator_id,
                     },
+                    parameters={"temperature": 0.0, "timeout_seconds": LLM_TIMEOUT_SECONDS},
                     error=exc,
                 )
             )
@@ -426,6 +427,9 @@ async def _evaluate_llm_indicator(  # noqa: PLR0913
                 status="failed",
                 elapsed_seconds=perf_counter() - started,
                 request=request_summary,
+                system_prompt=system,
+                user_payload=payload,
+                parameters={"temperature": 0.0, "timeout_seconds": LLM_TIMEOUT_SECONDS},
                 error=exc,
             )
         )
@@ -448,6 +452,9 @@ async def _evaluate_llm_indicator(  # noqa: PLR0913
             request=request_summary,
             response_preview=preview_text(raw),
             response_text=raw,
+            system_prompt=system,
+            user_payload=payload,
+            parameters={"temperature": 0.0, "timeout_seconds": LLM_TIMEOUT_SECONDS},
             result=parsed.result,
             confidence=parsed.confidence,
         )

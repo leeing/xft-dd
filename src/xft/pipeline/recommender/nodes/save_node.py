@@ -61,6 +61,7 @@ async def save_node(state: RecommenderState) -> dict[str, object]:
     business_label_path = out_dir / "business_label_result.json"
     llm_calls_path = out_dir / "llm_calls.jsonl"
     llm_metrics_path = out_dir / "llm_metrics.json"
+    decision_trace_path = out_dir / "decision_trace.json"
     result_path = out_dir / "result.json"
     report_path = out_dir / "report.md"
 
@@ -84,6 +85,7 @@ async def save_node(state: RecommenderState) -> dict[str, object]:
             config=state.get("business_config"),
         )
     _write_json(result_path, business_payload)
+    _write_json(decision_trace_path, _decision_trace(state, llm_events))
     report_path.write_text(render_report(state), encoding="utf-8")
 
     status = "failed" if state.get("errors") else "partial" if state.get("needs_web_enrichment") else "success"
@@ -93,3 +95,93 @@ async def save_node(state: RecommenderState) -> dict[str, object]:
         "report_path": str(report_path),
         "result_path": str(result_path),
     }
+
+
+def _decision_trace(state: RecommenderState, llm_events: list[dict[str, Any]]) -> dict[str, Any]:
+    web_trace = _read_json(Path(state["web_trace_path"])) if state.get("web_trace_path") else {}
+    return {
+        "company_name": state["company_name"],
+        "run_id": state["run_id"],
+        "scenario_id": state.get("scenario_id"),
+        "web_plan_trace": web_trace,
+        "rule_score_trace": _rule_score_trace(state),
+        "business_rule_trace": _business_rule_trace(state),
+        "llm_call_trace": llm_events,
+    }
+
+
+def _rule_score_trace(state: RecommenderState) -> list[dict[str, Any]]:
+    rec = state.get("recommendation")
+    if rec is None:
+        return []
+    by_id = {item.module_id: item for item in state["products"]}
+    items: list[dict[str, Any]] = []
+    for recommendation in rec.recommendations:
+        product = by_id.get(recommendation.module_id)
+        breakdown = recommendation.score_breakdown
+        components = {
+            "base_priority": breakdown.base_priority,
+            "dimension_support": breakdown.dimension_support,
+            "evidence_support": breakdown.evidence_support,
+            "web_support": breakdown.web_support,
+            "positive_score": breakdown.positive_score,
+            "negative_score": breakdown.negative_score,
+            "missing_evidence_penalty": breakdown.missing_evidence_penalty,
+            "conflict_penalty": breakdown.conflict_penalty,
+        }
+        raw_score = sum(int(value) for value in components.values())
+        items.append(
+            {
+                "module_id": recommendation.module_id,
+                "module_name": recommendation.module_name,
+                "formula": "final_score = clamp(sum(components), 0, 100); exclusion rules may cap score",
+                "components": components,
+                "raw_score_before_clamp": raw_score,
+                "final_score": recommendation.score,
+                "target_dimensions": product.target_needs if product else [],
+                "matched_rules": [item.model_dump(mode="json") for item in breakdown.matched_rules],
+                "penalty_rules": [item.model_dump(mode="json") for item in breakdown.penalty_rules],
+                "exclusion_rules": [item.model_dump(mode="json") for item in breakdown.exclusion_rules],
+                "data_gaps": recommendation.data_gaps,
+                "evidence_trace": [item.model_dump(mode="json") for item in recommendation.evidence_trace],
+            }
+        )
+    return items
+
+
+def _business_rule_trace(state: RecommenderState) -> list[dict[str, Any]]:
+    business = state.get("business_recommendation")
+    config = state.get("business_config")
+    if business is None or config is None:
+        return []
+    config_by_indicator = {
+        (module.module_id, label.label_id, indicator.indicator_id): indicator
+        for module in config.modules
+        for label in module.labels
+        for indicator in label.indicators
+    }
+    rows: list[dict[str, Any]] = []
+    for indicator in business.indicator_results:
+        cfg = config_by_indicator.get((indicator.module_id, indicator.label_id, indicator.indicator_id))
+        rows.append(
+            {
+                **indicator.model_dump(mode="json"),
+                "configured_evaluator": cfg.evaluator if cfg else indicator.evaluator,
+                "rule": cfg.rule.model_dump(mode="json") if cfg and cfg.rule else None,
+                "prompt": cfg.prompt if cfg else None,
+                "evidence_hints": cfg.evidence_hints if cfg else [],
+                "decision": (
+                    "rule compared source_field/op/value against company_profile"
+                    if indicator.evaluator == "rule"
+                    else "llm judged against standard using profile and dimension evidence"
+                ),
+            }
+        )
+    return rows
+
+
+def _read_json(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    value = json.loads(path.read_text(encoding="utf-8"))
+    return value if isinstance(value, dict) else {}

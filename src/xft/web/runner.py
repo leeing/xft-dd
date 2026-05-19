@@ -434,6 +434,11 @@ async def run_web_enrichment(  # noqa: C901, PLR0912, PLR0913, PLR0915
         if evidence_items:
             display.ok(f"{dim.dimension_id}: {len(evidence_items)}条证据入库")
 
+    _write_web_decision_trace(
+        out_dir=out_dir,
+        plan=plan,
+        policy_threshold=evidence_policy.web_planning.supported_facts_to_skip_web,
+    )
     status: RecordStatus = "success" if not errors else "partial" if result_count else "failed"
     manifest = manifest.model_copy(update={"status": status, "errors": errors})
     writer.write_manifest(manifest)
@@ -498,6 +503,104 @@ async def run_web_enrichment(  # noqa: C901, PLR0912, PLR0913, PLR0915
             extraction_reused=cache_stats.get("extraction_reused", 0),
         ),
     )
+
+
+def _write_web_decision_trace(*, out_dir: Path, plan: Any, policy_threshold: int) -> None:
+    queries = _read_jsonl(out_dir / "queries.jsonl")
+    results = _read_jsonl(out_dir / "search_results.jsonl")
+    evidence = _read_jsonl(out_dir / "web_evidence.jsonl")
+    conflicts = _read_jsonl(out_dir / "conflicts.jsonl")
+    pages = {str(item.get("result_id") or ""): item for item in _read_jsonl(out_dir / "fetched_pages.jsonl")}
+    evidence_by_result: dict[str, list[dict[str, Any]]] = {}
+    for item in evidence:
+        evidence_by_result.setdefault(str(item.get("result_id") or ""), []).append(item)
+    payload = {
+        "web_run_dir": str(out_dir),
+        "planning": {
+            "threshold": {
+                "supported_facts_to_skip_web": policy_threshold,
+                "rule": "skip when dimension.status == supported and facts_count >= supported_facts_to_skip_web",
+            },
+            "planned": [
+                {
+                    "dimension_id": item.analysis.dimension_id,
+                    "decision": "search",
+                    "reason": item.reason,
+                    "status": item.analysis.status,
+                    "facts_count": len(item.analysis.facts),
+                    "threshold": policy_threshold,
+                    "queries": item.queries,
+                    "matched_local_facts": [fact.claim for fact in item.analysis.facts],
+                    "missing_evidence": item.analysis.missing_evidence,
+                }
+                for item in plan.planned
+            ],
+            "skipped": [
+                {
+                    "dimension_id": item.analysis.dimension_id,
+                    "decision": "skip",
+                    "reason": item.reason,
+                    "status": item.analysis.status,
+                    "facts_count": len(item.analysis.facts),
+                    "threshold": policy_threshold,
+                    "matched_local_facts": item.profile_facts,
+                    "decision_formula": (
+                        f"status={item.analysis.status}, facts_count={len(item.analysis.facts)} >= "
+                        f"threshold={policy_threshold}"
+                    ),
+                    "queries_not_run": item.queries,
+                }
+                for item in plan.skipped
+            ],
+        },
+        "queries": queries,
+        "results": [
+            {
+                **result,
+                "decision": (
+                    "accepted_as_evidence" if evidence_by_result.get(str(result.get("result_id"))) else "ignored"
+                ),
+                "decision_reason": _result_decision_reason(result, pages, evidence_by_result),
+                "accepted_evidence_ids": [
+                    ev.get("evidence_id") for ev in evidence_by_result.get(str(result.get("result_id") or ""), [])
+                ],
+            }
+            for result in results
+        ],
+        "accepted_evidence": evidence,
+        "conflicts": conflicts,
+    }
+    (out_dir / "decision_trace_web.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, default=str),
+        encoding="utf-8",
+    )
+
+
+def _result_decision_reason(
+    result: dict[str, Any],
+    pages: dict[str, dict[str, Any]],
+    evidence_by_result: dict[str, list[dict[str, Any]]],
+) -> str:
+    result_id = str(result.get("result_id") or "")
+    if evidence_by_result.get(result_id):
+        return "LLM/fallback extraction produced evidence from this result"
+    page = pages.get(result_id)
+    if page and page.get("status") not in ("success", None):
+        return f"page fetch {page.get('status')}: {page.get('error') or 'no usable page content'}"
+    return "extraction produced no claim; likely duplicate, irrelevant, low confidence, or not about target company"
+
+
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        value = json.loads(line)
+        if isinstance(value, dict):
+            rows.append(value)
+    return rows
 
 
 def _str_or_none(value: Any) -> str | None:

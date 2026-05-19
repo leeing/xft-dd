@@ -33,6 +33,7 @@
 | `business_label_result.json` | 业务标签判断中间结果，方便检查 rule / LLM 如何得出结论 |
 | `llm_calls.jsonl` | 每次 LLM 调用的阶段、模型、耗时、完整响应和错误信息 |
 | `llm_metrics.json` | LLM 调用次数、成功/失败数、累计耗时 |
+| `decision_trace.json` | Web plan、搜索取舍、Rule 评分、LLM prompt/结论的统一审计链 |
 | `profile.json` | 本次使用的企业画像 |
 | `config_manifest.json` | 本次运行使用的配置文件和 hash，方便复现 |
 | `scenario_resolved.json` | 场景配置解析结果 |

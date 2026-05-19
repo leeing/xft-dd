@@ -38,6 +38,7 @@ class RecommenderState(TypedDict):
     llm_concurrency: int
     llm_call_events: Annotated[list[dict[str, Any]], operator.add]
     use_web_evidence: bool
+    web_trace_path: Annotated[str, keep_nonempty_str]
     scenario_id: str | None
     scenario_name: str | None
     prompt_paths: dict[str, str]
