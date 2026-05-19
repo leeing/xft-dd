@@ -101,7 +101,24 @@ config/scenarios/sales_recommendation/
 products.yaml
 scoring_policy.yaml
 config/recommender/
+config/evidence_policy.yaml
 ```
+
+根目录 `config/` 下仍保留一套尽调配置包：
+
+```text
+config/app.yaml
+config/dimensions/
+config/prompts/
+```
+
+这套配置只服务 `uv run xft diligence --config config ...`，不参与当前产品推荐主线。各文件职责：
+
+| 文件/目录 | 作用 |
+| --- | --- |
+| `config/app.yaml` | 尽调流水线并发、抓取、输出和报告参数 |
+| `config/dimensions/` | 尽调维度定义、MiniMax/Metaso 查询词、结构化抽取字段 |
+| `config/prompts/` | 尽调摘要、字段抽取、合并报告和各维度提示词 |
 
 ## 产物
 

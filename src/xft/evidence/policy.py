@@ -83,7 +83,7 @@ class EvidencePolicy(BaseModel):
 def load_evidence_policy(path: str | Path | None = None) -> EvidencePolicy:
     """Load evidence policy from YAML, falling back to built-in defaults."""
     if path is None:
-        path = Path("config/evidence_policy.yaml")
+        return EvidencePolicy()
     else:
         from xft.core.scenario import maybe_scenario_path
 
