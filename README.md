@@ -384,7 +384,7 @@ uv run xft calibrate \
 模块 module
   → 业务标签 label
     → 判断指标 indicator
-      → 判断方式 evaluator: rule 或 llm
+      → 判断方式 evaluator: rule / llm / hybrid
   → 标签命中后的营销点 marketing_points
 ```
 
@@ -421,8 +421,16 @@ modules:
               value: 0
           - indicator_id: tech_certification
             indicator_name: 科技企业-科技资质认证
-            evaluator: llm
+            evaluator: hybrid
+            merge_policy: rule_first
             standard: 企业具备高新技术企业、专精特新、科技型中小企业等资质。
+            rule:
+              source_field: labels
+              op: contains_any
+              value:
+                - 高新技术企业
+                - 专精特新
+                - 科技型中小企业
             evidence_hints:
               - 高新技术企业
               - 专精特新
@@ -436,7 +444,7 @@ modules:
 | `label_id` | 业务属性标签 ID，例如 `tech_attribute` |
 | `min_matched_indicators` | 一个标签至少命中几个指标才算“满足” |
 | `indicator_id` | 指标 ID，例如 `ip_assets` |
-| `evaluator` | 判断方式，`rule` 表示确定性规则，`llm` 表示 LLM 结合证据推理 |
+| `evaluator` | 判断方式，`rule` 表示确定性规则，`llm` 表示 LLM 结合证据推理，`hybrid` 表示 rule + LLM 协同 |
 | `standard` | 判断标准，会进入最终 `result.json` 的 `QuantitativeStandard` |
 | `evidence_hints` | `--no-llm` 兜底或 LLM 判断时使用的关键词提示 |
 | `marketing_points` | 标签命中后输出的推荐理由、销售规则和 KYC 问题 |
@@ -457,6 +465,27 @@ evaluator: llm
 prompt: |
   请判断企业是否存在经销商维护、区域销售、渠道维护或业务员外勤销售特征。
 ```
+
+`hybrid` 适合“有明确字段线索，但需要 LLM 兜底或确认”的判断：
+
+```yaml
+evaluator: hybrid
+merge_policy: rule_first
+rule:
+  source_field: labels
+  op: contains_any
+  value: [高新技术企业, 专精特新]
+prompt: |
+  请结合企业画像和维度证据，判断企业是否具备科技资质。
+```
+
+支持三种合并策略：
+
+| `merge_policy` | 含义 |
+|----------------|------|
+| `rule_first` | rule 命中则直接 matched，不调用 LLM；rule 未命中再交给 LLM |
+| `llm_confirm` | rule 给出候选信号，LLM 负责确认或降级 |
+| `require_both` | rule 和 LLM 都命中才算 matched |
 
 运行 `--no-llm` 时，LLM 指标不会调用模型，会使用 `evidence_hints` 在本地画像里做保守兜底判断。
 

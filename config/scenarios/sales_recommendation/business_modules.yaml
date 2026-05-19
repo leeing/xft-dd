@@ -107,8 +107,16 @@ modules:
         indicators:
           - indicator_id: tech_certification
             indicator_name: 科技企业-科技资质认证
-            evaluator: llm
+            evaluator: hybrid
+            merge_policy: rule_first
             standard: 企业具备高新技术企业、专精特新、科技型中小企业等资质。
+            rule:
+              source_field: labels
+              op: contains_any
+              value:
+                - 高新技术企业
+                - 专精特新
+                - 科技型中小企业
             prompt: |
               请判断企业是否具备科技资质认证，例如高新技术企业、专精特新、科技型中小企业等。
             evidence_hints:

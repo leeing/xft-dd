@@ -262,7 +262,7 @@ async def _evaluate_indicator_with_fallback(  # noqa: PLR0913
     ) as exc:
         recorded = bool(getattr(exc, "_xft_llm_event_recorded", False))
         should_record_failure = (
-            indicator.evaluator == "llm"
+            indicator.evaluator in ("llm", "hybrid")
             and use_llm
             and (settings.llm_api_key or settings.minimax_api_key)
             and not recorded
@@ -319,6 +319,20 @@ async def _evaluate_indicator(  # noqa: PLR0913
 ) -> BusinessIndicatorResult:
     if indicator.evaluator == "rule":
         return _evaluate_rule_indicator(config, module, label, indicator, profile)
+    if indicator.evaluator == "hybrid":
+        return await _evaluate_hybrid_indicator(
+            config=config,
+            module=module,
+            label=label,
+            indicator=indicator,
+            company_name=company_name,
+            profile=profile,
+            dimension_analysis=dimension_analysis,
+            use_llm=use_llm,
+            llm_debug=llm_debug,
+            llm_events=llm_events,
+            semaphore=semaphore,
+        )
     if use_llm and (settings.llm_api_key or settings.minimax_api_key):
         async with semaphore:
             return await _evaluate_llm_indicator(
@@ -333,6 +347,124 @@ async def _evaluate_indicator(  # noqa: PLR0913
                 llm_events=llm_events,
             )
     return _fallback_indicator_result(config=config, module=module, label=label, indicator=indicator, profile=profile)
+
+
+async def _evaluate_hybrid_indicator(  # noqa: PLR0913
+    *,
+    config: BusinessRecommendationConfig,
+    module: BusinessModuleConfig,
+    label: BusinessLabelConfig,
+    indicator: BusinessIndicatorConfig,
+    company_name: str,
+    profile: dict[str, Any],
+    dimension_analysis: list[DimensionAnalysis],
+    use_llm: bool,
+    llm_debug: bool,
+    llm_events: list[dict[str, Any]],
+    semaphore: asyncio.Semaphore,
+) -> BusinessIndicatorResult:
+    rule_result = _evaluate_rule_indicator(config, module, label, indicator, profile)
+    trace: dict[str, Any] = {
+        "merge_policy": indicator.merge_policy,
+        "rule_result": rule_result.result,
+        "rule_confidence": rule_result.confidence,
+        "rule_current_status": rule_result.current_status,
+        "rule_evidence": rule_result.evidence,
+        "llm_called": False,
+        "llm_result": None,
+        "final_decision": "",
+    }
+    if indicator.merge_policy == "rule_first" and rule_result.result == "matched":
+        trace["final_decision"] = "rule matched, skipped llm"
+        return rule_result.model_copy(update={"evaluator": "hybrid", "hybrid_trace": trace})
+    if indicator.merge_policy == "require_both" and rule_result.result != "matched":
+        trace["final_decision"] = "rule did not match, require_both failed without llm"
+        return rule_result.model_copy(update={"evaluator": "hybrid", "hybrid_trace": trace})
+    if not (use_llm and (settings.llm_api_key or settings.minimax_api_key)):
+        fallback = _fallback_indicator_result(
+            config=config,
+            module=module,
+            label=label,
+            indicator=indicator,
+            profile=profile,
+        )
+        trace.update(
+            {
+                "llm_called": False,
+                "fallback_result": fallback.result,
+                "fallback_evidence": fallback.evidence,
+                "final_decision": "llm unavailable, used rule result if matched else evidence_hints fallback",
+            }
+        )
+        if rule_result.result == "matched":
+            return rule_result.model_copy(update={"evaluator": "hybrid", "hybrid_trace": trace})
+        return fallback.model_copy(update={"evaluator": "hybrid", "hybrid_trace": trace})
+    async with semaphore:
+        llm_result = await _evaluate_llm_indicator(
+            config=config,
+            module=module,
+            label=label,
+            indicator=indicator,
+            company_name=company_name,
+            profile=profile,
+            dimension_analysis=dimension_analysis,
+            llm_debug=llm_debug,
+            llm_events=llm_events,
+        )
+    trace.update(
+        {
+            "llm_called": True,
+            "llm_result": llm_result.result,
+            "llm_confidence": llm_result.confidence,
+            "llm_current_status": llm_result.current_status,
+            "llm_evidence": llm_result.evidence,
+        }
+    )
+    final = _merge_hybrid_result(rule_result, llm_result, policy=indicator.merge_policy)
+    trace["final_decision"] = _hybrid_decision_text(rule_result.result, llm_result.result, indicator.merge_policy)
+    return final.model_copy(
+        update={
+            "evaluator": "hybrid",
+            "score": config.scoring.indicator_scores.score_for(final.result),
+            "hybrid_trace": trace,
+        }
+    )
+
+
+def _merge_hybrid_result(
+    rule_result: BusinessIndicatorResult,
+    llm_result: BusinessIndicatorResult,
+    *,
+    policy: str,
+) -> BusinessIndicatorResult:
+    if policy == "llm_confirm":
+        if rule_result.result == "matched" and llm_result.result == "not_matched":
+            result: BusinessResult = "possible"
+            confidence: BusinessConfidence = "中"
+        elif rule_result.result == "matched" and llm_result.result == "unknown":
+            result = "possible"
+            confidence = "中"
+        else:
+            result = llm_result.result
+            confidence = llm_result.confidence
+        return llm_result.model_copy(update={"result": result, "confidence": confidence})
+    if policy == "require_both":
+        if rule_result.result == "matched" and llm_result.result == "matched":
+            return llm_result.model_copy(update={"result": "matched", "confidence": llm_result.confidence})
+        if rule_result.result == "matched" or llm_result.result == "matched":
+            return llm_result.model_copy(update={"result": "possible", "confidence": "中"})
+        return llm_result.model_copy(update={"result": "not_matched", "confidence": "中"})
+    if rule_result.result == "matched":
+        return rule_result
+    return llm_result
+
+
+def _hybrid_decision_text(rule_result: str, llm_result: str, policy: str) -> str:
+    if policy == "llm_confirm":
+        return f"rule={rule_result}; llm={llm_result}; final follows llm confirmation with downgrade on conflict"
+    if policy == "require_both":
+        return f"rule={rule_result}; llm={llm_result}; matched only when both matched"
+    return f"rule={rule_result}; llm={llm_result}; rule_first used llm because rule did not match"
 
 
 def _evaluate_rule_indicator(
@@ -526,6 +658,7 @@ def _indicator_result(  # noqa: PLR0913
     confidence: BusinessConfidence,
     current_status: str,
     evidence: list[str],
+    hybrid_trace: dict[str, Any] | None = None,
 ) -> BusinessIndicatorResult:
     return BusinessIndicatorResult(
         module_id=module.module_id,
@@ -541,6 +674,7 @@ def _indicator_result(  # noqa: PLR0913
         standard=indicator.standard,
         evidence=evidence[:8],
         evaluator=indicator.evaluator,
+        hybrid_trace=hybrid_trace or {},
     )
 
 

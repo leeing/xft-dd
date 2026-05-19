@@ -367,8 +367,10 @@ flowchart LR
     facts["企业画像 + 维度证据 + Web证据"] --> ind["指标判断 indicator"]
     ind --> rule["evaluator: rule 确定性字段规则"]
     ind --> llm["evaluator: llm 证据约束推理"]
+    ind --> hybrid["evaluator: hybrid rule + LLM 协同"]
     rule --> indres["BusinessIndicatorResult"]
     llm --> indres
+    hybrid --> indres
     indres --> label["标签聚合 label"]
     label --> module["模块聚合 module"]
     module --> resultjson["业务版 result.json"]

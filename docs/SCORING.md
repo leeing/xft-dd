@@ -49,7 +49,7 @@ flowchart TB
 它描述：
 
 ```text
-模块 → 标签 → 指标 → 判断方式(rule/llm) → 营销点/KYC问题
+模块 → 标签 → 指标 → 判断方式(rule/llm/hybrid) → 营销点/KYC问题
 ```
 
 例如：
@@ -73,8 +73,13 @@ modules:
               value: 0
           - indicator_id: tech_certification
             indicator_name: 科技企业-科技资质认证
-            evaluator: llm
+            evaluator: hybrid
+            merge_policy: rule_first
             standard: 企业具备高新技术企业、专精特新、科技型中小企业等资质。
+            rule:
+              source_field: labels
+              op: contains_any
+              value: [高新技术企业, 专精特新, 科技型中小企业]
             evidence_hints:
               - 高新技术企业
               - 专精特新
@@ -150,6 +155,43 @@ rule:
 | `contains_any` | 包含任意一个关键词 | `business_scope contains_any [出口, 外贸]` |
 
 rule 输出稳定、可复现，适合离线校准。
+
+## Hybrid 指标
+
+`hybrid` 是业务指标层的 rule + LLM 协同判断，不影响 `products.yaml` 的内部产品评分。
+
+它适合这类问题：
+
+- 本地字段有强信号时，希望直接确定命中，节省 LLM 调用。
+- 本地字段只有弱信号时，希望让 LLM 结合维度证据判断。
+- 高风险指标希望 rule 和 LLM 同时命中才算通过。
+
+示例：
+
+```yaml
+evaluator: hybrid
+merge_policy: rule_first
+standard: 企业具备高新技术企业、专精特新、科技型中小企业等资质。
+rule:
+  source_field: labels
+  op: contains_any
+  value: [高新技术企业, 专精特新, 科技型中小企业]
+prompt: |
+  请结合企业画像和维度证据，判断企业是否具备科技资质。
+evidence_hints:
+  - 高新技术企业
+  - 专精特新
+```
+
+合并策略：
+
+| 策略 | 规则 |
+|------|------|
+| `rule_first` | rule 命中则直接 matched，不调用 LLM；rule 未命中再调用 LLM |
+| `llm_confirm` | rule 先给信号，LLM 再确认；如果 LLM 否定或未知，会降为 possible |
+| `require_both` | rule 和 LLM 都 matched 才 matched，只有一边命中则 possible |
+
+Hybrid 的过程会写入 `hybrid_trace`，并同步进入 `business_label_result.json` 与 `decision_trace.json`。
 
 ## LLM 指标
 

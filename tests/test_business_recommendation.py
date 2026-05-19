@@ -33,6 +33,11 @@ async def test_business_recommendation_no_llm_generates_result_json_shape() -> N
     assert result.selected_module.module_id == "daily_reimbursement"
     assert result.selected_module.attributes_number == 3
     assert result.selected_module.indicators_number >= 5
+    tech_cert = next(item for item in result.indicator_results if item.indicator_id == "tech_certification")
+    assert tech_cert.evaluator == "hybrid"
+    assert tech_cert.result == "matched"
+    assert tech_cert.hybrid_trace["merge_policy"] == "rule_first"
+    assert tech_cert.hybrid_trace["final_decision"] == "rule matched, skipped llm"
 
     payload = render_business_result_json(profile=profile, business_result=result, config=config)
 
@@ -61,3 +66,8 @@ def test_business_config_loader_accepts_scenario_bundle() -> None:
     }
     daily = next(module for module in config.modules if module.module_id == "daily_reimbursement")
     assert daily.labels[0].label_name == "产销一体属性"
+    tech_cert = next(
+        ind for label in daily.labels for ind in label.indicators if ind.indicator_id == "tech_certification"
+    )
+    assert tech_cert.evaluator == "hybrid"
+    assert tech_cert.merge_policy == "rule_first"

@@ -6,10 +6,11 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-BusinessEvaluator = Literal["rule", "llm"]
+BusinessEvaluator = Literal["rule", "llm", "hybrid"]
 BusinessResult = Literal["matched", "possible", "not_matched", "unknown"]
 BusinessConfidence = Literal["高", "中", "低"]
 BusinessRuleOperator = Literal[">", ">=", "<", "<=", "==", "!=", "contains", "contains_any", "exists"]
+HybridMergePolicy = Literal["rule_first", "llm_confirm", "require_both"]
 
 
 class BusinessRuleConfig(BaseModel):
@@ -30,6 +31,7 @@ class BusinessIndicatorConfig(BaseModel):
     rule: BusinessRuleConfig | None = None
     prompt: str | None = None
     evidence_hints: list[str] = Field(default_factory=list)
+    merge_policy: HybridMergePolicy = "rule_first"
 
     @model_validator(mode="after")
     def validate_evaluator_payload(self) -> BusinessIndicatorConfig:
@@ -38,6 +40,12 @@ class BusinessIndicatorConfig(BaseModel):
             raise ValueError(msg)
         if self.evaluator == "llm" and not (self.prompt or self.standard):
             msg = f"llm evaluator requires prompt or standard: {self.indicator_id}"
+            raise ValueError(msg)
+        if self.evaluator == "hybrid" and self.rule is None:
+            msg = f"hybrid evaluator requires rule: {self.indicator_id}"
+            raise ValueError(msg)
+        if self.evaluator == "hybrid" and not (self.prompt or self.standard):
+            msg = f"hybrid evaluator requires prompt or standard: {self.indicator_id}"
             raise ValueError(msg)
         return self
 
@@ -171,6 +179,7 @@ class BusinessIndicatorResult(BaseModel):
     standard: str
     evidence: list[str] = Field(default_factory=list)
     evaluator: BusinessEvaluator
+    hybrid_trace: dict[str, Any] = Field(default_factory=dict)
 
 
 class BusinessLabelResult(BaseModel):
