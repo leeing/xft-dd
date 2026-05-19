@@ -13,6 +13,7 @@ from pydantic import BaseModel, ValidationError
 
 from xft.ai.client import get_ai_client
 from xft.ai.json_extractor import extract_json
+from xft.ai.llm_trace import exception_summary, llm_event, preview_text
 from xft.pipeline.recommender.business_models import (
     BusinessConfidence,
     BusinessIndicatorConfig,
@@ -31,7 +32,6 @@ from xft.settings import settings
 
 LLM_TIMEOUT_SECONDS = 45
 MAX_EVIDENCE_ITEMS = 24
-RAW_PREVIEW_CHARS = 500
 
 
 class _LlmIndicatorPayload(BaseModel):
@@ -50,6 +50,7 @@ async def evaluate_business_recommendation(  # noqa: PLR0913
     use_llm: bool,
     llm_debug: bool = False,
     llm_concurrency: int = 4,
+    llm_events: list[dict[str, Any]] | None = None,
 ) -> BusinessRecommendationResult | None:
     """Evaluate the optional business recommendation layer."""
     if config is None:
@@ -60,6 +61,7 @@ async def evaluate_business_recommendation(  # noqa: PLR0913
     all_indicators: list[BusinessIndicatorResult] = []
     concurrency = max(1, llm_concurrency)
     semaphore = asyncio.Semaphore(concurrency)
+    llm_events = llm_events if llm_events is not None else []
     if llm_debug and use_llm and (settings.llm_api_key or settings.minimax_api_key):
         display.info(f"LLM 业务指标并发: {concurrency}")
     module_results = await asyncio.gather(
@@ -72,6 +74,7 @@ async def evaluate_business_recommendation(  # noqa: PLR0913
                 dimension_analysis=dimension_analysis,
                 use_llm=use_llm,
                 llm_debug=llm_debug,
+                llm_events=llm_events,
                 semaphore=semaphore,
             )
             for module in config.modules
@@ -102,6 +105,7 @@ async def _evaluate_module(  # noqa: PLR0913
     dimension_analysis: list[DimensionAnalysis],
     use_llm: bool,
     llm_debug: bool,
+    llm_events: list[dict[str, Any]],
     semaphore: asyncio.Semaphore,
 ) -> tuple[BusinessModuleResult, list[str]]:
     warnings: list[str] = []
@@ -117,6 +121,7 @@ async def _evaluate_module(  # noqa: PLR0913
                 dimension_analysis=dimension_analysis,
                 use_llm=use_llm,
                 llm_debug=llm_debug,
+                llm_events=llm_events,
                 semaphore=semaphore,
             )
             for label in module.labels
@@ -155,6 +160,7 @@ async def _evaluate_label(  # noqa: PLR0913
     dimension_analysis: list[DimensionAnalysis],
     use_llm: bool,
     llm_debug: bool,
+    llm_events: list[dict[str, Any]],
     semaphore: asyncio.Semaphore,
 ) -> tuple[BusinessLabelResult, list[str]]:
     warnings: list[str] = []
@@ -171,6 +177,7 @@ async def _evaluate_label(  # noqa: PLR0913
                 dimension_analysis=dimension_analysis,
                 use_llm=use_llm,
                 llm_debug=llm_debug,
+                llm_events=llm_events,
                 semaphore=semaphore,
             )
             for indicator in label.indicators
@@ -220,6 +227,7 @@ async def _evaluate_indicator_with_fallback(  # noqa: PLR0913
     dimension_analysis: list[DimensionAnalysis],
     use_llm: bool,
     llm_debug: bool,
+    llm_events: list[dict[str, Any]],
     semaphore: asyncio.Semaphore,
 ) -> tuple[BusinessIndicatorResult, str | None]:
     try:
@@ -233,6 +241,7 @@ async def _evaluate_indicator_with_fallback(  # noqa: PLR0913
             dimension_analysis=dimension_analysis,
             use_llm=use_llm,
             llm_debug=llm_debug,
+            llm_events=llm_events,
             semaphore=semaphore,
         )
     except (
@@ -244,8 +253,26 @@ async def _evaluate_indicator_with_fallback(  # noqa: PLR0913
         TypeError,
         ValueError,
     ) as exc:
+        if indicator.evaluator == "llm" and use_llm and (settings.llm_api_key or settings.minimax_api_key):
+            llm_events.append(
+                llm_event(
+                    stage="business_indicator",
+                    name=_indicator_key(module, label, indicator),
+                    model=settings.llm_model,
+                    status="failed",
+                    elapsed_seconds=0,
+                    request={
+                        "module_id": module.module_id,
+                        "label_id": label.label_id,
+                        "indicator_id": indicator.indicator_id,
+                    },
+                    error=exc,
+                )
+            )
         if llm_debug:
-            display.fail(f"LLM 调用失败 [业务指标:{_indicator_key(module, label, indicator)}] {_exc_summary(exc)}")
+            display.fail(
+                f"LLM 调用失败 [业务指标:{_indicator_key(module, label, indicator)}] {exception_summary(exc)}"
+            )
         result = _fallback_indicator_result(
             config=config,
             module=module,
@@ -253,7 +280,7 @@ async def _evaluate_indicator_with_fallback(  # noqa: PLR0913
             indicator=indicator,
             profile=profile,
         )
-        return result, f"{_indicator_key(module, label, indicator)}: {_exc_summary(exc)}"
+        return result, f"{_indicator_key(module, label, indicator)}: {exception_summary(exc)}"
     else:
         return result, None
 
@@ -269,6 +296,7 @@ async def _evaluate_indicator(  # noqa: PLR0913
     dimension_analysis: list[DimensionAnalysis],
     use_llm: bool,
     llm_debug: bool,
+    llm_events: list[dict[str, Any]],
     semaphore: asyncio.Semaphore,
 ) -> BusinessIndicatorResult:
     if indicator.evaluator == "rule":
@@ -284,6 +312,7 @@ async def _evaluate_indicator(  # noqa: PLR0913
                 profile=profile,
                 dimension_analysis=dimension_analysis,
                 llm_debug=llm_debug,
+                llm_events=llm_events,
             )
     return _fallback_indicator_result(config=config, module=module, label=label, indicator=indicator, profile=profile)
 
@@ -325,6 +354,7 @@ async def _evaluate_llm_indicator(  # noqa: PLR0913
     profile: dict[str, Any],
     dimension_analysis: list[DimensionAnalysis],
     llm_debug: bool,
+    llm_events: list[dict[str, Any]],
 ) -> BusinessIndicatorResult:
     key = _indicator_key(module, label, indicator)
     payload = {
@@ -348,6 +378,13 @@ async def _evaluate_llm_indicator(  # noqa: PLR0913
         "证据不足时输出 unknown。current_status 要能直接给业务人员阅读。"
     )
     client = get_ai_client()
+    request_summary = {
+        "module_id": module.module_id,
+        "label_id": label.label_id,
+        "indicator_id": indicator.indicator_id,
+        "evidence_items": len(payload["dimension_evidence"]),
+        "timeout_seconds": LLM_TIMEOUT_SECONDS,
+    }
     if llm_debug:
         display.info(
             f"LLM 调用开始 [业务指标:{key}] model={settings.llm_model}, timeout={LLM_TIMEOUT_SECONDS}s"
@@ -364,10 +401,23 @@ async def _evaluate_llm_indicator(  # noqa: PLR0913
     )
     raw = resp.choices[0].message.content or "{}"
     parsed = _LlmIndicatorPayload.model_validate(json.loads(extract_json(raw)))
+    llm_events.append(
+        llm_event(
+            stage="business_indicator",
+            name=key,
+            model=settings.llm_model,
+            status="success",
+            elapsed_seconds=perf_counter() - started,
+            request=request_summary,
+            response_preview=preview_text(raw),
+            result=parsed.result,
+            confidence=parsed.confidence,
+        )
+    )
     if llm_debug:
         display.info(
             f"LLM 调用完成 [业务指标:{key}] {perf_counter() - started:.2f}s, "
-            f"result={parsed.result}, confidence={parsed.confidence}, raw={_preview(raw)}"
+            f"result={parsed.result}, confidence={parsed.confidence}, raw={preview_text(raw)}"
         )
     return _indicator_result(
         config=config,
@@ -387,18 +437,6 @@ def _indicator_key(
     indicator: BusinessIndicatorConfig,
 ) -> str:
     return f"{module.module_id}.{label.label_id}.{indicator.indicator_id}"
-
-
-def _preview(text: str, limit: int = RAW_PREVIEW_CHARS) -> str:
-    compact = " ".join(text.split())
-    if len(compact) <= limit:
-        return compact
-    return compact[:limit] + "..."
-
-
-def _exc_summary(exc: BaseException) -> str:
-    text = str(exc).strip()
-    return f"{type(exc).__name__}: {text[:180]}" if text else type(exc).__name__
 
 
 def _fallback_indicator_result(

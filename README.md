@@ -31,6 +31,8 @@
 | `result.json` | 业务交付格式，包含推荐模块、命中标签、营销点和 KYC 问题 |
 | `internal_result.json` | 内部推荐结果，包含规则评分、证据链和调试信息 |
 | `business_label_result.json` | 业务标签判断中间结果，方便检查 rule / LLM 如何得出结论 |
+| `llm_calls.jsonl` | 每次 LLM 调用的阶段、模型、耗时、结果预览和错误信息 |
+| `llm_metrics.json` | LLM 调用次数、成功/失败数、累计耗时 |
 | `profile.json` | 本次使用的企业画像 |
 | `config_manifest.json` | 本次运行使用的配置文件和 hash，方便复现 |
 | `scenario_resolved.json` | 场景配置解析结果 |
@@ -41,6 +43,7 @@
 result.json → 看最终推荐给业务/前端的结果
 business_label_result.json → 看标签和指标为什么命中
 internal_result.json → 看内部评分、证据链和工程调试信息
+llm_calls.jsonl → 查外部 LLM 到底成功、失败还是超时
 ```
 
 批量运行时，会额外生成批次汇总：
@@ -49,7 +52,7 @@ internal_result.json → 看内部评分、证据链和工程调试信息
 |------|------|
 | `batch_summary.csv` | 每家公司推荐结果汇总 |
 | `batch_summary.json` | 结构化批量汇总 |
-| `batch_quality_report.md` | 批量质量报告 |
+| `batch_quality_report.md` | 批量质量报告，包含 Web 与 LLM 调用汇总 |
 | `delivery_manifest.json` | 交付清单 |
 
 ## 1. 把项目跑起来

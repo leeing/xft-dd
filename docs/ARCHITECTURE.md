@@ -286,6 +286,8 @@ company_profile + unified_evidence + scenario config
 |------|------|
 | `internal_result.json` | 内部推荐结果，保留原规则引擎/LLM 推荐、分数、证据链和评分摘要 |
 | `business_label_result.json` | 业务标签判断中间结果，记录每个指标由 `rule` 还是 `llm` 判断 |
+| `llm_calls.jsonl` | LLM 调用明细，记录阶段、模型、耗时、响应预览和错误 |
+| `llm_metrics.json` | LLM 调用汇总，供批量质量报告聚合 |
 | `result.json` | 面向业务/前端的最终格式，包含 `Module`、`LabelResult`、`MarketingPoint`、`AcceptanceResult` |
 
 ## 配置体系

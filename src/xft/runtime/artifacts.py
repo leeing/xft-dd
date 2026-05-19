@@ -31,6 +31,7 @@ class BatchQualityReport(BaseModel):
     low_completeness_companies: list[dict[str, Any]] = Field(default_factory=list)
     failed_companies: list[dict[str, Any]] = Field(default_factory=list)
     web_metrics: dict[str, int] = Field(default_factory=dict)
+    llm_metrics: dict[str, float | int] = Field(default_factory=dict)
 
 
 def build_quality_report(batch_id: str, rows: list[dict[str, Any]], *, pipeline: str = "") -> BatchQualityReport:
@@ -67,6 +68,7 @@ def build_quality_report(batch_id: str, rows: list[dict[str, Any]], *, pipeline:
             if row.get("status") == "failed"
         ],
         web_metrics=_aggregate_web_metrics(rows),
+        llm_metrics=_aggregate_llm_metrics(rows),
     )
 
 
@@ -132,6 +134,8 @@ def write_delivery_manifest(  # noqa: PLR0913
         for file_type, filename in (
             ("company_config_manifest", "config_manifest.json"),
             ("company_scenario_resolved", "scenario_resolved.json"),
+            ("company_llm_calls", "llm_calls.jsonl"),
+            ("company_llm_metrics", "llm_metrics.json"),
         ):
             path = output_dir / filename
             if path.exists():
@@ -211,6 +215,17 @@ def _render_quality_report(report: BatchQualityReport, *, title: str) -> str:
         lines.append(f"- 抽取: 执行 {wm.get('extraction_executed', 0)} 次 / 复用 {wm.get('extraction_reused', 0)} 次")
     else:
         lines.append("- 未启用 Web 补证。")
+    lines.extend(["", "## LLM 运行指标", ""])
+    lm = report.llm_metrics
+    if lm and lm.get("calls_total", 0):
+        lines.append(
+            "- 调用: "
+            f"总计 {lm.get('calls_total', 0)} 次 / 成功 {lm.get('calls_success', 0)} 次 / "
+            f"失败 {lm.get('calls_failed', 0)} 次"
+        )
+        lines.append(f"- 累计耗时: {float(lm.get('elapsed_seconds', 0)):.1f} 秒")
+    else:
+        lines.append("- 未记录 LLM 调用。")
     lines.extend(["", "## 失败清单", ""])
     if report.failed_companies:
         lines.extend(f"- {item['company_name']}：{item['error']}" for item in report.failed_companies)
@@ -249,6 +264,16 @@ def _aggregate_web_metrics(rows: list[dict[str, Any]]) -> dict[str, int]:
         "extraction_reused",
     ]
     return {key: sum(_int(row.get(f"web_{key}")) for row in rows) for key in keys}
+
+
+def _aggregate_llm_metrics(rows: list[dict[str, Any]]) -> dict[str, float | int]:
+    """Sum LLM metrics across all rows."""
+    return {
+        "calls_total": sum(_int(row.get("llm_calls_total")) for row in rows),
+        "calls_success": sum(_int(row.get("llm_calls_success")) for row in rows),
+        "calls_failed": sum(_int(row.get("llm_calls_failed")) for row in rows),
+        "elapsed_seconds": round(sum(_float(row.get("llm_elapsed_seconds")) for row in rows), 3),
+    }
 
 
 def _average(values: list[float]) -> float:

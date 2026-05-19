@@ -328,6 +328,9 @@ async def test_run_recommendation_accepts_scenario_bundle(
     business_payload = json.loads((Path(result.output_dir) / "result.json").read_text(encoding="utf-8"))
     assert business_payload["CompanyName"] == "广东德美精细化工集团股份有限公司"
     assert "AcceptanceResult" in business_payload
+    llm_metrics = json.loads((Path(result.output_dir) / "llm_metrics.json").read_text(encoding="utf-8"))
+    assert llm_metrics["total"] == 0
+    assert (Path(result.output_dir) / "llm_calls.jsonl").exists()
     resolved = json.loads((Path(result.output_dir) / "scenario_resolved.json").read_text(encoding="utf-8"))
     assert len(resolved["products_effective_hash"]) == 64
     manifest = json.loads((Path(result.output_dir) / "config_manifest.json").read_text(encoding="utf-8"))

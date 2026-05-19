@@ -335,6 +335,19 @@ uv run xft recommend --with-web-evidence "企业名称"
 uv run xft recommend --with-web --refresh-web "企业名称"
 ```
 
+测试验证期可以加 LLM 诊断参数：
+
+```bash
+uv run xft recommend --with-web --llm-debug --llm-concurrency 4 "企业名称"
+```
+
+每次运行会额外写入：
+
+- `llm_calls.jsonl`：逐次 LLM 调用明细。
+- `llm_metrics.json`：调用次数、成功/失败数和累计耗时。
+
+批量运行时，`batch_summary.csv` 和 `batch_quality_report.md` 会聚合这些 LLM 指标，方便定位是模型超时、限流、返回格式错误，还是业务规则本身需要调整。
+
 ## 怎么调优
 
 ### 结果模块不对

@@ -202,6 +202,7 @@ async def run_recommendation(  # noqa: PLR0913
         "use_llm": use_llm,
         "llm_debug": llm_debug,
         "llm_concurrency": llm_concurrency,
+        "llm_call_events": [],
         "use_web_evidence": use_web_evidence,
         "scenario_id": scenario.config.id if scenario else products_config.scenario,
         "scenario_name": scenario.config.name if scenario else None,

@@ -52,6 +52,10 @@ SUMMARY_FIELDS = [
     "web_fetch_reused",
     "web_extraction_executed",
     "web_extraction_reused",
+    "llm_calls_total",
+    "llm_calls_success",
+    "llm_calls_failed",
+    "llm_elapsed_seconds",
     "error",
     "elapsed_seconds",
 ]
@@ -285,6 +289,7 @@ def summarize_run(result: RecommendationRunResult) -> dict[str, Any]:
             "rules_matched": scoring_summary.get("rules_matched", 0),
             "products_excluded": scoring_summary.get("products_excluded", 0),
             **_web_metrics(output_dir),
+            **_llm_metrics(output_dir),
             "error": result.error or "",
             "elapsed_seconds": 0,
         }
@@ -348,6 +353,25 @@ def _web_metrics(output_dir: Path) -> dict[str, int]:
     }
 
 
+def _llm_metrics(output_dir: Path) -> dict[str, Any]:
+    """Read llm_metrics.json from a run directory if present."""
+    path = output_dir / "llm_metrics.json"
+    if not path.exists():
+        return {
+            "llm_calls_total": 0,
+            "llm_calls_success": 0,
+            "llm_calls_failed": 0,
+            "llm_elapsed_seconds": 0,
+        }
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return {
+        "llm_calls_total": data.get("total", 0),
+        "llm_calls_success": data.get("success", 0),
+        "llm_calls_failed": data.get("failed", 0),
+        "llm_elapsed_seconds": data.get("elapsed_seconds", 0),
+    }
+
+
 def _failed_row(company_name: str, run_id: str, output_dir: str, error: str) -> dict[str, Any]:
     return _ordered_row(
         {
@@ -378,6 +402,10 @@ def _failed_row(company_name: str, run_id: str, output_dir: str, error: str) -> 
             "web_fetch_reused": 0,
             "web_extraction_executed": 0,
             "web_extraction_reused": 0,
+            "llm_calls_total": 0,
+            "llm_calls_success": 0,
+            "llm_calls_failed": 0,
+            "llm_elapsed_seconds": 0,
             "error": error,
             "elapsed_seconds": 0,
         }

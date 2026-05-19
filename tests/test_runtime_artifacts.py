@@ -57,6 +57,10 @@ def test_build_quality_report_common_metrics() -> None:
             "top_score": 80,
             "profile_completeness": 0.8,
             "conflict_count": 0,
+            "llm_calls_total": 3,
+            "llm_calls_success": 2,
+            "llm_calls_failed": 1,
+            "llm_elapsed_seconds": 4.5,
         },
         {
             "company_name": "公司B",
@@ -77,6 +81,9 @@ def test_build_quality_report_common_metrics() -> None:
     assert report.top_modules == [{"module_id": "srm", "count": 1}]
     assert report.high_conflict_companies[0]["company_name"] == "公司B"
     assert report.failed_companies[0]["error"] == "boom"
+    assert report.llm_metrics["calls_total"] == 3
+    assert report.llm_metrics["calls_failed"] == 1
+    assert report.llm_metrics["elapsed_seconds"] == 4.5
     assert batch_status(rows) == "partial"
 
 
@@ -85,6 +92,8 @@ def test_write_runtime_delivery_artifacts(tmp_path: Path) -> None:
     company_dir.mkdir()
     (company_dir / "config_manifest.json").write_text("{}", encoding="utf-8")
     (company_dir / "scenario_resolved.json").write_text("{}", encoding="utf-8")
+    (company_dir / "llm_calls.jsonl").write_text("{}\n", encoding="utf-8")
+    (company_dir / "llm_metrics.json").write_text("{}", encoding="utf-8")
     rows = [
         {
             "company_name": "公司A",
@@ -115,4 +124,6 @@ def test_write_runtime_delivery_artifacts(tmp_path: Path) -> None:
     assert any(item["type"] == "company_report" for item in payload["files"])
     assert any(item["type"] == "company_config_manifest" for item in payload["files"])
     assert any(item["type"] == "company_scenario_resolved" for item in payload["files"])
+    assert any(item["type"] == "company_llm_calls" for item in payload["files"])
+    assert any(item["type"] == "company_llm_metrics" for item in payload["files"])
     assert any(item["type"] == "failed_companies" for item in payload["files"])

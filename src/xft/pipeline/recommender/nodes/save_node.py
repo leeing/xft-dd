@@ -20,6 +20,36 @@ def _write_json(path: Path, value: Any) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2, default=_json_default), encoding="utf-8")
 
 
+def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
+    text = "\n".join(json.dumps(row, ensure_ascii=False, default=_json_default) for row in rows)
+    path.write_text(text + ("\n" if text else ""), encoding="utf-8")
+
+
+def _llm_metrics(events: list[dict[str, Any]]) -> dict[str, Any]:
+    total = len(events)
+    success = sum(1 for item in events if item.get("status") == "success")
+    failed = sum(1 for item in events if item.get("status") == "failed")
+    elapsed = round(sum(float(item.get("elapsed_seconds") or 0) for item in events), 3)
+    by_stage: dict[str, dict[str, Any]] = {}
+    for event in events:
+        stage = str(event.get("stage") or "unknown")
+        bucket = by_stage.setdefault(stage, {"total": 0, "success": 0, "failed": 0, "elapsed_seconds": 0.0})
+        bucket["total"] += 1
+        if event.get("status") == "success":
+            bucket["success"] += 1
+        elif event.get("status") == "failed":
+            bucket["failed"] += 1
+        elapsed = float(bucket["elapsed_seconds"]) + float(event.get("elapsed_seconds") or 0)
+        bucket["elapsed_seconds"] = round(elapsed, 3)
+    return {
+        "total": total,
+        "success": success,
+        "failed": failed,
+        "elapsed_seconds": elapsed,
+        "by_stage": by_stage,
+    }
+
+
 async def save_node(state: RecommenderState) -> dict[str, object]:
     display.phase(5, 5, "生成报告")
     out_dir = Path(state["output_root"]) / state["run_id"]
@@ -29,10 +59,15 @@ async def save_node(state: RecommenderState) -> dict[str, object]:
     matches_path = out_dir / "match_results.json"
     internal_result_path = out_dir / "internal_result.json"
     business_label_path = out_dir / "business_label_result.json"
+    llm_calls_path = out_dir / "llm_calls.jsonl"
+    llm_metrics_path = out_dir / "llm_metrics.json"
     result_path = out_dir / "result.json"
     report_path = out_dir / "report.md"
 
     _write_json(profile_path, state.get("profile", {}))
+    llm_events = state.get("llm_call_events", [])
+    _write_jsonl(llm_calls_path, llm_events)
+    _write_json(llm_metrics_path, _llm_metrics(llm_events))
     _write_json(dimensions_path, [item.model_dump() for item in state["dimension_analysis"]])
     _write_json(matches_path, [item.model_dump() for item in state["match_results"]])
     rec = state["recommendation"]

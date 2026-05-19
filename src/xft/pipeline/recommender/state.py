@@ -36,6 +36,7 @@ class RecommenderState(TypedDict):
     use_llm: bool
     llm_debug: bool
     llm_concurrency: int
+    llm_call_events: Annotated[list[dict[str, Any]], operator.add]
     use_web_evidence: bool
     scenario_id: str | None
     scenario_name: str | None
