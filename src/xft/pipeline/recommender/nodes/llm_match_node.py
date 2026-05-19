@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 
 from openai import OpenAIError
@@ -11,6 +12,14 @@ from pydantic import BaseModel, ValidationError
 
 from xft.ai.client import get_ai_client
 from xft.ai.json_extractor import extract_json
+from xft.ai.llm_trace import (
+    exception_summary,
+    llm_event,
+    preview_text,
+    print_llm_failure,
+    print_llm_start,
+    print_llm_success,
+)
 from xft.pipeline.recommender.config_loader import load_prompt
 from xft.pipeline.recommender.models import DimensionAnalysis, MatchResult, ProductModule
 from xft.pipeline.recommender.state import RecommenderState
@@ -128,6 +137,7 @@ async def llm_match_node(state: RecommenderState) -> dict[str, object]:
     display.phase(4, 5, "产品匹配")
     products = state["products"]
     analyses = state["dimension_analysis"]
+    events: list[dict[str, Any]] = []
     prompt_path = Path(state.get("prompt_paths", {}).get("match_system", "config/recommender/prompts/match_system.md"))
     if not state.get("use_llm", True) or not (settings.llm_api_key or settings.minimax_api_key):
         matches = _fallback_match(products, analyses)
@@ -140,6 +150,14 @@ async def llm_match_node(state: RecommenderState) -> dict[str, object]:
             "dimension_analysis": [item.model_dump() for item in analyses],
             "products": [item.model_dump() for item in products],
         }
+        request_summary = {
+            "products": len(products),
+            "dimensions": len(analyses),
+            "timeout_seconds": LLM_TIMEOUT_SECONDS,
+        }
+        if state.get("llm_debug", False):
+            print_llm_start(title="产品匹配", model=settings.llm_model, request=request_summary)
+        started = perf_counter()
         client = get_ai_client()
         resp = await client.chat.completions.create(
             model=settings.llm_model,
@@ -153,11 +171,56 @@ async def llm_match_node(state: RecommenderState) -> dict[str, object]:
         raw = resp.choices[0].message.content or "{}"
         parsed: Any = json.loads(extract_json(raw))
         matches = _MatchList.model_validate(parsed).matches
+        events.append(
+            llm_event(
+                stage="product_match",
+                name="llm_match",
+                model=settings.llm_model,
+                status="success",
+                elapsed_seconds=perf_counter() - started,
+                request=request_summary,
+                response_preview=preview_text(raw),
+                response_text=raw,
+                system_prompt=system_prompt,
+                user_payload=payload,
+                parameters={"temperature": 0.1, "timeout_seconds": LLM_TIMEOUT_SECONDS},
+                result=f"matches:{len(matches)}",
+            )
+        )
+        if state.get("llm_debug", False):
+            print_llm_success(
+                title="产品匹配",
+                elapsed_seconds=perf_counter() - started,
+                result=f"matches:{len(matches)}",
+                raw=raw,
+            )
         display.ok(f"LLM 分析完成 → {len(matches)} 个候选产品")
-    except (OpenAIError, json.JSONDecodeError, ValidationError, OSError, KeyError, TypeError, ValueError):
+    except (OpenAIError, json.JSONDecodeError, ValidationError, OSError, KeyError, TypeError, ValueError) as exc:
+        if "started" in locals():
+            events.append(
+                llm_event(
+                    stage="product_match",
+                    name="llm_match",
+                    model=settings.llm_model,
+                    status="failed",
+                    elapsed_seconds=perf_counter() - started,
+                    request=locals().get("request_summary", {}),
+                    system_prompt=locals().get("system_prompt", ""),
+                    user_payload=locals().get("payload"),
+                    parameters={"temperature": 0.1, "timeout_seconds": LLM_TIMEOUT_SECONDS},
+                    error=exc,
+                )
+            )
         matches = _fallback_match(products, analyses)
-        display.info(f"LLM 失败, 规则兜底 → {len(matches)} 个候选产品")
+        if state.get("llm_debug", False) and "started" in locals():
+            print_llm_failure(
+                title="产品匹配",
+                elapsed_seconds=perf_counter() - started,
+                error=exc,
+                fallback=f"规则兜底匹配，候选产品 {len(matches)} 个",
+            )
+        display.info(f"LLM 失败 ({exception_summary(exc)}), 规则兜底 → {len(matches)} 个候选产品")
     for m in matches:
         icon = "✓" if m.matched else "✗"
         display.branch(f"{icon} {m.module_name}: 得分 {m.score} ({m.confidence})")
-    return {"match_results": matches}
+    return {"match_results": matches, "llm_call_events": events}

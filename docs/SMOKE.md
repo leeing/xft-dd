@@ -26,7 +26,20 @@ uv run xft recommend --no-llm \
 - 命令退出码为 0。
 - 输出 `[success]` 或可接受的 `partial` 状态。
 - 生成 `recommendation_runs/.../report.md`。
-- 生成 `recommendation_runs/.../result.json`。
+- 生成业务交付格式 `recommendation_runs/.../result.json`。
+- 生成内部调试格式 `recommendation_runs/.../internal_result.json`。
+- 生成标签判断中间结果 `recommendation_runs/.../business_label_result.json`。
+
+`result.json` 至少应包含：
+
+```text
+CompanyName
+Module
+AcceptanceResult
+LabelResult
+MarketingPoint
+Conclusion
+```
 
 如果要指定数据库：
 
@@ -63,6 +76,7 @@ uv run pytest \
   tests/test_cli.py \
   tests/test_xft_cli.py \
   tests/test_scenario_bundle.py \
+  tests/test_business_recommendation.py \
   -q
 ```
 

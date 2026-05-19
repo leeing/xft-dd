@@ -9,6 +9,7 @@ web_search_config: web_search.yaml
 web_extract_llm_config: web_extract_llm.yaml
 scoring_policy_config: scoring_policy.yaml
 evidence_policy_config: evidence_policy.yaml
+business_modules_config: business_modules.yaml
 
 prompts:
   match_system: prompts/match_system.md

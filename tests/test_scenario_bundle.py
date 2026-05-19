@@ -288,11 +288,11 @@ def test_builtin_bank_marketing_scenario_uses_product_patch(tmp_path: Path) -> N
     scenario = load_scenario(BANK_SCENARIO_DIR)
     products = load_products_config(BANK_SCENARIO_DIR)
 
-    crm = next(product for product in products.products if product.module_id == "crm_channel")
+    corporate_payment = next(product for product in products.products if product.module_id == "corporate_payment")
     assert scenario is not None
     assert scenario.config.id == "bank_marketing"
-    assert crm.base_score == 55
-    assert {rule.id for rule in crm.positive_rules} >= {
+    assert corporate_payment.base_score == 55
+    assert {rule.id for rule in corporate_payment.positive_rules} >= {
         "bank_high_quality_customer",
         "cross_border_settlement_signal",
     }
@@ -321,10 +321,16 @@ async def test_run_recommendation_accepts_scenario_bundle(
     )
 
     assert result.status in ("success", "partial")
-    payload = json.loads((Path(result.output_dir) / "result.json").read_text(encoding="utf-8"))
+    payload = json.loads((Path(result.output_dir) / "internal_result.json").read_text(encoding="utf-8"))
     assert payload["scenario"] == "sales_recommendation"
     assert payload["scenario_name"] == "销售产品推荐"
     assert payload["recommendations"]
+    business_payload = json.loads((Path(result.output_dir) / "result.json").read_text(encoding="utf-8"))
+    assert business_payload["CompanyName"] == "广东德美精细化工集团股份有限公司"
+    assert "AcceptanceResult" in business_payload
+    llm_metrics = json.loads((Path(result.output_dir) / "llm_metrics.json").read_text(encoding="utf-8"))
+    assert llm_metrics["total"] == 0
+    assert (Path(result.output_dir) / "llm_calls.jsonl").exists()
     resolved = json.loads((Path(result.output_dir) / "scenario_resolved.json").read_text(encoding="utf-8"))
     assert len(resolved["products_effective_hash"]) == 64
     manifest = json.loads((Path(result.output_dir) / "config_manifest.json").read_text(encoding="utf-8"))

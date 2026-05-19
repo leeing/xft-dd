@@ -8,6 +8,7 @@ from typing import Annotated, Any
 from typing_extensions import TypedDict
 
 from xft.evidence.policy import EvidencePolicy
+from xft.pipeline.recommender.business_models import BusinessRecommendationConfig, BusinessRecommendationResult
 from xft.pipeline.recommender.models import (
     AnalysisDimensionsConfig,
     DimensionAnalysis,
@@ -33,7 +34,11 @@ class RecommenderState(TypedDict):
     output_root: str
     run_id: str
     use_llm: bool
+    llm_debug: bool
+    llm_concurrency: int
+    llm_call_events: Annotated[list[dict[str, Any]], operator.add]
     use_web_evidence: bool
+    web_trace_path: Annotated[str, keep_nonempty_str]
     scenario_id: str | None
     scenario_name: str | None
     prompt_paths: dict[str, str]
@@ -41,11 +46,13 @@ class RecommenderState(TypedDict):
     dimensions_config: AnalysisDimensionsConfig
     evidence_policy: EvidencePolicy
     scoring_policy: ScoringPolicy
+    business_config: BusinessRecommendationConfig | None
     products: list[ProductModule]
     profile: Annotated[dict[str, Any], merge_dicts]
     dimension_analysis: list[DimensionAnalysis]
     match_results: list[MatchResult]
     recommendation: RecommendationOutput | None
+    business_recommendation: BusinessRecommendationResult | None
     needs_web_enrichment: bool
     errors: Annotated[list[str], operator.add]
     output_dir: Annotated[str, keep_nonempty_str]

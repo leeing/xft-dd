@@ -18,11 +18,11 @@ uv run xft diligence   # 企业尽调流水线，保留场景
 - `uv run xft --help`：通过
 - `uv run xft scenario validate config/scenarios/sales_recommendation`：通过
 - `uv run xft scenario validate config/scenarios/bank_marketing`：通过
-- `uv run xft recommend --no-llm --scenario config/scenarios/sales_recommendation "安徽扬山联合精密技术有限公司"`：通过，生成 `report.md` 和 `result.json`
+- `uv run xft recommend --no-llm --scenario config/scenarios/sales_recommendation "安徽扬山联合精密技术有限公司"`：通过，生成 `report.md`、业务版 `result.json`、`internal_result.json` 和 `business_label_result.json`
 - `uv run xft diligence --dry-run "安徽扬山联合精密技术有限公司"`：通过，不触发外部调用
 - CLI / 冒烟入口测试：`18 passed`
-- 关键测试：`35 passed`
-- 全量测试：`455 passed`
+- 关键测试：`18 passed`
+- 全量测试：`457 passed`
 - `uv run mypy src`：通过
 - `uv run ruff check src tests`：通过
 
@@ -41,6 +41,7 @@ config/scenarios/sales_recommendation/
 | 想调什么 | 文件 |
 |----------|------|
 | 产品模块、权重、命中规则 | `products.yaml` |
+| 业务版 `result.json`、标签、指标、营销点、KYC 问题 | `business_modules.yaml` |
 | 分析维度、本地字段、Web 搜索词 | `analysis_dimensions.yaml` |
 | 全局评分口径 | `scoring_policy.yaml` |
 | 证据优先级、Web 跳过、冲突处理 | `evidence_policy.yaml` |
@@ -140,7 +141,7 @@ uv run ruff check src tests
 
 ### Sprint N：配置调优闭环
 
-状态：**部分完成。**
+状态：**基础能力已完成，等待业务标注样本校准。**
 
 目标：让业务人员不改代码也能验证和调优推荐效果。
 
@@ -148,6 +149,9 @@ uv run ruff check src tests
 
 - README 已从业务人员视角补充配置调优指南。
 - 调优指南覆盖产品规则、分析维度、评分策略、证据策略、Web 搜索、LLM prompt、场景 patch 和校准验证。
+- 新增 `business_modules.yaml`，业务人员可配置模块、标签、指标、判断器、营销点和 KYC 问题。
+- `result.json` 已切换为业务交付格式，内部评分保留在 `internal_result.json`。
+- 当前销售推荐场景已覆盖 7 个业务模块：假勤管理、差旅报销、对公报账、个税管理、日常报销、进项发票、销项发票。
 
 剩余任务：
 
@@ -186,7 +190,16 @@ uv run xft calibrate \
 
 ### Sprint P：真实 Web / LLM 小批次验证
 
+状态：**Web 小批次链路已验证，仍需业务质量校准。**
+
 目标：在基础流水线稳定后，再验证 Web 和 LLM 对推荐质量的提升。
+
+已验证：
+
+- 本地证据足够时，`--with-web` 能正确跳过搜索。
+- `--force-web-dimensions` 能触发真实 Web 搜索、抓取、抽取和入库。
+- 二次运行同一企业时，能复用已有 DuckDB Web 证据。
+- Web 证据能进入 `dimension_analysis.json` 和推荐链路。
 
 任务：
 

@@ -52,6 +52,10 @@ SUMMARY_FIELDS = [
     "web_fetch_reused",
     "web_extraction_executed",
     "web_extraction_reused",
+    "llm_calls_total",
+    "llm_calls_success",
+    "llm_calls_failed",
+    "llm_elapsed_seconds",
     "error",
     "elapsed_seconds",
 ]
@@ -91,6 +95,8 @@ class BatchOptions:
     web_fetch_pages: bool | None = None
     web_force_dimensions: bool = False
     web_use_llm_extraction: bool = True
+    llm_debug: bool = False
+    llm_concurrency: int = 4
     continue_on_error: bool = True
 
 
@@ -196,6 +202,8 @@ async def run_recommendation_batch(  # noqa: PLR0913
                 web_fetch_pages=options.web_fetch_pages,
                 web_force_dimensions=options.web_force_dimensions,
                 web_use_llm_extraction=options.web_use_llm_extraction,
+                llm_debug=options.llm_debug,
+                llm_concurrency=options.llm_concurrency,
             )
             row = summarize_run(result)
         except (OSError, RuntimeError, ValueError, TypeError, KeyError) as exc:
@@ -246,7 +254,10 @@ def summarize_run(result: RecommendationRunResult) -> dict[str, Any]:
     """Build one standardized summary row from a completed recommendation run."""
     output_dir = Path(result.output_dir)
     profile = _read_json(output_dir / "profile.json")
-    payload = _read_json(output_dir / "result.json")
+    business_payload = _read_json(output_dir / "result.json")
+    payload = _read_json(output_dir / "internal_result.json")
+    if not payload:
+        payload = business_payload
     raw_recommendations = payload.get("recommendations")
     recommendations: list[Any] = raw_recommendations if isinstance(raw_recommendations, list) else []
     top = recommendations[0] if recommendations and isinstance(recommendations[0], dict) else {}
@@ -265,7 +276,7 @@ def summarize_run(result: RecommendationRunResult) -> dict[str, Any]:
             "scenario": payload.get("scenario", ""),
             "scenario_name": payload.get("scenario_name", ""),
             "top_module_id": top.get("module_id", ""),
-            "top_module_name": top.get("module_name", ""),
+            "top_module_name": business_payload.get("Module") or top.get("module_name", ""),
             "top_score": top.get("score", ""),
             "recommendation_count": len(recommendations),
             "profile_completeness": profile.get("profile_completeness", payload.get("profile_completeness", "")),
@@ -278,6 +289,7 @@ def summarize_run(result: RecommendationRunResult) -> dict[str, Any]:
             "rules_matched": scoring_summary.get("rules_matched", 0),
             "products_excluded": scoring_summary.get("products_excluded", 0),
             **_web_metrics(output_dir),
+            **_llm_metrics(output_dir),
             "error": result.error or "",
             "elapsed_seconds": 0,
         }
@@ -341,6 +353,25 @@ def _web_metrics(output_dir: Path) -> dict[str, int]:
     }
 
 
+def _llm_metrics(output_dir: Path) -> dict[str, Any]:
+    """Read llm_metrics.json from a run directory if present."""
+    path = output_dir / "llm_metrics.json"
+    if not path.exists():
+        return {
+            "llm_calls_total": 0,
+            "llm_calls_success": 0,
+            "llm_calls_failed": 0,
+            "llm_elapsed_seconds": 0,
+        }
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return {
+        "llm_calls_total": data.get("total", 0),
+        "llm_calls_success": data.get("success", 0),
+        "llm_calls_failed": data.get("failed", 0),
+        "llm_elapsed_seconds": data.get("elapsed_seconds", 0),
+    }
+
+
 def _failed_row(company_name: str, run_id: str, output_dir: str, error: str) -> dict[str, Any]:
     return _ordered_row(
         {
@@ -371,6 +402,10 @@ def _failed_row(company_name: str, run_id: str, output_dir: str, error: str) -> 
             "web_fetch_reused": 0,
             "web_extraction_executed": 0,
             "web_extraction_reused": 0,
+            "llm_calls_total": 0,
+            "llm_calls_success": 0,
+            "llm_calls_failed": 0,
+            "llm_elapsed_seconds": 0,
             "error": error,
             "elapsed_seconds": 0,
         }
@@ -392,6 +427,8 @@ def _options_payload(options: BatchOptions, *, limit: int | None, skip_existing:
         "web_fetch_pages": options.web_fetch_pages,
         "web_force_dimensions": options.web_force_dimensions,
         "web_use_llm_extraction": options.web_use_llm_extraction,
+        "llm_debug": options.llm_debug,
+        "llm_concurrency": options.llm_concurrency,
         "scoring_policy_path": options.scoring_policy_path,
         "evidence_policy_path": options.evidence_policy_path,
         "continue_on_error": options.continue_on_error,

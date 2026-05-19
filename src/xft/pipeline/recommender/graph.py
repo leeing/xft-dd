@@ -13,12 +13,14 @@ from langgraph.graph import END, START, StateGraph
 
 from xft.core.scenario import DEFAULT_PROMPTS, load_scenario
 from xft.evidence.policy import load_evidence_policy
+from xft.pipeline.recommender.business_config_loader import load_business_recommendation_config
 from xft.pipeline.recommender.config_loader import (
     load_dimensions_config,
     load_products_config,
     write_products_resolved_config,
 )
 from xft.pipeline.recommender.models import RecommendationRunResult
+from xft.pipeline.recommender.nodes.business_recommend_node import business_recommend_node
 from xft.pipeline.recommender.nodes.data_gather_node import data_gather_node
 from xft.pipeline.recommender.nodes.dimension_analyze_node import dimension_analyze_node
 from xft.pipeline.recommender.nodes.llm_match_node import llm_match_node
@@ -45,13 +47,15 @@ def _get_graph() -> Any:
         graph.add_node("web_evidence", web_evidence_node)
         graph.add_node("llm_match", llm_match_node)
         graph.add_node("llm_recommend", llm_recommend_node)
+        graph.add_node("business_recommend", business_recommend_node)
         graph.add_node("save", save_node)
         graph.add_edge(START, "data_gather")
         graph.add_edge("data_gather", "dimension_analyze")
         graph.add_edge("dimension_analyze", "web_evidence")
         graph.add_edge("web_evidence", "llm_match")
         graph.add_edge("llm_match", "llm_recommend")
-        graph.add_edge("llm_recommend", "save")
+        graph.add_edge("llm_recommend", "business_recommend")
+        graph.add_edge("business_recommend", "save")
         graph.add_edge("save", END)
         _cache["graph"] = graph.compile()
     return _cache["graph"]
@@ -83,6 +87,8 @@ async def run_recommendation(  # noqa: PLR0913
     web_fetch_pages: bool | None = None,
     web_force_dimensions: bool = False,
     web_use_llm_extraction: bool = True,
+    llm_debug: bool = False,
+    llm_concurrency: int = 4,
 ) -> RecommendationRunResult:
     display.header(company_name)
     scenario = load_scenario(scenario_path) if scenario_path else None
@@ -100,11 +106,13 @@ async def run_recommendation(  # noqa: PLR0913
     evidence_path = evidence_policy_path or (
         scenario.evidence_policy_path if scenario else "config/evidence_policy.yaml"
     )
+    business_path = scenario.business_modules_path if scenario else None
     prompt_paths = scenario.prompt_paths if scenario else DEFAULT_PROMPTS.copy()
     products_config = load_products_config(products_path)
     dimensions_config = load_dimensions_config(dimensions_path)
     scoring_policy = load_scoring_policy(scoring_path)
     evidence_policy = load_evidence_policy(evidence_path)
+    business_config = load_business_recommendation_config(business_path)
     root = output_dir or (scenario.output_dir if scenario else None) or products_config.output_dir
     rid = run_id or make_recommendation_run_id(company_name)
     out_dir = Path(root) / rid
@@ -126,17 +134,21 @@ async def run_recommendation(  # noqa: PLR0913
         web_extract_path=web_extract_path,
         scoring_path=scoring_path,
         evidence_path=evidence_path,
+        business_path=business_path,
         prompt_paths=prompt_paths,
         products_config=products_config,
         dimensions_config=dimensions_config,
         scoring_policy=scoring_policy,
         evidence_policy=evidence_policy,
+        business_config=business_config,
         use_llm=use_llm,
         use_web_evidence=use_web_evidence,
         with_web=with_web,
         refresh_web=refresh_web,
         web_force_dimensions=web_force_dimensions,
         web_use_llm_extraction=web_use_llm_extraction,
+        llm_debug=llm_debug,
+        llm_concurrency=llm_concurrency,
     )
     has_cached = _has_web_evidence(warehouse_db, company_name)
     if with_web and (refresh_web or not has_cached):
@@ -164,6 +176,7 @@ async def run_recommendation(  # noqa: PLR0913
             fetch_pages=web_fetch_pages,
         )
         _write_web_metrics(root, rid, web_result.metrics)
+        web_trace_path = str(Path(web_result.output_dir) / "decision_trace_web.json") if web_result.output_dir else ""
         use_web_evidence = True
     elif with_web:
         log.info(
@@ -188,7 +201,11 @@ async def run_recommendation(  # noqa: PLR0913
         "output_root": root,
         "run_id": rid,
         "use_llm": use_llm,
+        "llm_debug": llm_debug,
+        "llm_concurrency": llm_concurrency,
+        "llm_call_events": [],
         "use_web_evidence": use_web_evidence,
+        "web_trace_path": locals().get("web_trace_path", ""),
         "scenario_id": scenario.config.id if scenario else products_config.scenario,
         "scenario_name": scenario.config.name if scenario else None,
         "prompt_paths": prompt_paths,
@@ -196,11 +213,13 @@ async def run_recommendation(  # noqa: PLR0913
         "dimensions_config": dimensions_config,
         "evidence_policy": evidence_policy,
         "scoring_policy": scoring_policy,
+        "business_config": business_config,
         "products": products_config.products,
         "profile": {},
         "dimension_analysis": [],
         "match_results": [],
         "recommendation": None,
+        "business_recommendation": None,
         "needs_web_enrichment": False,
         "errors": [],
         "output_dir": "",
@@ -255,17 +274,21 @@ def _write_config_manifest(  # noqa: PLR0913
     web_extract_path: str,
     scoring_path: str,
     evidence_path: str,
+    business_path: str | None,
     prompt_paths: dict[str, str],
     products_config: Any,
     dimensions_config: Any,
     scoring_policy: Any,
     evidence_policy: Any,
+    business_config: Any,
     use_llm: bool,
     use_web_evidence: bool,
     with_web: bool,
     refresh_web: bool,
     web_force_dimensions: bool,
     web_use_llm_extraction: bool,
+    llm_debug: bool,
+    llm_concurrency: int,
 ) -> Path:
     files = {
         "products": file_ref(products_path),
@@ -275,6 +298,8 @@ def _write_config_manifest(  # noqa: PLR0913
         "scoring_policy": file_ref(scoring_path),
         "evidence_policy": file_ref(evidence_path),
     }
+    if business_path:
+        files["business_modules"] = file_ref(business_path)
     if scenario is not None:
         files["scenario"] = file_ref(Path(scenario.root) / "scenario.yaml")
     for key, path in sorted(prompt_paths.items()):
@@ -295,6 +320,8 @@ def _write_config_manifest(  # noqa: PLR0913
             "refresh_web": refresh_web,
             "web_force_dimensions": web_force_dimensions,
             "web_use_llm_extraction": web_use_llm_extraction,
+            "llm_debug": llm_debug,
+            "llm_concurrency": llm_concurrency,
         },
         files=files,
         effective_hashes={
@@ -302,6 +329,7 @@ def _write_config_manifest(  # noqa: PLR0913
             "dimensions": model_hash(dimensions_config),
             "scoring_policy": model_hash(scoring_policy),
             "evidence_policy": model_hash(evidence_policy),
+            "business_modules": model_hash(business_config) if business_config is not None else "",
         },
     )
     return write_config_manifest(out_dir / "config_manifest.json", manifest)

@@ -145,10 +145,20 @@ def _matches_relation(relation: str, analyses: list[DimensionAnalysis]) -> tuple
 
 
 def _matches_source_field(field: str, op: RuleOperator | None, expected: Any, profile: dict[str, object]) -> bool:
-    value = profile.get(field)
+    value = _get_path(profile, field)
     if op is None:
         op = "exists"
     return _compare(value, op, expected)
+
+
+def _get_path(value: Any, path: str) -> Any:
+    current = value
+    for part in path.split("."):
+        if isinstance(current, dict):
+            current = current.get(part)
+        else:
+            return None
+    return current
 
 
 def _compare(value: Any, op: RuleOperator, expected: Any) -> bool:  # noqa: PLR0911

@@ -50,6 +50,12 @@ class ScenarioBundle:
         return str(_resolve_path(self.root, self.config.evidence_policy_config))
 
     @property
+    def business_modules_path(self) -> str | None:
+        if not self.config.business_modules_config:
+            return None
+        return str(_resolve_path(self.root, self.config.business_modules_config))
+
+    @property
     def output_dir(self) -> str | None:
         return str(_resolve_path(self.root, self.config.output_dir)) if self.config.output_dir else None
 
@@ -74,6 +80,7 @@ class ScenarioBundle:
         payload["web_extract_llm_path"] = self.web_extract_llm_path
         payload["scoring_policy_path"] = self.scoring_policy_path
         payload["evidence_policy_path"] = self.evidence_policy_path
+        payload["business_modules_path"] = self.business_modules_path
         payload["prompt_paths"] = self.prompt_paths
         return payload
 
@@ -168,6 +175,7 @@ def _resolve_config_paths(root: Path, data: dict[str, Any]) -> dict[str, Any]:
         "web_extract_llm_config",
         "scoring_policy_config",
         "evidence_policy_config",
+        "business_modules_config",
     ):
         value = resolved.get(field)
         if isinstance(value, str) and value:

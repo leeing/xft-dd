@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 
 from openai import OpenAIError
@@ -11,6 +12,14 @@ from pydantic import BaseModel, ValidationError
 
 from xft.ai.client import get_ai_client
 from xft.ai.json_extractor import extract_json
+from xft.ai.llm_trace import (
+    exception_summary,
+    llm_event,
+    preview_text,
+    print_llm_failure,
+    print_llm_start,
+    print_llm_success,
+)
 from xft.evidence.models import EvidenceRecord
 from xft.pipeline.recommender.config_loader import load_prompt
 from xft.pipeline.recommender.models import (
@@ -301,10 +310,11 @@ def _fallback_recommendation(state: RecommenderState) -> RecommendationOutput:
 
 
 async def llm_recommend_node(state: RecommenderState) -> dict[str, object]:
+    events: list[dict[str, Any]] = []
     if not state.get("use_llm", True) or not (settings.llm_api_key or settings.minimax_api_key):
         recommendation = _fallback_recommendation(state)
         display.info(f"规则兜底推荐 → {len(recommendation.recommendations)} 个推荐")
-        return {"recommendation": recommendation}
+        return {"recommendation": recommendation, "llm_call_events": events}
     try:
         system_prompt = load_prompt(
             Path(
@@ -321,6 +331,14 @@ async def llm_recommend_node(state: RecommenderState) -> dict[str, object]:
             "match_results": [item.model_dump() for item in state["match_results"]],
             "product_priorities": priorities,
         }
+        request_summary = {
+            "matches": len(state["match_results"]),
+            "dimensions": len(state["dimension_analysis"]),
+            "timeout_seconds": LLM_TIMEOUT_SECONDS,
+        }
+        if state.get("llm_debug", False):
+            print_llm_start(title="推荐生成", model=settings.llm_model, request=request_summary)
+        started = perf_counter()
         client = get_ai_client()
         resp = await client.chat.completions.create(
             model=settings.llm_model,
@@ -332,6 +350,23 @@ async def llm_recommend_node(state: RecommenderState) -> dict[str, object]:
             timeout=LLM_TIMEOUT_SECONDS,
         )
         raw = resp.choices[0].message.content or "{}"
+        events.append(
+            llm_event(
+                stage="recommendation",
+                name="llm_recommend",
+                model=settings.llm_model,
+                status="success",
+                elapsed_seconds=perf_counter() - started,
+                request=request_summary,
+                response_preview=preview_text(raw),
+                response_text=raw,
+                system_prompt=system_prompt,
+                user_payload=payload,
+                parameters={"temperature": 0.1, "timeout_seconds": LLM_TIMEOUT_SECONDS},
+            )
+        )
+        if state.get("llm_debug", False):
+            print_llm_success(title="推荐生成", elapsed_seconds=perf_counter() - started, raw=raw)
         parsed: Any = json.loads(extract_json(raw))
         fallback = _fallback_recommendation(state)
         scoring = _scoring_run(state)
@@ -352,9 +387,31 @@ async def llm_recommend_node(state: RecommenderState) -> dict[str, object]:
         )
         recommendation = _with_explainability(recommendation, state, scoring)
         display.ok(f"LLM 推荐完成 → {len(recommendation.recommendations)} 个推荐产品")
-    except (OpenAIError, json.JSONDecodeError, ValidationError, OSError, KeyError, TypeError, ValueError):
+    except (OpenAIError, json.JSONDecodeError, ValidationError, OSError, KeyError, TypeError, ValueError) as exc:
+        if "started" in locals():
+            events.append(
+                llm_event(
+                    stage="recommendation",
+                    name="llm_recommend",
+                    model=settings.llm_model,
+                    status="failed",
+                    elapsed_seconds=perf_counter() - started,
+                    request=locals().get("request_summary", {}),
+                    system_prompt=locals().get("system_prompt", ""),
+                    user_payload=locals().get("payload"),
+                    parameters={"temperature": 0.1, "timeout_seconds": LLM_TIMEOUT_SECONDS},
+                    error=exc,
+                )
+            )
         recommendation = _fallback_recommendation(state)
-        display.info(f"LLM 失败, 规则兜底 → {len(recommendation.recommendations)} 个推荐")
+        if state.get("llm_debug", False) and "started" in locals():
+            print_llm_failure(
+                title="推荐生成",
+                elapsed_seconds=perf_counter() - started,
+                error=exc,
+                fallback=f"规则兜底推荐，推荐 {len(recommendation.recommendations)} 个",
+            )
+        display.info(f"LLM 失败 ({exception_summary(exc)}), 规则兜底 → {len(recommendation.recommendations)} 个推荐")
     for rec in recommendation.recommendations[:5]:
         display.branch(f"#{rec.rank} {rec.module_name}: {rec.score}分 — {rec.suggested_pitch[:60]}...")
-    return {"recommendation": recommendation}
+    return {"recommendation": recommendation, "llm_call_events": events}
