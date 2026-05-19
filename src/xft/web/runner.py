@@ -46,7 +46,7 @@ from xft.web.search_service import run_provider_query
 from xft.web.web_loader import load_web_cache_to_duckdb
 
 log = structlog.get_logger(__name__)
-DEFAULT_SCENARIO = "config/scenarios/sales_recommendation"
+DEFAULT_SCENARIO = "config/recommend/sales_recommendation"
 
 
 def make_web_run_id(company_name: str) -> str:

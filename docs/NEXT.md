@@ -38,6 +38,13 @@ config_manifest.json
 report.md
 ```
 
+当前配置目录已经拆分为：
+
+```text
+config/recommend/   推荐场景配置
+config/diligence/   尽调流水线配置
+```
+
 ## 当前优先级
 
 ### 1. 保证推荐主线正确运行
@@ -45,9 +52,9 @@ report.md
 必须稳定：
 
 ```bash
-uv run xft scenario validate config/scenarios/sales_recommendation
-uv run xft recommend --no-llm --scenario config/scenarios/sales_recommendation "企业名称"
-uv run xft recommend --with-web-evidence --scenario config/scenarios/sales_recommendation "企业名称"
+uv run xft scenario validate config/recommend/sales_recommendation
+uv run xft recommend --no-llm --scenario config/recommend/sales_recommendation "企业名称"
+uv run xft recommend --with-web-evidence --scenario config/recommend/sales_recommendation "企业名称"
 ```
 
 关注点：
@@ -74,7 +81,7 @@ uv run xft recommend --with-web-evidence --scenario config/scenarios/sales_recom
 
 ```bash
 uv run xft calibrate \
-  --scenario config/scenarios/sales_recommendation \
+  --scenario config/recommend/sales_recommendation \
   --company-list company.txt \
   --labels calibration_labels.csv \
   --limit 10
@@ -109,5 +116,5 @@ uv run xft calibrate \
 
 - 不恢复旧产品评分引擎。
 - 不恢复 `products.yaml` 和 `scoring_policy.yaml`。
-- 不继续扩展旧 `diligence` 链路，只保证入口可用。
+- 不继续扩展旧尽调链路，只保证 `xft diligence` 入口和 `config/diligence/` 可用。
 - 不增加新的抽象框架，先保证推荐质量和配置可读性。

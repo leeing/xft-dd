@@ -5,8 +5,8 @@
 ## 1. 场景配置校验
 
 ```bash
-uv run xft scenario validate config/scenarios/sales_recommendation
-uv run xft scenario validate config/scenarios/bank_marketing
+uv run xft scenario validate config/recommend/sales_recommendation
+uv run xft scenario validate config/recommend/bank_marketing
 ```
 
 ## 2. 推荐流水线冒烟
@@ -15,7 +15,7 @@ uv run xft scenario validate config/scenarios/bank_marketing
 
 ```bash
 uv run xft recommend --no-llm \
-  --scenario config/scenarios/sales_recommendation \
+  --scenario config/recommend/sales_recommendation \
   "企业名称"
 ```
 
@@ -46,7 +46,7 @@ Conclusion
 
 ```bash
 uv run xft recommend --with-web-evidence \
-  --scenario config/scenarios/sales_recommendation \
+  --scenario config/recommend/sales_recommendation \
   "企业名称"
 ```
 
@@ -54,7 +54,7 @@ uv run xft recommend --with-web-evidence \
 
 ```bash
 uv run xft recommend --with-web \
-  --scenario config/scenarios/sales_recommendation \
+  --scenario config/recommend/sales_recommendation \
   "企业名称"
 ```
 
@@ -62,7 +62,7 @@ uv run xft recommend --with-web \
 
 ```bash
 uv run xft recommend --llm-debug \
-  --scenario config/scenarios/sales_recommendation \
+  --scenario config/recommend/sales_recommendation \
   "企业名称"
 ```
 

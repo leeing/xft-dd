@@ -107,7 +107,7 @@ def _build_warehouse(tmp_path: Path) -> Path:
 
 
 def test_recommender_configs_load() -> None:
-    dimensions = load_dimensions_config("config/scenarios/sales_recommendation")
+    dimensions = load_dimensions_config("config/recommend/sales_recommendation")
 
     assert dimensions.dimensions
     assert {item.id for item in dimensions.dimensions}
@@ -236,7 +236,7 @@ async def test_run_recommendation_mvp_without_llm(monkeypatch: pytest.MonkeyPatc
     result = await run_recommendation(
         company_name="广东德美精细化工集团股份有限公司",
         warehouse_db=str(warehouse),
-        scenario_path="config/scenarios/sales_recommendation",
+        scenario_path="config/recommend/sales_recommendation",
         output_dir=str(tmp_path / "runs"),
         run_id="test-run",
         use_llm=False,

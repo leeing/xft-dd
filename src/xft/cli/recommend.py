@@ -15,7 +15,7 @@ from xft.cli.common import csv
 from xft.pipeline.recommender import run_recommendation
 from xft.pipeline.recommender.batch import BatchOptions, run_recommendation_batch
 
-DEFAULT_SCENARIO = "config/scenarios/sales_recommendation"
+DEFAULT_SCENARIO = "config/recommend/sales_recommendation"
 
 
 def build_parser() -> argparse.ArgumentParser:

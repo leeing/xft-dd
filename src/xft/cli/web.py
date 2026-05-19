@@ -19,7 +19,7 @@ def build_parser() -> argparse.ArgumentParser:
     enrich = sub.add_parser("enrich", help="run Web enrichment for one company")
     enrich.add_argument("company_name")
     enrich.add_argument("--warehouse", default="cache/company_warehouse.duckdb")
-    enrich.add_argument("--scenario", default="config/scenarios/sales_recommendation")
+    enrich.add_argument("--scenario", default="config/recommend/sales_recommendation")
     enrich.add_argument("--web-config")
     enrich.add_argument("--web-extract-llm-config")
     enrich.add_argument("--dimensions-config")

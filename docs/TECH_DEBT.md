@@ -40,7 +40,7 @@ data_gather -> dimension_analyze -> web_evidence -> business_recommend -> save
 
 ```bash
 uv run xft calibrate \
-  --scenario config/scenarios/sales_recommendation \
+  --scenario config/recommend/sales_recommendation \
   --company-list company.txt \
   --labels calibration_labels.csv \
   --limit 10
@@ -120,6 +120,7 @@ uv run xft calibrate \
   - `internal_result.json`
   - `match_results.json`
 - 删除旧版非场景化 `data/web/<公司>/` 缓存目录。
+- 配置目录按业务入口拆分为 `config/recommend/` 和 `config/diligence/`。
 
 ## 当前建议优先级
 

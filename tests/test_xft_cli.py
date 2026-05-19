@@ -27,7 +27,7 @@ def test_xft_unknown_command(capsys: pytest.CaptureFixture[str]) -> None:
 
 
 def test_xft_scenario_validate(capsys: pytest.CaptureFixture[str]) -> None:
-    assert xft_main(["scenario", "validate", "config/scenarios/sales_recommendation"]) == 0
+    assert xft_main(["scenario", "validate", "config/recommend/sales_recommendation"]) == 0
     captured = capsys.readouterr()
     payload = json.loads(captured.out)
     assert payload["scenario_id"] == "sales_recommendation"
@@ -38,7 +38,7 @@ def test_xft_scenario_validate(capsys: pytest.CaptureFixture[str]) -> None:
 def test_xft_scenario_inspect_writes_output(tmp_path: Path) -> None:
     output = tmp_path / "scenario_resolved.json"
 
-    assert xft_main(["scenario", "inspect", "config/scenarios/bank_marketing", "--output", str(output)]) == 0
+    assert xft_main(["scenario", "inspect", "config/recommend/bank_marketing", "--output", str(output)]) == 0
 
     payload = json.loads(output.read_text(encoding="utf-8"))
     assert payload["id"] == "bank_marketing"
@@ -85,7 +85,7 @@ def test_recommend_smoke_command_uses_offline_no_llm(monkeypatch: pytest.MonkeyP
                 "--warehouse",
                 "cache/company_warehouse.duckdb",
                 "--scenario",
-                "config/scenarios/sales_recommendation",
+                "config/recommend/sales_recommendation",
                 "--llm-debug",
                 "--llm-concurrency",
                 "2",

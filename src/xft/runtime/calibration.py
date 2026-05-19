@@ -92,7 +92,7 @@ async def run_recommendation_calibration(  # noqa: PLR0913
     *,
     company_names: list[str],
     warehouse_db: str,
-    scenario_path: str = "config/scenarios/sales_recommendation",
+    scenario_path: str = "config/recommend/sales_recommendation",
     batch_id: str | None = None,
     batch_output: str | None = None,
     limit: int | None = None,

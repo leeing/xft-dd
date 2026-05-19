@@ -14,8 +14,8 @@ from xft.web.config_loader import load_web_extract_llm_config, load_web_search_c
 from xft.warehouse.prophet_loader import load_prophet_data
 
 
-SCENARIO_DIR = Path("config/scenarios/sales_recommendation")
-BANK_SCENARIO_DIR = Path("config/scenarios/bank_marketing")
+SCENARIO_DIR = Path("config/recommend/sales_recommendation")
+BANK_SCENARIO_DIR = Path("config/recommend/bank_marketing")
 
 
 def _write_json(path: Path, value: object) -> None:
@@ -67,9 +67,9 @@ def test_load_scenario_resolves_bundle_paths() -> None:
 
     assert scenario is not None
     assert scenario.config.id == "sales_recommendation"
-    assert scenario.evidence_policy_path.endswith("config/scenarios/sales_recommendation/evidence_policy.yaml")
+    assert scenario.evidence_policy_path.endswith("config/recommend/sales_recommendation/evidence_policy.yaml")
     assert scenario.business_modules_path is not None
-    assert scenario.business_modules_path.endswith("config/scenarios/sales_recommendation/business_modules.yaml")
+    assert scenario.business_modules_path.endswith("config/recommend/sales_recommendation/business_modules.yaml")
     assert scenario.prompt_paths["web_extract_system"].endswith("prompts/extract_evidence_system.md")
 
 

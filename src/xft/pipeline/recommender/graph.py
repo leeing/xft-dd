@@ -30,7 +30,7 @@ from xft.web.models import WebRunMetrics
 log = structlog.get_logger(__name__)
 
 _cache: dict[str, Any] = {}
-DEFAULT_SCENARIO = "config/scenarios/sales_recommendation"
+DEFAULT_SCENARIO = "config/recommend/sales_recommendation"
 
 
 def _get_graph() -> Any:

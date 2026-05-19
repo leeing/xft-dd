@@ -6,7 +6,7 @@ from xft.pipeline.recommender.business_result_renderer import render_business_re
 
 
 async def test_business_recommendation_no_llm_generates_result_json_shape() -> None:
-    config = load_business_recommendation_config("config/scenarios/sales_recommendation")
+    config = load_business_recommendation_config("config/recommend/sales_recommendation")
     assert config is not None
 
     profile = {
@@ -51,7 +51,7 @@ async def test_business_recommendation_no_llm_generates_result_json_shape() -> N
 
 
 def test_business_config_loader_accepts_scenario_bundle() -> None:
-    config = load_business_recommendation_config("config/scenarios/sales_recommendation")
+    config = load_business_recommendation_config("config/recommend/sales_recommendation")
 
     assert config is not None
     module_ids = {module.module_id for module in config.modules}

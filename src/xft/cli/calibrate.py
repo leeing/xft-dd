@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 from xft.cli.common import csv
 from xft.runtime.calibration import run_recommendation_calibration
 
-DEFAULT_SCENARIO = "config/scenarios/sales_recommendation"
+DEFAULT_SCENARIO = "config/recommend/sales_recommendation"
 
 
 def build_parser() -> argparse.ArgumentParser:

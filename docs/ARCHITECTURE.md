@@ -71,10 +71,18 @@ flowchart TB
 
 ## 配置体系
 
-主场景：
+当前 `config/` 按业务入口分两层：
 
 ```text
-config/scenarios/sales_recommendation/
+config/
+  recommend/   推荐场景配置
+  diligence/   尽调流水线配置
+```
+
+推荐主场景：
+
+```text
+config/recommend/sales_recommendation/
   scenario.yaml
   business_modules.yaml
   analysis_dimensions.yaml
@@ -104,21 +112,21 @@ config/recommender/
 config/evidence_policy.yaml
 ```
 
-根目录 `config/` 下仍保留一套尽调配置包：
+`config/diligence/` 是独立的尽调配置包：
 
 ```text
-config/app.yaml
-config/dimensions/
-config/prompts/
+config/diligence/app.yaml
+config/diligence/dimensions/
+config/diligence/prompts/
 ```
 
-这套配置只服务 `uv run xft diligence --config config ...`，不参与当前产品推荐主线。各文件职责：
+这套配置只服务 `uv run xft diligence --config config/diligence ...`，不参与当前产品推荐主线。各文件职责：
 
 | 文件/目录 | 作用 |
 | --- | --- |
-| `config/app.yaml` | 尽调流水线并发、抓取、输出和报告参数 |
-| `config/dimensions/` | 尽调维度定义、MiniMax/Metaso 查询词、结构化抽取字段 |
-| `config/prompts/` | 尽调摘要、字段抽取、合并报告和各维度提示词 |
+| `config/diligence/app.yaml` | 尽调流水线并发、抓取、输出和报告参数 |
+| `config/diligence/dimensions/` | 尽调维度定义、MiniMax/Metaso 查询词、结构化抽取字段 |
+| `config/diligence/prompts/` | 尽调摘要、字段抽取、合并报告和各维度提示词 |
 
 ## 产物
 
@@ -176,6 +184,6 @@ flowchart LR
 uv run ruff check src tests
 uv run mypy src
 uv run pytest -q
-uv run xft scenario validate config/scenarios/sales_recommendation
-uv run xft recommend --no-llm --scenario config/scenarios/sales_recommendation "企业名称"
+uv run xft scenario validate config/recommend/sales_recommendation
+uv run xft recommend --no-llm --scenario config/recommend/sales_recommendation "企业名称"
 ```

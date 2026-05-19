@@ -40,12 +40,12 @@ def _print_help() -> None:
                 "examples:",
                 '  xft recommend "企业名称"',
                 '  xft diligence "企业名称" --dry-run',
-                "  xft recommend --company-list company.txt --scenario config/scenarios/sales_recommendation",
+                "  xft recommend --company-list company.txt --scenario config/recommend/sales_recommendation",
                 '  xft web enrich "企业名称"',
                 "  xft runs inspect --output recommendation_runs_summary.csv",
                 "  xft calibrate --company-list company.txt --labels calibration_labels.csv",
                 "  xft warehouse build --input data --output cache/company_warehouse.duckdb",
-                "  xft scenario validate config/scenarios/sales_recommendation",
+                "  xft scenario validate config/recommend/sales_recommendation",
                 "",
             ]
         )
