@@ -30,6 +30,7 @@ from xft.web.models import WebRunMetrics
 log = structlog.get_logger(__name__)
 
 _cache: dict[str, Any] = {}
+DEFAULT_SCENARIO = "config/scenarios/sales_recommendation"
 
 
 def _get_graph() -> Any:
@@ -78,32 +79,25 @@ async def run_recommendation(  # noqa: PLR0913
     llm_concurrency: int = 4,
 ) -> RecommendationRunResult:
     display.header(company_name)
-    scenario = load_scenario(scenario_path) if scenario_path else None
-    dimensions_path = dimensions_config_path or (
-        scenario.dimensions_path if scenario else "config/recommender/analysis_dimensions.yaml"
-    )
-    web_search_path = web_config_path or (
-        scenario.web_search_path if scenario else "config/recommender/web_search.yaml"
-    )
-    web_extract_path = web_extract_llm_config_path or (
-        scenario.web_extract_llm_path if scenario else "config/recommender/web_extract_llm.yaml"
-    )
-    evidence_path = evidence_policy_path or (
-        scenario.evidence_policy_path if scenario else "config/evidence_policy.yaml"
-    )
-    business_path = scenario.business_modules_path if scenario else None
-    prompt_paths = scenario.prompt_paths if scenario else DEFAULT_PROMPTS.copy()
+    scenario = load_scenario(scenario_path or DEFAULT_SCENARIO)
+    if scenario is None:
+        msg = f"scenario not found: {scenario_path or DEFAULT_SCENARIO}"
+        raise FileNotFoundError(msg)
+    dimensions_path = dimensions_config_path or scenario.dimensions_path
+    web_search_path = web_config_path or scenario.web_search_path
+    web_extract_path = web_extract_llm_config_path or scenario.web_extract_llm_path
+    evidence_path = evidence_policy_path or scenario.evidence_policy_path
+    business_path = scenario.business_modules_path
+    prompt_paths = scenario.prompt_paths or DEFAULT_PROMPTS.copy()
     dimensions_config = load_dimensions_config(dimensions_path)
     evidence_policy = load_evidence_policy(evidence_path)
     business_config = load_business_recommendation_config(business_path)
-    root = output_dir or (scenario.output_dir if scenario else None) or "recommendation_runs"
+    root = output_dir or scenario.output_dir or "recommendation_runs"
     rid = run_id or make_recommendation_run_id(company_name)
     out_dir = Path(root) / rid
-    scenario_resolved_path: Path | None = None
-    if scenario:
-        scenario_out = out_dir / "scenario_resolved.json"
-        scenario_out.parent.mkdir(parents=True, exist_ok=True)
-        scenario_resolved_path = scenario.write_resolved_config(scenario_out)
+    scenario_out = out_dir / "scenario_resolved.json"
+    scenario_out.parent.mkdir(parents=True, exist_ok=True)
+    scenario_resolved_path = scenario.write_resolved_config(scenario_out)
     _write_config_manifest(
         out_dir=out_dir,
         company_name=company_name,
@@ -142,7 +136,7 @@ async def run_recommendation(  # noqa: PLR0913
         web_result = await run_web_enrichment(
             company_name=company_name,
             warehouse_db=warehouse_db,
-            scenario_path=scenario_path,
+            scenario_path=scenario_path or DEFAULT_SCENARIO,
             web_config_path=web_search_path,
             web_extract_llm_config_path=web_extract_path,
             dimensions_config_path=dimensions_path,
@@ -185,8 +179,8 @@ async def run_recommendation(  # noqa: PLR0913
         "llm_call_events": [],
         "use_web_evidence": use_web_evidence,
         "web_trace_path": locals().get("web_trace_path", ""),
-        "scenario_id": scenario.config.id if scenario else (business_config.scenario if business_config else None),
-        "scenario_name": scenario.config.name if scenario else None,
+        "scenario_id": scenario.config.id,
+        "scenario_name": scenario.config.name,
         "prompt_paths": prompt_paths,
         "dimensions_config": dimensions_config,
         "evidence_policy": evidence_policy,
@@ -268,17 +262,16 @@ def _write_config_manifest(  # noqa: PLR0913
     }
     if business_path:
         files["business_modules"] = file_ref(business_path)
-    if scenario is not None:
-        files["scenario"] = file_ref(Path(scenario.root) / "scenario.yaml")
+    files["scenario"] = file_ref(Path(scenario.root) / "scenario.yaml")
     for key, path in sorted(prompt_paths.items()):
         files[f"prompt:{key}"] = file_ref(path)
     manifest = ConfigManifest(
         pipeline="recommender",
         run_id=run_id,
         target=company_name,
-        scenario_id=scenario.config.id if scenario else None,
-        scenario_name=scenario.config.name if scenario else None,
-        scenario_root=str(scenario.root) if scenario else None,
+        scenario_id=scenario.config.id,
+        scenario_name=scenario.config.name,
+        scenario_root=str(scenario.root),
         scenario_resolved_path=str(scenario_resolved_path) if scenario_resolved_path else None,
         warehouse_db=warehouse_db,
         mode={

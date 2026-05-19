@@ -394,7 +394,7 @@ def _detect_issues(report: CalibrationReport) -> list[CalibrationIssue]:
                 severity="medium",
                 title="Top1 产品集中度偏高",
                 detail=f"{top['module_id']} 占比 {top['ratio']:.1%}",
-                recommendation="检查 base_score/priority 是否压过了维度差异，或补充负向规则拉开产品边界。",
+                recommendation="检查 business_modules.yaml 的 base_score、标签门槛和指标规则是否过于宽松。",
             )
         )
     if report.average_top_score and report.average_top_score < LOW_TOP_SCORE_THRESHOLD:
@@ -403,7 +403,7 @@ def _detect_issues(report: CalibrationReport) -> list[CalibrationIssue]:
                 severity="high",
                 title="平均推荐分偏低",
                 detail=f"平均 Top 分 {report.average_top_score:.1f}",
-                recommendation="检查维度 evidence_templates 是否过严，或为高价值本地字段补充 positive_rules。",
+                recommendation="检查维度 evidence_templates 是否过严，或为高价值本地字段补充业务指标规则。",
             )
         )
     if report.low_completeness_companies:
@@ -430,7 +430,7 @@ def _detect_issues(report: CalibrationReport) -> list[CalibrationIssue]:
                 severity="high",
                 title="存在无推荐企业",
                 detail=f"{len(report.no_recommendation_companies)} 家企业无推荐",
-                recommendation="检查 fallback 推荐逻辑和产品 target_needs 覆盖面。",
+                recommendation="检查 business_modules.yaml 的模块、标签、指标规则覆盖面。",
             )
         )
     if report.labeled_count and report.acceptable_accuracy < LOW_ACCEPTABLE_ACCURACY_THRESHOLD:
@@ -439,7 +439,7 @@ def _detect_issues(report: CalibrationReport) -> list[CalibrationIssue]:
                 severity="high",
                 title="业务标注命中率偏低",
                 detail=f"可接受命中率 {report.acceptable_accuracy:.1%}",
-                recommendation="复查产品规则 target_needs、positive_rules 和业务标注样本，优先分析错配案例。",
+                recommendation="复查 business_modules.yaml 的指标标准、rule/llm/hybrid 配置和业务标注样本。",
             )
         )
     if report.with_web and report.web_evidence_coverage < WEB_EVIDENCE_COVERAGE_THRESHOLD:

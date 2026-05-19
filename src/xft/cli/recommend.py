@@ -32,7 +32,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--skip-existing", action="store_true", help="skip companies with an existing result.json")
     parser.add_argument("--continue-on-error", action="store_true", default=True)
     parser.add_argument("--stop-on-error", action="store_false", dest="continue_on_error")
-    parser.add_argument("--no-llm", action="store_true", help="use deterministic fallback matching without calling LLM")
+    parser.add_argument(
+        "--no-llm",
+        action="store_true",
+        help="evaluate only rule and deterministic fallback indicators",
+    )
     parser.add_argument("--with-web-evidence", action="store_true", help="merge cached DuckDB web_evidence")
     parser.add_argument("--with-web", action="store_true", help="search Web when cached web_evidence is missing")
     parser.add_argument("--refresh-web", action="store_true", help="ignore cached web_evidence and search Web again")

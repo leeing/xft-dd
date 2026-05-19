@@ -214,7 +214,7 @@ def load_web_cache_to_duckdb(
 def _iter_run_dirs(root: Path) -> list[Path]:
     if not root.exists():
         return []
-    return sorted(path for path in root.glob("*/*") if path.is_dir() and (path / "manifest.json").exists())
+    return sorted(path.parent for path in root.rglob("manifest.json") if path.parent.is_dir())
 
 
 def _count_rows(conn: Any, table: str) -> int:

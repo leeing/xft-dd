@@ -100,6 +100,7 @@ config/scenarios/sales_recommendation/
 ```text
 products.yaml
 scoring_policy.yaml
+config/recommender/
 ```
 
 ## 产物

@@ -12,7 +12,7 @@ import yaml
 from xft.core.models import ScenarioConfig
 
 DEFAULT_PROMPTS: dict[str, str] = {
-    "web_extract_system": "config/recommender/prompts/extract_evidence_system.md",
+    "web_extract_system": "config/scenarios/sales_recommendation/prompts/extract_evidence_system.md",
 }
 
 

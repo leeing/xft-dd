@@ -107,7 +107,7 @@ def _build_warehouse(tmp_path: Path) -> Path:
 
 
 def test_recommender_configs_load() -> None:
-    dimensions = load_dimensions_config("config/recommender/analysis_dimensions.yaml")
+    dimensions = load_dimensions_config("config/scenarios/sales_recommendation")
 
     assert dimensions.dimensions
     assert {item.id for item in dimensions.dimensions}

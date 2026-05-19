@@ -19,6 +19,7 @@ recommendation_normalizer.py
 src/xft/scoring/
 products.yaml
 scoring_policy.yaml
+config/recommender/
 match_results.json
 internal_result.json
 ```

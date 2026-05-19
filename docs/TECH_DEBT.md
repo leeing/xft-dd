@@ -116,8 +116,10 @@ uv run xft calibrate \
   - `src/xft/scoring/`
   - `products.yaml`
   - `scoring_policy.yaml`
+  - `config/recommender/`
   - `internal_result.json`
   - `match_results.json`
+- 删除旧版非场景化 `data/web/<公司>/` 缓存目录。
 
 ## 当前建议优先级
 
