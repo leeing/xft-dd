@@ -12,7 +12,14 @@ from pydantic import BaseModel, ValidationError
 
 from xft.ai.client import get_ai_client
 from xft.ai.json_extractor import extract_json
-from xft.ai.llm_trace import exception_summary, llm_event, preview_text
+from xft.ai.llm_trace import (
+    exception_summary,
+    llm_event,
+    preview_text,
+    print_llm_failure,
+    print_llm_start,
+    print_llm_success,
+)
 from xft.pipeline.recommender.config_loader import load_prompt
 from xft.pipeline.recommender.models import DimensionAnalysis, MatchResult, ProductModule
 from xft.pipeline.recommender.state import RecommenderState
@@ -149,10 +156,7 @@ async def llm_match_node(state: RecommenderState) -> dict[str, object]:
             "timeout_seconds": LLM_TIMEOUT_SECONDS,
         }
         if state.get("llm_debug", False):
-            display.info(
-                f"LLM 调用开始 [产品匹配] model={settings.llm_model}, products={len(products)}, "
-                f"dimensions={len(analyses)}, timeout={LLM_TIMEOUT_SECONDS}s"
-            )
+            print_llm_start(title="产品匹配", model=settings.llm_model, request=request_summary)
         started = perf_counter()
         client = get_ai_client()
         resp = await client.chat.completions.create(
@@ -176,11 +180,17 @@ async def llm_match_node(state: RecommenderState) -> dict[str, object]:
                 elapsed_seconds=perf_counter() - started,
                 request=request_summary,
                 response_preview=preview_text(raw),
+                response_text=raw,
                 result=f"matches:{len(matches)}",
             )
         )
         if state.get("llm_debug", False):
-            display.info(f"LLM 调用完成 [产品匹配] {perf_counter() - started:.2f}s, raw={preview_text(raw)}")
+            print_llm_success(
+                title="产品匹配",
+                elapsed_seconds=perf_counter() - started,
+                result=f"matches:{len(matches)}",
+                raw=raw,
+            )
         display.ok(f"LLM 分析完成 → {len(matches)} 个候选产品")
     except (OpenAIError, json.JSONDecodeError, ValidationError, OSError, KeyError, TypeError, ValueError) as exc:
         if "started" in locals():
@@ -196,6 +206,13 @@ async def llm_match_node(state: RecommenderState) -> dict[str, object]:
                 )
             )
         matches = _fallback_match(products, analyses)
+        if state.get("llm_debug", False) and "started" in locals():
+            print_llm_failure(
+                title="产品匹配",
+                elapsed_seconds=perf_counter() - started,
+                error=exc,
+                fallback=f"规则兜底匹配，候选产品 {len(matches)} 个",
+            )
         display.info(f"LLM 失败 ({exception_summary(exc)}), 规则兜底 → {len(matches)} 个候选产品")
     for m in matches:
         icon = "✓" if m.matched else "✗"

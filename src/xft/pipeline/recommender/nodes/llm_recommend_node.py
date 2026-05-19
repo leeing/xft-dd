@@ -12,7 +12,14 @@ from pydantic import BaseModel, ValidationError
 
 from xft.ai.client import get_ai_client
 from xft.ai.json_extractor import extract_json
-from xft.ai.llm_trace import exception_summary, llm_event, preview_text
+from xft.ai.llm_trace import (
+    exception_summary,
+    llm_event,
+    preview_text,
+    print_llm_failure,
+    print_llm_start,
+    print_llm_success,
+)
 from xft.evidence.models import EvidenceRecord
 from xft.pipeline.recommender.config_loader import load_prompt
 from xft.pipeline.recommender.models import (
@@ -330,10 +337,7 @@ async def llm_recommend_node(state: RecommenderState) -> dict[str, object]:
             "timeout_seconds": LLM_TIMEOUT_SECONDS,
         }
         if state.get("llm_debug", False):
-            display.info(
-                f"LLM 调用开始 [推荐生成] model={settings.llm_model}, "
-                f"matches={len(state['match_results'])}, timeout={LLM_TIMEOUT_SECONDS}s"
-            )
+            print_llm_start(title="推荐生成", model=settings.llm_model, request=request_summary)
         started = perf_counter()
         client = get_ai_client()
         resp = await client.chat.completions.create(
@@ -355,10 +359,11 @@ async def llm_recommend_node(state: RecommenderState) -> dict[str, object]:
                 elapsed_seconds=perf_counter() - started,
                 request=request_summary,
                 response_preview=preview_text(raw),
+                response_text=raw,
             )
         )
         if state.get("llm_debug", False):
-            display.info(f"LLM 调用完成 [推荐生成] {perf_counter() - started:.2f}s, raw={preview_text(raw)}")
+            print_llm_success(title="推荐生成", elapsed_seconds=perf_counter() - started, raw=raw)
         parsed: Any = json.loads(extract_json(raw))
         fallback = _fallback_recommendation(state)
         scoring = _scoring_run(state)
@@ -393,6 +398,13 @@ async def llm_recommend_node(state: RecommenderState) -> dict[str, object]:
                 )
             )
         recommendation = _fallback_recommendation(state)
+        if state.get("llm_debug", False) and "started" in locals():
+            print_llm_failure(
+                title="推荐生成",
+                elapsed_seconds=perf_counter() - started,
+                error=exc,
+                fallback=f"规则兜底推荐，推荐 {len(recommendation.recommendations)} 个",
+            )
         display.info(f"LLM 失败 ({exception_summary(exc)}), 规则兜底 → {len(recommendation.recommendations)} 个推荐")
     for rec in recommendation.recommendations[:5]:
         display.branch(f"#{rec.rank} {rec.module_name}: {rec.score}分 — {rec.suggested_pitch[:60]}...")

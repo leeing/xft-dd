@@ -343,7 +343,7 @@ uv run xft recommend --with-web --llm-debug --llm-concurrency 4 "企业名称"
 
 每次运行会额外写入：
 
-- `llm_calls.jsonl`：逐次 LLM 调用明细。
+- `llm_calls.jsonl`：逐次 LLM 调用明细，包含完整原始响应和完整错误文本。
 - `llm_metrics.json`：调用次数、成功/失败数和累计耗时。
 
 批量运行时，`batch_summary.csv` 和 `batch_quality_report.md` 会聚合这些 LLM 指标，方便定位是模型超时、限流、返回格式错误，还是业务规则本身需要调整。

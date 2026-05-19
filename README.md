@@ -31,7 +31,7 @@
 | `result.json` | 业务交付格式，包含推荐模块、命中标签、营销点和 KYC 问题 |
 | `internal_result.json` | 内部推荐结果，包含规则评分、证据链和调试信息 |
 | `business_label_result.json` | 业务标签判断中间结果，方便检查 rule / LLM 如何得出结论 |
-| `llm_calls.jsonl` | 每次 LLM 调用的阶段、模型、耗时、结果预览和错误信息 |
+| `llm_calls.jsonl` | 每次 LLM 调用的阶段、模型、耗时、完整响应和错误信息 |
 | `llm_metrics.json` | LLM 调用次数、成功/失败数、累计耗时 |
 | `profile.json` | 本次使用的企业画像 |
 | `config_manifest.json` | 本次运行使用的配置文件和 hash，方便复现 |
@@ -127,7 +127,7 @@ uv run xft recommend "企业名称"
 uv run xft recommend --llm-debug --llm-concurrency 4 "企业名称"
 ```
 
-`--llm-debug` 会打印每次 LLM 调用的阶段、模型、耗时、错误类型和响应预览。模型内部隐藏思考链不会打印；如果模型接口显式返回可见 reasoning 文本，会随响应预览一起出现。
+`--llm-debug` 会用块状格式打印每次 LLM 调用的阶段、模型、请求摘要、耗时、完整原始响应、错误类型和兜底路径。模型内部隐藏思考链不会打印；如果模型接口显式返回可见 reasoning 文本，会随完整响应一起出现。
 
 `--llm-concurrency` 控制业务标签中多个 LLM 指标的并发调用数，默认是 `4`。产品匹配和推荐生成因为前后依赖，仍会按顺序执行。
 

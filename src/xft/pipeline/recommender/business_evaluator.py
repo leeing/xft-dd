@@ -13,7 +13,14 @@ from pydantic import BaseModel, ValidationError
 
 from xft.ai.client import get_ai_client
 from xft.ai.json_extractor import extract_json
-from xft.ai.llm_trace import exception_summary, llm_event, preview_text
+from xft.ai.llm_trace import (
+    exception_summary,
+    llm_event,
+    preview_text,
+    print_llm_failure,
+    print_llm_start,
+    print_llm_success,
+)
 from xft.pipeline.recommender.business_models import (
     BusinessConfidence,
     BusinessIndicatorConfig,
@@ -253,7 +260,14 @@ async def _evaluate_indicator_with_fallback(  # noqa: PLR0913
         TypeError,
         ValueError,
     ) as exc:
-        if indicator.evaluator == "llm" and use_llm and (settings.llm_api_key or settings.minimax_api_key):
+        recorded = bool(getattr(exc, "_xft_llm_event_recorded", False))
+        should_record_failure = (
+            indicator.evaluator == "llm"
+            and use_llm
+            and (settings.llm_api_key or settings.minimax_api_key)
+            and not recorded
+        )
+        if should_record_failure:
             llm_events.append(
                 llm_event(
                     stage="business_indicator",
@@ -269,9 +283,12 @@ async def _evaluate_indicator_with_fallback(  # noqa: PLR0913
                     error=exc,
                 )
             )
-        if llm_debug:
-            display.fail(
-                f"LLM 调用失败 [业务指标:{_indicator_key(module, label, indicator)}] {exception_summary(exc)}"
+        if llm_debug and not recorded:
+            print_llm_failure(
+                title=f"业务指标:{_indicator_key(module, label, indicator)}",
+                elapsed_seconds=0,
+                error=exc,
+                fallback="本地 evidence_hints 兜底判断",
             )
         result = _fallback_indicator_result(
             config=config,
@@ -386,21 +403,41 @@ async def _evaluate_llm_indicator(  # noqa: PLR0913
         "timeout_seconds": LLM_TIMEOUT_SECONDS,
     }
     if llm_debug:
-        display.info(
-            f"LLM 调用开始 [业务指标:{key}] model={settings.llm_model}, timeout={LLM_TIMEOUT_SECONDS}s"
-        )
+        print_llm_start(title=f"业务指标:{key}", model=settings.llm_model, request=request_summary)
     started = perf_counter()
-    resp = await client.chat.completions.create(
-        model=settings.llm_model,
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": json.dumps(payload, ensure_ascii=False, default=str)},
-        ],
-        temperature=0.0,
-        timeout=LLM_TIMEOUT_SECONDS,
-    )
-    raw = resp.choices[0].message.content or "{}"
-    parsed = _LlmIndicatorPayload.model_validate(json.loads(extract_json(raw)))
+    try:
+        resp = await client.chat.completions.create(
+            model=settings.llm_model,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": json.dumps(payload, ensure_ascii=False, default=str)},
+            ],
+            temperature=0.0,
+            timeout=LLM_TIMEOUT_SECONDS,
+        )
+        raw = resp.choices[0].message.content or "{}"
+        parsed = _LlmIndicatorPayload.model_validate(json.loads(extract_json(raw)))
+    except (OpenAIError, json.JSONDecodeError, ValidationError, OSError, RuntimeError, TypeError, ValueError) as exc:
+        llm_events.append(
+            llm_event(
+                stage="business_indicator",
+                name=key,
+                model=settings.llm_model,
+                status="failed",
+                elapsed_seconds=perf_counter() - started,
+                request=request_summary,
+                error=exc,
+            )
+        )
+        setattr(exc, "_xft_llm_event_recorded", True)  # noqa: B010
+        if llm_debug:
+            print_llm_failure(
+                title=f"业务指标:{key}",
+                elapsed_seconds=perf_counter() - started,
+                error=exc,
+                fallback="本地 evidence_hints 兜底判断",
+            )
+        raise
     llm_events.append(
         llm_event(
             stage="business_indicator",
@@ -410,14 +447,18 @@ async def _evaluate_llm_indicator(  # noqa: PLR0913
             elapsed_seconds=perf_counter() - started,
             request=request_summary,
             response_preview=preview_text(raw),
+            response_text=raw,
             result=parsed.result,
             confidence=parsed.confidence,
         )
     )
     if llm_debug:
-        display.info(
-            f"LLM 调用完成 [业务指标:{key}] {perf_counter() - started:.2f}s, "
-            f"result={parsed.result}, confidence={parsed.confidence}, raw={preview_text(raw)}"
+        print_llm_success(
+            title=f"业务指标:{key}",
+            elapsed_seconds=perf_counter() - started,
+            result=parsed.result,
+            confidence=parsed.confidence,
+            raw=raw,
         )
     return _indicator_result(
         config=config,

@@ -68,6 +68,12 @@ class ProgressDisplay:
         if self._enabled:
             self._file.write(f"  {detail}\n")
 
+    def raw(self, text: str) -> None:
+        if self._enabled:
+            self._file.write(text)
+            if not text.endswith("\n"):
+                self._file.write("\n")
+
     def tree(self, detail: str) -> None:
         if self._enabled:
             self._file.write(f"  └─ {detail}\n")
