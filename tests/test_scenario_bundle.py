@@ -288,11 +288,11 @@ def test_builtin_bank_marketing_scenario_uses_product_patch(tmp_path: Path) -> N
     scenario = load_scenario(BANK_SCENARIO_DIR)
     products = load_products_config(BANK_SCENARIO_DIR)
 
-    crm = next(product for product in products.products if product.module_id == "crm_channel")
+    corporate_payment = next(product for product in products.products if product.module_id == "corporate_payment")
     assert scenario is not None
     assert scenario.config.id == "bank_marketing"
-    assert crm.base_score == 55
-    assert {rule.id for rule in crm.positive_rules} >= {
+    assert corporate_payment.base_score == 55
+    assert {rule.id for rule in corporate_payment.positive_rules} >= {
         "bank_high_quality_customer",
         "cross_border_settlement_signal",
     }

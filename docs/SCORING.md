@@ -108,6 +108,11 @@ result.json               Module: 假勤管理
 
 如果新增一个业务模块，建议同时在两个文件里添加同一个 `module_id`。
 
+当前场景要求两边的模块集合一一对应。`xft scenario validate` 会把不一致作为配置错误处理，例如：
+
+- `business_modules.yaml` 有模块，但 `products.yaml` 没有对应产品。
+- `products.yaml` 还残留业务模块之外的旧产品，导致“产品匹配”候选数异常变多。
+
 ## rule 指标
 
 `rule` 适合字段明确、阈值明确的判断。

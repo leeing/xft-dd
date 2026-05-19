@@ -341,6 +341,13 @@ business_modules.yaml
   -> result.json（业务标签、营销点、KYC 问题）
 ```
 
+在配置层面，两者的 `module_id` 必须一一对应。`xft scenario validate` 会校验：
+
+- `business_modules.yaml` 里的业务模块必须能在 `products.yaml` 中找到同名 `module_id`。
+- `products.yaml` 不应保留业务模块之外的旧候选产品。
+
+这样可以避免内部匹配阶段仍然使用旧产品池，而最终业务结果却只展示新业务模块。
+
 其中每个指标可以选择判断器：
 
 | evaluator | 用途 |

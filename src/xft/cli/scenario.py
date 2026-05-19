@@ -6,6 +6,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 from xft.core.config_loader import load_dimensions_config
 from xft.core.scenario import load_scenario
@@ -58,6 +59,7 @@ def _validate(args: argparse.Namespace) -> int:
         scoring = load_scoring_policy(args.scenario)
         evidence = load_evidence_policy(args.scenario)
         business = load_business_recommendation_config(args.scenario)
+        _validate_business_product_alignment(products, business)
     except (OSError, TypeError, ValueError) as exc:
         sys.stderr.write(f"invalid scenario: {exc}\n")
         return 1
@@ -76,6 +78,23 @@ def _validate(args: argparse.Namespace) -> int:
     sys.stdout.write(json.dumps(payload, ensure_ascii=False, indent=2))
     sys.stdout.write("\n")
     return 0
+
+
+def _validate_business_product_alignment(products: Any, business: Any) -> None:
+    if business is None:
+        return
+    product_ids = {item.module_id for item in products.products}
+    business_ids = {item.module_id for item in business.modules}
+    missing_products = sorted(business_ids - product_ids)
+    extra_products = sorted(product_ids - business_ids)
+    if missing_products or extra_products:
+        parts: list[str] = []
+        if missing_products:
+            parts.append(f"missing products for business module_id(s): {', '.join(missing_products)}")
+        if extra_products:
+            parts.append(f"products without business module_id(s): {', '.join(extra_products)}")
+        msg = "products.yaml and business_modules.yaml module_id mismatch: " + "; ".join(parts)
+        raise ValueError(msg)
 
 
 def main(argv: list[str] | None = None) -> int:

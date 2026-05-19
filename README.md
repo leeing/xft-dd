@@ -458,7 +458,9 @@ prompt: |
 
 当你觉得“推荐了不该推荐的产品”或“该推荐的产品没上来”，优先改 `products.yaml`。
 
-注意：`products.yaml` 影响 `internal_result.json` 的内部评分和兜底排序；`result.json` 的业务标签和营销点主要由 `business_modules.yaml` 决定。两个文件通过同一个 `module_id` 对齐。
+注意：`products.yaml` 影响 `internal_result.json` 的内部评分和兜底排序；`result.json` 的业务标签和营销点主要由 `business_modules.yaml` 决定。两个文件必须通过同一个 `module_id` 一一对齐。
+
+也就是说，如果 `business_modules.yaml` 里有 7 个业务模块，`products.yaml` 也应该是同样 7 个 `module_id`。`uv run xft scenario validate ...` 会检查这个一致性，避免旧产品配置残留后在“产品匹配”阶段冒出额外候选。
 
 一个产品模块最常调的是：
 
