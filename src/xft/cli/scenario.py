@@ -6,14 +6,11 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any
 
 from xft.core.config_loader import load_dimensions_config
 from xft.core.scenario import load_scenario
 from xft.evidence.policy import load_evidence_policy
 from xft.pipeline.recommender.business_config_loader import load_business_recommendation_config
-from xft.pipeline.recommender.config_loader import load_products_config, write_products_resolved_config
-from xft.scoring.policy_loader import load_scoring_policy
 from xft.web.config_loader import load_web_extract_llm_config, load_web_search_config
 
 
@@ -34,9 +31,8 @@ def _inspect(args: argparse.Namespace) -> int:
     if scenario is None:
         sys.stderr.write(f"error: scenario not found: {args.scenario}\n")
         return 2
-    products = load_products_config(args.scenario)
     output = args.output or None
-    path = write_products_resolved_config(scenario, products, output)
+    path = scenario.write_resolved_config(output)
     if args.print_json:
         sys.stdout.write(path.read_text(encoding="utf-8"))
         if not path.read_text(encoding="utf-8").endswith("\n"):
@@ -52,14 +48,11 @@ def _validate(args: argparse.Namespace) -> int:
         if scenario is None:
             sys.stderr.write(f"error: scenario not found: {args.scenario}\n")
             return 2
-        products = load_products_config(args.scenario)
         dimensions = load_dimensions_config(args.scenario)
         web_search = load_web_search_config(args.scenario)
         web_extract = load_web_extract_llm_config(args.scenario)
-        scoring = load_scoring_policy(args.scenario)
         evidence = load_evidence_policy(args.scenario)
         business = load_business_recommendation_config(args.scenario)
-        _validate_business_product_alignment(products, business)
     except (OSError, TypeError, ValueError) as exc:
         sys.stderr.write(f"invalid scenario: {exc}\n")
         return 1
@@ -67,35 +60,15 @@ def _validate(args: argparse.Namespace) -> int:
         "scenario_id": scenario.config.id,
         "scenario_name": scenario.config.name,
         "root": str(Path(args.scenario)),
-        "products": len(products.products),
         "dimensions": len(dimensions.dimensions),
         "web_enabled": web_search.enabled,
         "web_extract_enabled": web_extract.enabled,
-        "scoring_policy_version": scoring.version,
         "evidence_policy_version": evidence.version,
         "business_modules": len(business.modules) if business else 0,
     }
     sys.stdout.write(json.dumps(payload, ensure_ascii=False, indent=2))
     sys.stdout.write("\n")
     return 0
-
-
-def _validate_business_product_alignment(products: Any, business: Any) -> None:
-    if business is None:
-        return
-    product_ids = {item.module_id for item in products.products}
-    business_ids = {item.module_id for item in business.modules}
-    missing_products = sorted(business_ids - product_ids)
-    extra_products = sorted(product_ids - business_ids)
-    if missing_products or extra_products:
-        parts: list[str] = []
-        if missing_products:
-            parts.append(f"missing products for business module_id(s): {', '.join(missing_products)}")
-        if extra_products:
-            parts.append(f"products without business module_id(s): {', '.join(extra_products)}")
-        msg = "products.yaml and business_modules.yaml module_id mismatch: " + "; ".join(parts)
-        raise ValueError(msg)
-
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)

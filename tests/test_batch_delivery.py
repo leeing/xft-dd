@@ -19,26 +19,46 @@ async def _fake_runner(**kwargs: Any) -> RecommendationRunResult:
         json.dumps({"profile_completeness": 0.8}, ensure_ascii=False),
         encoding="utf-8",
     )
-    (output_dir / "result.json").write_text(
+    (output_dir / "dimension_analysis.json").write_text(
+        json.dumps(
+            [
+                {
+                    "local_evidence": [{"claim": "本地证据"}],
+                    "web_evidence": [{"claim": "Web证据"}],
+                    "conflicts": [],
+                    "missing_evidence": ["待核实"],
+                }
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (output_dir / "business_label_result.json").write_text(
         json.dumps(
             {
                 "company_name": company_name,
-                "scenario": "sales_recommendation",
-                "scenario_name": "销售产品推荐",
-                "recommendations": [{"module_id": "procurement_srm", "module_name": "SRM", "score": 78}],
-                "profile_completeness": 0.8,
-                "needs_web_enrichment": False,
-                "evidence_summary": {
-                    "local_evidence_count": 3,
-                    "web_evidence_count": 1,
-                    "conflict_count": 0,
-                    "missing_evidence_count": 2,
+                "selected_module": {
+                    "module_id": "procurement_srm",
+                    "module_name": "SRM",
+                    "score": 78,
+                    "attributes_number": 1,
+                    "indicators_number": 2,
+                    "acceptance_result": "高",
                 },
-                "scoring_summary": {
-                    "rules_evaluated": 5,
-                    "rules_matched": 2,
-                    "products_excluded": 0,
-                },
+                "modules": [{"module_id": "procurement_srm"}],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (output_dir / "result.json").write_text(
+        json.dumps(
+            {
+                "CompanyName": company_name,
+                "Module": "SRM",
+                "AcceptanceResult": "高",
+                "AttributesNumber": 1,
+                "IndicatorsNumber": 2,
             },
             ensure_ascii=False,
         ),
@@ -84,8 +104,8 @@ async def test_recommendation_batch_writes_delivery_artifacts(tmp_path: Path) ->
     assert (batch_dir / "delivery_manifest.json").exists()
     rows = json.loads((batch_dir / "batch_summary.json").read_text(encoding="utf-8"))
     assert len(rows) == 2
-    assert rows[0]["scenario"] == "sales_recommendation"
     assert rows[0]["top_module_id"] == "procurement_srm"
+    assert rows[0]["matched_indicators"] == 2
     quality = json.loads((batch_dir / "batch_quality_report.json").read_text(encoding="utf-8"))
     assert quality["success_count"] == 2
     delivery = json.loads((batch_dir / "delivery_manifest.json").read_text(encoding="utf-8"))

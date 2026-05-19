@@ -7,7 +7,6 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-from xft.cli.scenario import _validate_business_product_alignment
 from xft.cli.main import main as xft_main
 
 
@@ -32,16 +31,8 @@ def test_xft_scenario_validate(capsys: pytest.CaptureFixture[str]) -> None:
     captured = capsys.readouterr()
     payload = json.loads(captured.out)
     assert payload["scenario_id"] == "sales_recommendation"
-    assert payload["products"] == payload["business_modules"] == 7
+    assert payload["business_modules"] == 7
     assert payload["dimensions"] > 0
-
-
-def test_scenario_validate_rejects_business_product_mismatch() -> None:
-    products = SimpleNamespace(products=[SimpleNamespace(module_id="old_product")])
-    business = SimpleNamespace(modules=[SimpleNamespace(module_id="daily_reimbursement")])
-
-    with pytest.raises(ValueError, match="products.yaml and business_modules.yaml module_id mismatch"):
-        _validate_business_product_alignment(products, business)
 
 
 def test_xft_scenario_inspect_writes_output(tmp_path: Path) -> None:
@@ -51,7 +42,7 @@ def test_xft_scenario_inspect_writes_output(tmp_path: Path) -> None:
 
     payload = json.loads(output.read_text(encoding="utf-8"))
     assert payload["id"] == "bank_marketing"
-    assert len(payload["products_effective_hash"]) == 64
+    assert "business_modules_path" in payload
 
 
 def test_recommend_help() -> None:

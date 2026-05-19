@@ -236,7 +236,7 @@ def build_calibration_report(  # noqa: PLR0913
         llm_fallback_suspected_companies=[
             _company_metric(row, "top_module_id")
             for row in rows
-            if use_llm and row.get("status") != "failed" and _int(row.get("rules_matched")) > 0
+            if use_llm and row.get("status") != "failed" and _int(row.get("llm_calls_failed")) > 0
         ],
         **_label_metrics(rows, labels or []),
     )

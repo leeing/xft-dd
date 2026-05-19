@@ -56,8 +56,6 @@ async def save_node(state: RecommenderState) -> dict[str, object]:
     out_dir.mkdir(parents=True, exist_ok=True)
     profile_path = out_dir / "profile.json"
     dimensions_path = out_dir / "dimension_analysis.json"
-    matches_path = out_dir / "match_results.json"
-    internal_result_path = out_dir / "internal_result.json"
     business_label_path = out_dir / "business_label_result.json"
     llm_calls_path = out_dir / "llm_calls.jsonl"
     llm_metrics_path = out_dir / "llm_metrics.json"
@@ -70,20 +68,14 @@ async def save_node(state: RecommenderState) -> dict[str, object]:
     _write_jsonl(llm_calls_path, llm_events)
     _write_json(llm_metrics_path, _llm_metrics(llm_events))
     _write_json(dimensions_path, [item.model_dump() for item in state["dimension_analysis"]])
-    _write_json(matches_path, [item.model_dump() for item in state["match_results"]])
-    rec = state["recommendation"]
-    _write_json(internal_result_path, rec.model_dump() if rec else {"error": "recommendation not generated"})
     business = state.get("business_recommendation")
     business_label_payload = business.model_dump() if business else {"warning": "business result not generated"}
     _write_json(business_label_path, business_label_payload)
-    if state.get("business_config") is None:
-        business_payload = rec.model_dump() if rec else {"error": "recommendation not generated"}
-    else:
-        business_payload = render_business_result_json(
-            profile=state.get("profile", {}),
-            business_result=business,
-            config=state.get("business_config"),
-        )
+    business_payload = render_business_result_json(
+        profile=state.get("profile", {}),
+        business_result=business,
+        config=state.get("business_config"),
+    )
     _write_json(result_path, business_payload)
     _write_json(decision_trace_path, _decision_trace(state, llm_events))
     report_path.write_text(render_report(state), encoding="utf-8")
@@ -104,49 +96,9 @@ def _decision_trace(state: RecommenderState, llm_events: list[dict[str, Any]]) -
         "run_id": state["run_id"],
         "scenario_id": state.get("scenario_id"),
         "web_plan_trace": web_trace,
-        "rule_score_trace": _rule_score_trace(state),
         "business_rule_trace": _business_rule_trace(state),
         "llm_call_trace": llm_events,
     }
-
-
-def _rule_score_trace(state: RecommenderState) -> list[dict[str, Any]]:
-    rec = state.get("recommendation")
-    if rec is None:
-        return []
-    by_id = {item.module_id: item for item in state["products"]}
-    items: list[dict[str, Any]] = []
-    for recommendation in rec.recommendations:
-        product = by_id.get(recommendation.module_id)
-        breakdown = recommendation.score_breakdown
-        components = {
-            "base_priority": breakdown.base_priority,
-            "dimension_support": breakdown.dimension_support,
-            "evidence_support": breakdown.evidence_support,
-            "web_support": breakdown.web_support,
-            "positive_score": breakdown.positive_score,
-            "negative_score": breakdown.negative_score,
-            "missing_evidence_penalty": breakdown.missing_evidence_penalty,
-            "conflict_penalty": breakdown.conflict_penalty,
-        }
-        raw_score = sum(int(value) for value in components.values())
-        items.append(
-            {
-                "module_id": recommendation.module_id,
-                "module_name": recommendation.module_name,
-                "formula": "final_score = clamp(sum(components), 0, 100); exclusion rules may cap score",
-                "components": components,
-                "raw_score_before_clamp": raw_score,
-                "final_score": recommendation.score,
-                "target_dimensions": product.target_needs if product else [],
-                "matched_rules": [item.model_dump(mode="json") for item in breakdown.matched_rules],
-                "penalty_rules": [item.model_dump(mode="json") for item in breakdown.penalty_rules],
-                "exclusion_rules": [item.model_dump(mode="json") for item in breakdown.exclusion_rules],
-                "data_gaps": recommendation.data_gaps,
-                "evidence_trace": [item.model_dump(mode="json") for item in recommendation.evidence_trace],
-            }
-        )
-    return items
 
 
 def _business_rule_trace(state: RecommenderState) -> list[dict[str, Any]]:
@@ -173,6 +125,8 @@ def _business_rule_trace(state: RecommenderState) -> list[dict[str, Any]]:
                 "decision": (
                     "rule compared source_field/op/value against company_profile"
                     if indicator.evaluator == "rule"
+                    else "hybrid combined rule and llm evidence"
+                    if indicator.evaluator == "hybrid"
                     else "llm judged against standard using profile and dimension evidence"
                 ),
             }

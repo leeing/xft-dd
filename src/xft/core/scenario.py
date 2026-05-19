@@ -12,8 +12,6 @@ import yaml
 from xft.core.models import ScenarioConfig
 
 DEFAULT_PROMPTS: dict[str, str] = {
-    "match_system": "config/recommender/prompts/match_system.md",
-    "recommend_system": "config/recommender/prompts/recommend_system.md",
     "web_extract_system": "config/recommender/prompts/extract_evidence_system.md",
 }
 
@@ -26,10 +24,6 @@ class ScenarioBundle:
     config: ScenarioConfig
 
     @property
-    def products_path(self) -> str:
-        return str(_resolve_path(self.root, self.config.products_config))
-
-    @property
     def dimensions_path(self) -> str:
         return str(_resolve_path(self.root, self.config.dimensions_config))
 
@@ -40,10 +34,6 @@ class ScenarioBundle:
     @property
     def web_extract_llm_path(self) -> str:
         return str(_resolve_path(self.root, self.config.web_extract_llm_config))
-
-    @property
-    def scoring_policy_path(self) -> str:
-        return str(_resolve_path(self.root, self.config.scoring_policy_config))
 
     @property
     def evidence_policy_path(self) -> str:
@@ -74,11 +64,9 @@ class ScenarioBundle:
         """Return the fully resolved scenario config for audit/debugging."""
         payload = self.config.model_dump(mode="json", exclude_none=True)
         payload["root"] = str(self.root)
-        payload["products_path"] = self.products_path
         payload["dimensions_path"] = self.dimensions_path
         payload["web_search_path"] = self.web_search_path
         payload["web_extract_llm_path"] = self.web_extract_llm_path
-        payload["scoring_policy_path"] = self.scoring_policy_path
         payload["evidence_policy_path"] = self.evidence_policy_path
         payload["business_modules_path"] = self.business_modules_path
         payload["prompt_paths"] = self.prompt_paths
@@ -169,11 +157,9 @@ def _load_scenario_data(scenario_file: Path, *, stack: list[Path]) -> dict[str, 
 def _resolve_config_paths(root: Path, data: dict[str, Any]) -> dict[str, Any]:
     resolved = dict(data)
     for field in (
-        "products_config",
         "dimensions_config",
         "web_search_config",
         "web_extract_llm_config",
-        "scoring_policy_config",
         "evidence_policy_config",
         "business_modules_config",
     ):
