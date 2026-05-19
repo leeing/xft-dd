@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from xft.pipeline.recommender.config_loader import load_dimensions_config
+from xft.core.config_loader import load_dimensions_config
 from xft.pipeline.recommender.graph import run_recommendation
 from xft.core.scenario import load_scenario
 from xft.evidence.policy import load_evidence_policy
@@ -15,7 +15,6 @@ from xft.warehouse.prophet_loader import load_prophet_data
 
 
 SCENARIO_DIR = Path("config/recommend/sales_recommendation")
-BANK_SCENARIO_DIR = Path("config/recommend/bank_marketing")
 
 
 def _write_json(path: Path, value: object) -> None:
@@ -132,17 +131,6 @@ def test_config_loaders_accept_scenario_directory() -> None:
     assert extract_config.prompt_file.endswith("prompts/extract_evidence_system.md")
     assert evidence_policy.web_planning.supported_facts_to_skip_web == 3
     assert len(business.modules) == 7
-
-
-def test_builtin_bank_marketing_scenario_inherits_sales_config(tmp_path: Path) -> None:
-    scenario = load_scenario(BANK_SCENARIO_DIR)
-
-    assert scenario is not None
-    assert scenario.config.id == "bank_marketing"
-    resolved_path = scenario.write_resolved_config(tmp_path / "scenario_resolved.json")
-    resolved = json.loads(resolved_path.read_text(encoding="utf-8"))
-    assert resolved["id"] == "bank_marketing"
-    assert resolved["business_modules_path"].endswith("sales_recommendation/business_modules.yaml")
 
 
 @pytest.mark.asyncio

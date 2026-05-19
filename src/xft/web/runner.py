@@ -15,6 +15,8 @@ from xft.core.dimension_analyzer import analyze_dimensions
 from xft.core.scenario import load_scenario
 from xft.evidence.policy import load_evidence_policy
 from xft.progress import display
+from xft.utils.file_io import read_jsonl
+from xft.utils.misc import str_or_none
 from xft.warehouse.profile_repository import CompanyProfileRepository
 from xft.web.cache_index import (
     CachedQuery,
@@ -30,7 +32,7 @@ from xft.web.cache_index import (
 )
 from xft.web.cache_writer import WebCacheWriter, safe_dir_name
 from xft.web.config_loader import load_web_extract_llm_config, load_web_search_config
-from xft.web.evidence import extract_evidence_batch
+from xft.web.evidence import configured_model, extract_evidence_batch
 from xft.web.fetcher import fetch_and_cache_pages
 from xft.web.models import (
     RecordStatus,
@@ -134,7 +136,7 @@ async def run_web_enrichment(  # noqa: C901, PLR0912, PLR0913, PLR0915
         name for name in provider_names if web_config.providers.get(name, None) and web_config.providers[name].enabled
     ]
     company_display_name = str(profile.get("company_name") or company_name)
-    credit_code = _str_or_none(profile.get("credit_code"))
+    credit_code = str_or_none(profile.get("credit_code"))
     fetch_config = (
         web_config.fetch
         if _should_fetch_pages(config_value=web_config.execution.fetch_pages, override=fetch_pages)
@@ -149,7 +151,7 @@ async def run_web_enrichment(  # noqa: C901, PLR0912, PLR0913, PLR0915
         fetch_config=fetch_config,
         extract_prompt_version=llm_config.version,
         extract_prompt_file=llm_config.prompt_file,
-        extract_model=_configured_extract_model(llm_config),
+        extract_model=configured_model(llm_config),
         extract_config=llm_config.model_dump(mode="json"),
     )
 
@@ -181,7 +183,7 @@ async def run_web_enrichment(  # noqa: C901, PLR0912, PLR0913, PLR0915
             duckdb_loaded = True
         return WebRunResult(
             company_name=str(profile.get("company_name") or company_name),
-            credit_code=_str_or_none(profile.get("credit_code")),
+            credit_code=str_or_none(profile.get("credit_code")),
             status="skipped",
             web_run_id=existing_summary.run_dir.name,
             output_dir=str(existing_summary.run_dir),
@@ -194,7 +196,7 @@ async def run_web_enrichment(  # noqa: C901, PLR0912, PLR0913, PLR0915
     if extract_only and existing is None:
         return WebRunResult(
             company_name=str(profile.get("company_name") or company_name),
-            credit_code=_str_or_none(profile.get("credit_code")),
+            credit_code=str_or_none(profile.get("credit_code")),
             status="failed",
             web_run_id=run_id or make_web_run_id(str(profile.get("company_name") or company_name)),
             output_dir="",
@@ -259,7 +261,7 @@ async def run_web_enrichment(  # noqa: C901, PLR0912, PLR0913, PLR0915
             writer.append_skipped_query(
                 WebSkippedQueryRecord(
                     web_run_id=rid,
-                    credit_code=_str_or_none(profile.get("credit_code")),
+                    credit_code=str_or_none(profile.get("credit_code")),
                     company_name=str(profile.get("company_name") or company_name),
                     dimension_id=skipped.analysis.dimension_id,
                     query=query,
@@ -502,11 +504,11 @@ async def run_web_enrichment(  # noqa: C901, PLR0912, PLR0913, PLR0915
 
 
 def _write_web_decision_trace(*, out_dir: Path, plan: Any, policy_threshold: int) -> None:
-    queries = _read_jsonl(out_dir / "queries.jsonl")
-    results = _read_jsonl(out_dir / "search_results.jsonl")
-    evidence = _read_jsonl(out_dir / "web_evidence.jsonl")
-    conflicts = _read_jsonl(out_dir / "conflicts.jsonl")
-    pages = {str(item.get("result_id") or ""): item for item in _read_jsonl(out_dir / "fetched_pages.jsonl")}
+    queries = read_jsonl(out_dir / "queries.jsonl")
+    results = read_jsonl(out_dir / "search_results.jsonl")
+    evidence = read_jsonl(out_dir / "web_evidence.jsonl")
+    conflicts = read_jsonl(out_dir / "conflicts.jsonl")
+    pages = {str(item.get("result_id") or ""): item for item in read_jsonl(out_dir / "fetched_pages.jsonl")}
     evidence_by_result: dict[str, list[dict[str, Any]]] = {}
     for item in evidence:
         evidence_by_result.setdefault(str(item.get("result_id") or ""), []).append(item)
@@ -586,23 +588,6 @@ def _result_decision_reason(
     return "extraction produced no claim; likely duplicate, irrelevant, low confidence, or not about target company"
 
 
-def _read_jsonl(path: Path) -> list[dict[str, Any]]:
-    if not path.exists():
-        return []
-    rows: list[dict[str, Any]] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        value = json.loads(line)
-        if isinstance(value, dict):
-            rows.append(value)
-    return rows
-
-
-def _str_or_none(value: Any) -> str | None:
-    return str(value) if value not in (None, "") else None
-
-
 def _should_fetch_pages(*, config_value: bool, override: bool | None) -> bool:
     return config_value if override is None else override
 
@@ -619,7 +604,7 @@ def _cached_search_output(
         update={
             "query_id": query_id,
             "web_run_id": web_run_id,
-            "credit_code": _str_or_none(profile.get("credit_code")),
+            "credit_code": str_or_none(profile.get("credit_code")),
             "company_name": str(profile.get("company_name") or company_name),
             "created_at": datetime.now(UTC),
         }
@@ -629,7 +614,7 @@ def _cached_search_output(
             update={
                 "web_run_id": web_run_id,
                 "query_id": query_id,
-                "credit_code": _str_or_none(profile.get("credit_code")),
+                "credit_code": str_or_none(profile.get("credit_code")),
                 "company_name": str(profile.get("company_name") or company_name),
             }
         )
@@ -662,7 +647,7 @@ def _cached_evidence(  # noqa: PLR0913
                     "evidence_id": f"e_cached_{index:04d}_{item.evidence_id.removeprefix('e_')[:16]}",
                     "web_run_id": web_run_id,
                     "query_id": query_id,
-                    "credit_code": _str_or_none(profile.get("credit_code")),
+                    "credit_code": str_or_none(profile.get("credit_code")),
                     "company_name": str(profile.get("company_name") or company_name),
                     "query": query.query if query else item.query,
                     "created_at": datetime.now(UTC),
@@ -670,11 +655,6 @@ def _cached_evidence(  # noqa: PLR0913
             )
         )
     return copied
-
-
-def _configured_extract_model(llm_config: Any) -> str:
-    provider = llm_config.providers.get(llm_config.provider, {})
-    return str(provider.get("default_model") or "MiniMax-M2.7-Highspeed")
 
 
 def _write_cache_report(  # noqa: PLR0913

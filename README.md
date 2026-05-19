@@ -50,8 +50,10 @@ uv run xft scenario validate config/recommend/sales_recommendation
 
 ### 4. 离线跑推荐
 
+`--scenario` 默认为 `config/recommend/sales_recommendation`，以下命令可省略该参数：
+
 ```bash
-uv run xft recommend --no-llm --scenario config/recommend/sales_recommendation "企业名称"
+uv run xft recommend --no-llm "企业名称"
 ```
 
 ### 5. 启用 LLM
@@ -59,19 +61,19 @@ uv run xft recommend --no-llm --scenario config/recommend/sales_recommendation "
 配置 `.env` 后执行：
 
 ```bash
-uv run xft recommend --scenario config/recommend/sales_recommendation "企业名称"
+uv run xft recommend "企业名称"
 ```
 
 ### 6. 启用 Web 补证
 
 ```bash
-uv run xft recommend --with-web --scenario config/recommend/sales_recommendation "企业名称"
+uv run xft recommend --with-web "企业名称"
 ```
 
 已抓取的 Web 原始文件、中间文件和入库结果会被缓存。再次运行默认复用缓存；需要重新抓取时使用：
 
 ```bash
-uv run xft recommend --with-web --refresh-web --scenario config/recommend/sales_recommendation "企业名称"
+uv run xft recommend --with-web --refresh-web "企业名称"
 ```
 
 ## 输出文件
@@ -227,7 +229,7 @@ web_search_queries:
 测试阶段建议加上：
 
 ```bash
-uv run xft recommend --llm-debug --scenario config/recommend/sales_recommendation "企业名称"
+uv run xft recommend --llm-debug "企业名称"
 ```
 
 运行产物里也会保留：
@@ -250,7 +252,6 @@ company.txt
 
 ```bash
 uv run xft calibrate \
-  --scenario config/recommend/sales_recommendation \
   --company-list company.txt \
   --limit 10
 ```
@@ -259,7 +260,6 @@ uv run xft calibrate \
 
 ```bash
 uv run xft calibrate \
-  --scenario config/recommend/sales_recommendation \
   --company-list company.txt \
   --labels calibration_labels.csv \
   --limit 10
@@ -286,7 +286,7 @@ docker run --rm \
   -v "$PWD/data:/app/data" \
   -v "$PWD/cache:/app/cache" \
   -v "$PWD/recommendation_runs:/app/recommendation_runs" \
-  xft-dd uv run xft recommend --no-llm --scenario config/recommend/sales_recommendation "企业名称"
+  xft-dd uv run xft recommend --no-llm "企业名称"
 ```
 
 ## 更多文档

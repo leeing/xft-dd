@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from xft.pipeline.recommender.business_models import BusinessIndicatorResult, BusinessModuleResult
 from xft.pipeline.recommender.state import RecommenderState
+from xft.utils.misc import result_text
 
 
 def render_report(state: RecommenderState) -> str:
@@ -169,18 +170,9 @@ def _render_business_module_detail(rank: int, module: BusinessModuleResult) -> l
 def _indicator_text(indicator: BusinessIndicatorResult) -> str:
     evidence = "；".join(indicator.evidence[:2]) or indicator.current_status
     return (
-        f"{indicator.indicator_name}：{_result_text(indicator.result)}，"
+        f"{indicator.indicator_name}：{result_text(indicator.result)}，"
         f"置信度{indicator.confidence}，{indicator.evaluator}，{evidence}"
     )
-
-
-def _result_text(result: str) -> str:
-    return {
-        "matched": "满足",
-        "possible": "可能满足",
-        "not_matched": "不满足",
-        "unknown": "证据不足",
-    }.get(result, result)
 
 
 def _render_next_steps(state: RecommenderState) -> list[str]:

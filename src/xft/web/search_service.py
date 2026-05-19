@@ -9,6 +9,7 @@ from typing import Any
 
 from xft.core.search_models import SearchItem
 from xft.progress import display
+from xft.utils.misc import str_or_none
 from xft.web.cache_writer import WebCacheWriter
 from xft.web.models import (
     ProviderSearchResponse,
@@ -58,7 +59,7 @@ async def run_provider_query(  # noqa: PLR0913
     q_record = WebSearchQueryRecord(
         query_id=query_id,
         web_run_id=web_run_id,
-        credit_code=_str_or_none(profile.get("credit_code")),
+        credit_code=str_or_none(profile.get("credit_code")),
         company_name=str(profile.get("company_name") or company_name),
         dimension_id=dimension_id,
         provider=provider_name,
@@ -102,7 +103,7 @@ def make_result_record(  # noqa: PLR0913
         result_id=_result_id(web_run_id, query_id, item.id),
         web_run_id=web_run_id,
         query_id=query_id,
-        credit_code=_str_or_none(profile.get("credit_code")),
+        credit_code=str_or_none(profile.get("credit_code")),
         company_name=str(profile.get("company_name") or company_name),
         dimension_id=dimension_id,
         provider=provider_name,
@@ -125,7 +126,3 @@ def _result_id(web_run_id: str, query_id: str, item_id: str) -> str:
 
 def _provider_payload(response: ProviderSearchResponse) -> dict[str, Any]:
     return response.model_dump(mode="json")
-
-
-def _str_or_none(value: Any) -> str | None:
-    return str(value) if value not in (None, "") else None

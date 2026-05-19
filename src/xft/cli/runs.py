@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import argparse
 import csv
-import json
 import sys
 from collections import Counter
 from pathlib import Path
 from typing import Any
+
+from xft.utils.file_io import read_json
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -24,19 +25,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return build_parser().parse_args(argv)
 
 
-def _read_json(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return {}
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return {}
-    return value if isinstance(value, dict) else {}
-
-
 def _summarize_run(run_dir: Path) -> dict[str, Any]:
-    profile = _read_json(run_dir / "profile.json")
-    result = _read_json(run_dir / "result.json")
+    profile = read_json(run_dir / "profile.json")
+    result = read_json(run_dir / "result.json")
     raw_recommendations = result.get("recommendations")
     recommendations: list[Any] = raw_recommendations if isinstance(raw_recommendations, list) else []
     top = recommendations[0] if recommendations and isinstance(recommendations[0], dict) else {}

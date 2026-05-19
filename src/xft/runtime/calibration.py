@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field
 
+from xft.runtime.artifacts import _aggregate_web_metrics, _average, _float, _int
+
 if TYPE_CHECKING:
     from xft.pipeline.recommender.batch import BatchRunResult
 
@@ -565,18 +567,6 @@ def _company_metric(row: dict[str, Any], metric: str) -> dict[str, Any]:
     }
 
 
-def _aggregate_web_metrics(rows: list[dict[str, Any]]) -> dict[str, int]:
-    keys = [
-        "search_executed",
-        "search_reused",
-        "fetch_executed",
-        "fetch_reused",
-        "extraction_executed",
-        "extraction_reused",
-    ]
-    return {key: sum(_int(row.get(f"web_{key}")) for row in rows) for key in keys}
-
-
 def _web_evidence_coverage(rows: list[dict[str, Any]]) -> float:
     runnable = [row for row in rows if row.get("status") != "failed"]
     if not runnable:
@@ -588,23 +578,3 @@ def _web_evidence_coverage(rows: list[dict[str, Any]]) -> float:
 def _split_modules(value: str) -> list[str]:
     normalized = value.replace("，", ",").replace(";", ",").replace("；", ",").replace("|", ",")
     return [item.strip() for item in normalized.split(",") if item.strip()]
-
-
-def _float(value: Any) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return 0.0
-
-
-def _int(value: Any) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return 0
-
-
-def _average(values: list[float]) -> float:
-    if not values:
-        return 0
-    return round(sum(values) / len(values), 4)

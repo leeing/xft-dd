@@ -12,10 +12,10 @@ import structlog
 from langgraph.graph import END, START, StateGraph
 
 from xft.constants import DEFAULT_SCENARIO, DEFAULT_WAREHOUSE
+from xft.core.config_loader import load_dimensions_config
 from xft.core.scenario import DEFAULT_PROMPTS, load_scenario
 from xft.evidence.policy import load_evidence_policy
 from xft.pipeline.recommender.business_config_loader import load_business_recommendation_config
-from xft.pipeline.recommender.config_loader import load_dimensions_config
 from xft.pipeline.recommender.models import RecommendationRunResult
 from xft.pipeline.recommender.nodes.business_recommend_node import business_recommend_node
 from xft.pipeline.recommender.nodes.data_gather_node import data_gather_node
