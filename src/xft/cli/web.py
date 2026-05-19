@@ -9,6 +9,7 @@ import sys
 from dotenv import load_dotenv
 
 from xft.cli.common import csv
+from xft.constants import DEFAULT_SCENARIO, DEFAULT_WAREHOUSE
 from xft.web import load_web_cache_to_duckdb, run_web_enrichment
 
 
@@ -18,8 +19,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     enrich = sub.add_parser("enrich", help="run Web enrichment for one company")
     enrich.add_argument("company_name")
-    enrich.add_argument("--warehouse", default="cache/company_warehouse.duckdb")
-    enrich.add_argument("--scenario", default="config/scenarios/sales_recommendation")
+    enrich.add_argument("--warehouse", default=DEFAULT_WAREHOUSE)
+    enrich.add_argument("--scenario", default=DEFAULT_SCENARIO)
     enrich.add_argument("--web-config")
     enrich.add_argument("--web-extract-llm-config")
     enrich.add_argument("--dimensions-config")
@@ -43,7 +44,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     import_cmd = sub.add_parser("import", help="load data/web cache into DuckDB")
     import_cmd.add_argument("--input", default="data/web")
-    import_cmd.add_argument("--warehouse", default="cache/company_warehouse.duckdb")
+    import_cmd.add_argument("--warehouse", default=DEFAULT_WAREHOUSE)
     import_cmd.add_argument("--rebuild", action="store_true")
     return parser
 

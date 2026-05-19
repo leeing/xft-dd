@@ -1,0 +1,8 @@
+version: "1.0"
+extends: ../sales_recommendation
+id: bank_marketing
+name: 银行业营销场景
+description: 面向银行客户经理的企业软件营销推荐场景，示例展示场景继承能力。
+
+output_dir: ../../../recommendation_runs/bank_marketing
+web_cache_root: ../../../data/web/bank_marketing

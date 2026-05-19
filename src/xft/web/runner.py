@@ -9,6 +9,7 @@ from typing import Any
 
 import structlog
 
+from xft.constants import DEFAULT_SCENARIO, DEFAULT_WAREHOUSE
 from xft.core.config_loader import load_dimensions_config
 from xft.core.dimension_analyzer import analyze_dimensions
 from xft.core.scenario import load_scenario
@@ -56,7 +57,7 @@ def make_web_run_id(company_name: str) -> str:
 async def run_web_enrichment(  # noqa: C901, PLR0912, PLR0913, PLR0915
     *,
     company_name: str,
-    warehouse_db: str = "cache/company_warehouse.duckdb",
+    warehouse_db: str = DEFAULT_WAREHOUSE,
     scenario_path: str | None = None,
     web_config_path: str | None = None,
     web_extract_llm_config_path: str | None = None,
@@ -79,21 +80,16 @@ async def run_web_enrichment(  # noqa: C901, PLR0912, PLR0913, PLR0915
     source_run_id: str | None = None,
 ) -> WebRunResult:
     log.info("web_enrichment_start", company_name=company_name, refresh=refresh, force_dimensions=force_dimensions)
-    scenario = load_scenario(scenario_path) if scenario_path else None
-    web_search_path = web_config_path or (
-        scenario.web_search_path if scenario else "config/recommender/web_search.yaml"
-    )
-    web_extract_path = web_extract_llm_config_path or (
-        scenario.web_extract_llm_path if scenario else "config/recommender/web_extract_llm.yaml"
-    )
-    dimensions_path = dimensions_config_path or (
-        scenario.dimensions_path if scenario else "config/recommender/analysis_dimensions.yaml"
-    )
-    evidence_path = evidence_policy_path or (
-        scenario.evidence_policy_path if scenario else "config/evidence_policy.yaml"
-    )
+    scenario = load_scenario(scenario_path or DEFAULT_SCENARIO)
+    if scenario is None:
+        msg = f"scenario not found: {scenario_path or DEFAULT_SCENARIO}"
+        raise FileNotFoundError(msg)
+    web_search_path = web_config_path or scenario.web_search_path
+    web_extract_path = web_extract_llm_config_path or scenario.web_extract_llm_path
+    dimensions_path = dimensions_config_path or scenario.dimensions_path
+    evidence_path = evidence_policy_path or scenario.evidence_policy_path
     web_config = load_web_search_config(web_search_path)
-    if scenario and scenario.web_cache_root:
+    if scenario.web_cache_root:
         web_config = web_config.model_copy(update={"cache_root": scenario.web_cache_root})
     llm_config = load_web_extract_llm_config(web_extract_path)
     evidence_policy = load_evidence_policy(evidence_path)
@@ -230,7 +226,7 @@ async def run_web_enrichment(  # noqa: C901, PLR0912, PLR0913, PLR0915
             "web_extract_llm_config_path": web_extract_path,
             "web_config_path": web_search_path,
             "evidence_policy_path": evidence_path,
-            "scenario_path": scenario_path or "",
+            "scenario_path": scenario_path or DEFAULT_SCENARIO,
         },
         providers=provider_names,
         dimensions=[item.analysis.dimension_id for item in plan.planned],

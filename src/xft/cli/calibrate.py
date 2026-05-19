@@ -11,14 +11,13 @@ import duckdb
 from dotenv import load_dotenv
 
 from xft.cli.common import csv
+from xft.constants import DEFAULT_SCENARIO, DEFAULT_WAREHOUSE
 from xft.runtime.calibration import run_recommendation_calibration
-
-DEFAULT_SCENARIO = "config/scenarios/sales_recommendation"
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="run recommendation rule calibration")
-    parser.add_argument("--warehouse", default="cache/company_warehouse.duckdb")
+    parser.add_argument("--warehouse", default=DEFAULT_WAREHOUSE)
     parser.add_argument("--scenario", default=DEFAULT_SCENARIO)
     parser.add_argument("--company-list", help="text file with one company name per line")
     parser.add_argument("--batch-id")

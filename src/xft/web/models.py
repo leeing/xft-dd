@@ -182,7 +182,7 @@ class WebExtractTaskConfig(BaseModel):
 class WebExtractLLMConfig(BaseModel):
     version: str = "1.0"
     enabled: bool = True
-    prompt_file: str = "config/recommender/prompts/extract_evidence_system.md"
+    prompt_file: str = "config/recommend/sales_recommendation/prompts/extract_evidence_system.md"
     provider: str = "default"
     providers: dict[str, dict[str, Any]] = Field(default_factory=dict)
     tasks: dict[str, WebExtractTaskConfig] = Field(

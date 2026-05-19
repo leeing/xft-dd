@@ -43,9 +43,9 @@ SUMMARY_FIELDS = [
     "web_evidence_count",
     "conflict_count",
     "missing_evidence_count",
-    "rules_evaluated",
-    "rules_matched",
-    "products_excluded",
+    "matched_attributes",
+    "matched_indicators",
+    "acceptance_result",
     "web_search_executed",
     "web_search_reused",
     "web_fetch_executed",
@@ -81,7 +81,6 @@ class BatchOptions:
 
     warehouse_db: str
     scenario_path: str | None = None
-    products_config_path: str | None = None
     dimensions_config_path: str | None = None
     use_llm: bool = True
     use_web_evidence: bool = False
@@ -89,7 +88,6 @@ class BatchOptions:
     refresh_web: bool = False
     web_config_path: str | None = None
     web_extract_llm_config_path: str | None = None
-    scoring_policy_path: str | None = None
     evidence_policy_path: str | None = None
     web_providers: list[str] | None = None
     web_fetch_pages: bool | None = None
@@ -186,7 +184,6 @@ async def run_recommendation_batch(  # noqa: PLR0913
                 company_name=company_name,
                 warehouse_db=options.warehouse_db,
                 scenario_path=options.scenario_path,
-                products_config_path=options.products_config_path,
                 dimensions_config_path=options.dimensions_config_path,
                 output_dir=str(output_dir),
                 run_id=run_id,
@@ -196,7 +193,6 @@ async def run_recommendation_batch(  # noqa: PLR0913
                 refresh_web=options.refresh_web,
                 web_config_path=options.web_config_path,
                 web_extract_llm_config_path=options.web_extract_llm_config_path,
-                scoring_policy_path=options.scoring_policy_path,
                 evidence_policy_path=options.evidence_policy_path,
                 web_providers=options.web_providers,
                 web_fetch_pages=options.web_fetch_pages,
@@ -255,16 +251,12 @@ def summarize_run(result: RecommendationRunResult) -> dict[str, Any]:
     output_dir = Path(result.output_dir)
     profile = _read_json(output_dir / "profile.json")
     business_payload = _read_json(output_dir / "result.json")
-    payload = _read_json(output_dir / "internal_result.json")
-    if not payload:
-        payload = business_payload
-    raw_recommendations = payload.get("recommendations")
-    recommendations: list[Any] = raw_recommendations if isinstance(raw_recommendations, list) else []
-    top = recommendations[0] if recommendations and isinstance(recommendations[0], dict) else {}
-    raw_evidence_summary = payload.get("evidence_summary")
-    evidence_summary: dict[str, Any] = raw_evidence_summary if isinstance(raw_evidence_summary, dict) else {}
-    raw_scoring_summary = payload.get("scoring_summary")
-    scoring_summary: dict[str, Any] = raw_scoring_summary if isinstance(raw_scoring_summary, dict) else {}
+    business_label = _read_json(output_dir / "business_label_result.json")
+    selected = business_label.get("selected_module")
+    selected_module: dict[str, Any] = selected if isinstance(selected, dict) else {}
+    modules = business_label.get("modules")
+    module_count = len(modules) if isinstance(modules, list) else 0
+    evidence_summary = _evidence_counts(output_dir)
     return _ordered_row(
         {
             "company_name": result.company_name,
@@ -273,21 +265,21 @@ def summarize_run(result: RecommendationRunResult) -> dict[str, Any]:
             "output_dir": result.output_dir,
             "report_path": result.report_path or "",
             "result_path": result.result_path or "",
-            "scenario": payload.get("scenario", ""),
-            "scenario_name": payload.get("scenario_name", ""),
-            "top_module_id": top.get("module_id", ""),
-            "top_module_name": business_payload.get("Module") or top.get("module_name", ""),
-            "top_score": top.get("score", ""),
-            "recommendation_count": len(recommendations),
-            "profile_completeness": profile.get("profile_completeness", payload.get("profile_completeness", "")),
-            "needs_web_enrichment": payload.get("needs_web_enrichment", ""),
+            "scenario": "",
+            "scenario_name": "",
+            "top_module_id": selected_module.get("module_id", ""),
+            "top_module_name": business_payload.get("Module") or selected_module.get("module_name", ""),
+            "top_score": selected_module.get("score", ""),
+            "recommendation_count": module_count,
+            "profile_completeness": profile.get("profile_completeness", ""),
+            "needs_web_enrichment": "",
             "local_evidence_count": evidence_summary.get("local_evidence_count", 0),
             "web_evidence_count": evidence_summary.get("web_evidence_count", 0),
             "conflict_count": evidence_summary.get("conflict_count", 0),
             "missing_evidence_count": evidence_summary.get("missing_evidence_count", 0),
-            "rules_evaluated": scoring_summary.get("rules_evaluated", 0),
-            "rules_matched": scoring_summary.get("rules_matched", 0),
-            "products_excluded": scoring_summary.get("products_excluded", 0),
+            "matched_attributes": selected_module.get("attributes_number", business_payload.get("AttributesNumber", 0)),
+            "matched_indicators": selected_module.get("indicators_number", business_payload.get("IndicatorsNumber", 0)),
+            "acceptance_result": selected_module.get("acceptance_result", business_payload.get("AcceptanceResult", "")),
             **_web_metrics(output_dir),
             **_llm_metrics(output_dir),
             "error": result.error or "",
@@ -372,6 +364,32 @@ def _llm_metrics(output_dir: Path) -> dict[str, Any]:
     }
 
 
+def _evidence_counts(output_dir: Path) -> dict[str, int]:
+    """Summarize evidence counts from dimension_analysis.json."""
+    path = output_dir / "dimension_analysis.json"
+    if not path.exists():
+        return {
+            "local_evidence_count": 0,
+            "web_evidence_count": 0,
+            "conflict_count": 0,
+            "missing_evidence_count": 0,
+        }
+    value = json.loads(path.read_text(encoding="utf-8"))
+    rows: list[Any] = value if isinstance(value, list) else []
+    return {
+        "local_evidence_count": sum(len(_list(item.get("local_evidence"))) for item in rows if isinstance(item, dict)),
+        "web_evidence_count": sum(len(_list(item.get("web_evidence"))) for item in rows if isinstance(item, dict)),
+        "conflict_count": sum(len(_list(item.get("conflicts"))) for item in rows if isinstance(item, dict)),
+        "missing_evidence_count": sum(
+            len(_list(item.get("missing_evidence"))) for item in rows if isinstance(item, dict)
+        ),
+    }
+
+
+def _list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
 def _failed_row(company_name: str, run_id: str, output_dir: str, error: str) -> dict[str, Any]:
     return _ordered_row(
         {
@@ -393,9 +411,9 @@ def _failed_row(company_name: str, run_id: str, output_dir: str, error: str) -> 
             "web_evidence_count": 0,
             "conflict_count": 0,
             "missing_evidence_count": 0,
-            "rules_evaluated": 0,
-            "rules_matched": 0,
-            "products_excluded": 0,
+            "matched_attributes": 0,
+            "matched_indicators": 0,
+            "acceptance_result": "",
             "web_search_executed": 0,
             "web_search_reused": 0,
             "web_fetch_executed": 0,
@@ -415,7 +433,6 @@ def _failed_row(company_name: str, run_id: str, output_dir: str, error: str) -> 
 def _options_payload(options: BatchOptions, *, limit: int | None, skip_existing: bool) -> dict[str, Any]:
     return {
         "scenario_path": options.scenario_path,
-        "products_config_path": options.products_config_path,
         "dimensions_config_path": options.dimensions_config_path,
         "use_llm": options.use_llm,
         "use_web_evidence": options.use_web_evidence,
@@ -429,7 +446,6 @@ def _options_payload(options: BatchOptions, *, limit: int | None, skip_existing:
         "web_use_llm_extraction": options.web_use_llm_extraction,
         "llm_debug": options.llm_debug,
         "llm_concurrency": options.llm_concurrency,
-        "scoring_policy_path": options.scoring_policy_path,
         "evidence_policy_path": options.evidence_policy_path,
         "continue_on_error": options.continue_on_error,
         "limit": limit,

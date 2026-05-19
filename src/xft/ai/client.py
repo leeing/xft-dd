@@ -21,6 +21,7 @@ def get_ai_client() -> AsyncOpenAI:
         _ai_client = AsyncOpenAI(
             api_key=api_key,
             base_url=settings.llm_base_url,
+            max_retries=2,
             http_client=httpx.AsyncClient(trust_env=False),
         )
     return _ai_client

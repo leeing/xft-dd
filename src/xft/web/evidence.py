@@ -12,8 +12,7 @@ from pydantic import BaseModel, Field, ValidationError
 from xft.ai.client import get_ai_client
 from xft.ai.json_extractor import extract_json
 from xft.core.models import Confidence, DimensionAnalysis
-from xft.evidence.models import EvidenceResolution
-from xft.evidence.models import normalize_resolution as _normalize_base
+from xft.evidence.models import normalize_resolution
 from xft.progress import display
 from xft.web.models import (
     EvidenceType,
@@ -25,15 +24,6 @@ from xft.web.models import (
 
 CLAIM_MAX_CHARS = 300
 
-
-def normalize_resolution(raw: str | None, *, is_conflict: bool = False) -> EvidenceResolution | None:
-    """Normalize LLM-produced resolution, defaulting to 'use_local' for conflicts."""
-    result = _normalize_base(raw)
-    if result is not None:
-        return result
-    return "use_local" if is_conflict else None
-
-
 # Common Chinese company suffixes stripped when extracting the core identifying name.
 _COMPANY_SUFFIXES = (
     "有限责任公司",
@@ -43,10 +33,6 @@ _COMPANY_SUFFIXES = (
     "普通合伙",
     "有限合伙",
 )
-
-# Known company names that are similar to but different from common targets.
-# Maps core name → names that look similar but are different companies.
-_KNOWN_FALSE_COMPANY_PATTERNS: dict[str, list[str]] = {}
 
 
 def _company_name_key(target: str) -> str:

@@ -6,8 +6,10 @@ import json
 from pathlib import Path
 from typing import Any
 
+from xft.constants import DEFAULT_WAREHOUSE
+from xft.evidence.models import normalize_resolution
 from xft.warehouse.duckdb_client import connect
-from xft.web.evidence import normalize_resolution
+from xft.warehouse.schema import UNIFIED_EVIDENCE_DDL
 from xft.web.models import WebLoadSummary
 
 WEB_TABLES: tuple[str, ...] = (
@@ -119,29 +121,6 @@ WEB_DDL: tuple[str, ...] = (
     """,
 )
 
-UNIFIED_EVIDENCE_DDL = """
-CREATE TABLE IF NOT EXISTS unified_evidence (
-  evidence_id TEXT PRIMARY KEY,
-  credit_code TEXT,
-  company_name TEXT NOT NULL,
-  dimension_id TEXT,
-  source_type TEXT NOT NULL,
-  source_name TEXT,
-  source_path TEXT,
-  source_url TEXT,
-  source_field TEXT,
-  claim TEXT NOT NULL,
-  value TEXT,
-  confidence TEXT NOT NULL,
-  authority_level TEXT,
-  relation_to_profile TEXT NOT NULL,
-  conflict_note TEXT,
-  resolution TEXT,
-  raw_ref JSON,
-  created_at TIMESTAMP NOT NULL
-)
-"""
-
 
 def create_web_schema(conn: Any) -> None:
     for ddl in WEB_DDL:
@@ -172,7 +151,7 @@ def _migrate_web_schema(conn: Any) -> None:
 def load_web_cache_to_duckdb(
     *,
     input_root: str | Path = "data/web",
-    warehouse_db: str | Path = "cache/company_warehouse.duckdb",
+    warehouse_db: str | Path = DEFAULT_WAREHOUSE,
     rebuild: bool = False,
 ) -> WebLoadSummary:
     """Load all data/web run directories into DuckDB Web tables."""
@@ -214,7 +193,7 @@ def load_web_cache_to_duckdb(
 def _iter_run_dirs(root: Path) -> list[Path]:
     if not root.exists():
         return []
-    return sorted(path for path in root.glob("*/*") if path.is_dir() and (path / "manifest.json").exists())
+    return sorted(path.parent for path in root.rglob("manifest.json") if path.parent.is_dir())
 
 
 def _count_rows(conn: Any, table: str) -> int:

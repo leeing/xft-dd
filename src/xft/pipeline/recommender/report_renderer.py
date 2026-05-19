@@ -2,12 +2,8 @@
 
 from __future__ import annotations
 
-from xft.pipeline.recommender.models import RecommendationItem, ScoreRuleTrace
+from xft.pipeline.recommender.business_models import BusinessIndicatorResult, BusinessModuleResult
 from xft.pipeline.recommender.state import RecommenderState
-
-HIGH_SCORE_THRESHOLD = 75
-MEDIUM_SCORE_THRESHOLD = 55
-LOW_SCORE_THRESHOLD = 35
 
 
 def render_report(state: RecommenderState) -> str:
@@ -18,7 +14,8 @@ def render_report(state: RecommenderState) -> str:
             *_render_evidence_summary(state),
             *_render_dimension_summary(state),
             *_render_business_result(state),
-            *_render_recommendations(state),
+            *_render_business_modules(state),
+            *_render_next_steps(state),
         ]
     )
 
@@ -95,35 +92,6 @@ def _render_dimension_summary(state: RecommenderState) -> list[str]:
     return lines
 
 
-def _render_recommendations(state: RecommenderState) -> list[str]:
-    rec = state["recommendation"]
-    lines = ["## 推荐模块", ""]
-    if rec is None:
-        lines.append("推荐结果生成失败。")
-        return lines
-    lines.extend([rec.summary, ""])
-    lines.extend(_render_scoring_overview(state))
-
-    for rec_item in rec.recommendations:
-        lines.extend(_render_recommendation_detail(rec_item))
-
-    # Next steps section
-    lines.append("## 下一步核实清单")
-    lines.append("")
-    all_gaps: list[str] = []
-    for rec_item in rec.recommendations[:3]:
-        all_gaps.extend(rec_item.data_gaps[:2])
-    all_gaps = sorted(set(all_gaps))[:8]
-    if all_gaps:
-        for idx, gap in enumerate(all_gaps, 1):
-            lines.append(f"{idx}. {gap}")
-    else:
-        lines.append("暂无明确数据缺口，建议围绕推荐模块进行深度需求访谈。")
-    lines.append("")
-
-    return lines
-
-
 def _render_business_result(state: RecommenderState) -> list[str]:
     business = state.get("business_recommendation")
     if business is None or business.selected_module is None:
@@ -143,98 +111,90 @@ def _render_business_result(state: RecommenderState) -> list[str]:
     if matched_labels:
         lines.append("### 命中标签")
         for label in matched_labels:
-            indicators = [
-                item.indicator_name
-                for item in label.indicator_results
-                if item.result == "matched"
-            ]
+            indicators = [item.indicator_name for item in label.indicator_results if item.result == "matched"]
             lines.append(f"- {label.label_name}：{label.key_indicator_verify}（{'、'.join(indicators)}）")
         lines.append("")
     return lines
 
 
-def _render_recommendation_detail(rec_item: RecommendationItem) -> list[str]:
-    related_dims = rec_item.evidence_dimensions[:4]
-    data_gaps = rec_item.data_gaps[:4]
-    breakdown = rec_item.score_breakdown
-    lines = [
-        f"### {rec_item.rank}. {rec_item.module_name}",
-        "",
-        f"- 推荐分：{rec_item.score}",
-        f"- 分数构成：{_score_parts(rec_item)}",
-        f"- 业务需求：{rec_item.business_need}",
-        f"- 推荐理由：{rec_item.reason}",
-        f"- 建议话术：{rec_item.suggested_pitch}",
-        f"- 证据维度：{'；'.join(related_dims) or '本地证据不足'}",
-    ]
-    if breakdown.matched_rules:
-        lines.append("- 命中规则：" + _rule_text(breakdown.matched_rules[:4]))
-    if breakdown.penalty_rules:
-        lines.append("- 扣分规则：" + _rule_text(breakdown.penalty_rules[:4]))
-    if breakdown.exclusion_rules:
-        lines.append("- 排除/限制：" + _rule_text(breakdown.exclusion_rules[:2]))
-    if rec_item.evidence_trace:
-        lines.append("- 核心证据：" + "；".join(item.claim for item in rec_item.evidence_trace[:3]))
-    if data_gaps:
-        lines.append(f"- 待核实：{'；'.join(data_gaps)}")
-    lines.append("")
-    return lines
-
-
-def _score_parts(rec_item: RecommendationItem) -> str:
-    breakdown = rec_item.score_breakdown
-    parts = [
-        f"基础 {breakdown.base_priority}",
-        f"维度 {breakdown.dimension_support}",
-        f"证据 {breakdown.evidence_support}",
-        f"Web {breakdown.web_support}",
-        f"规则加分 {breakdown.positive_score}",
-        f"规则扣分 {breakdown.negative_score}",
-        f"缺口扣分 {breakdown.missing_evidence_penalty}",
-        f"冲突扣分 {breakdown.conflict_penalty}",
-    ]
-    return "，".join(parts)
-
-
-def _rule_text(rules: list[ScoreRuleTrace]) -> str:
-    return "；".join(f"{rule.rule_id}：{rule.reason}" for rule in rules)
-
-
-def _render_scoring_overview(state: RecommenderState) -> list[str]:
-    rec = state["recommendation"]
-    if rec is None:
-        return []
-    lines = ["### 推荐评分总览", ""]
-    lines.append("| 产品 | 分数 | 等级 | 规则加分 | 规则扣分 | 主要风险 |")
-    lines.append("| --- | ---: | --- | ---: | ---: | --- |")
-    for item in rec.recommendations:
-        breakdown = item.score_breakdown
-        risk_parts: list[str] = []
-        if breakdown.conflict_penalty:
-            risk_parts.append("存在冲突")
-        if breakdown.missing_evidence_penalty:
-            risk_parts.append("证据缺口")
-        if breakdown.excluded:
-            risk_parts.append("命中限制")
-        lines.append(
-            f"| {item.module_name} | {item.score} | {_score_level(item.score)} | "
-            f"{breakdown.positive_score} | {breakdown.negative_score} | {'、'.join(risk_parts) or '无明显风险'} |"
+def _render_business_modules(state: RecommenderState) -> list[str]:
+    business = state.get("business_recommendation")
+    lines = ["## 推荐模块总览", ""]
+    if business is None:
+        lines.append("业务推荐结果生成失败。")
+        lines.append("")
+        return lines
+    modules = sorted(business.modules, key=lambda item: (-item.score, -item.attributes_number, item.module_id))
+    lines.append("| 模块 | 接受度 | 分数 | 命中属性 | 命中指标 |")
+    lines.append("| --- | --- | ---: | ---: | ---: |")
+    lines.extend(
+        (
+            f"| {module.module_name} | {module.acceptance_result} | {module.score} | "
+            f"{module.attributes_number} | {module.indicators_number} |"
         )
-    lines.append("")
-    summary = rec.scoring_summary
-    lines.append(
-        f"评分规则共评估 {summary.rules_evaluated} 条，命中 {summary.rules_matched} 条；"
-        f"排除/限制产品 {summary.products_excluded} 个。"
+        for module in modules
     )
     lines.append("")
+    for idx, module in enumerate(modules, 1):
+        lines.extend(_render_business_module_detail(idx, module))
     return lines
 
 
-def _score_level(score: int) -> str:
-    if score >= HIGH_SCORE_THRESHOLD:
-        return "强推荐"
-    if score >= MEDIUM_SCORE_THRESHOLD:
-        return "可跟进"
-    if score >= LOW_SCORE_THRESHOLD:
-        return "观察"
-    return "暂不建议"
+def _render_business_module_detail(rank: int, module: BusinessModuleResult) -> list[str]:
+    lines = [
+        f"### {rank}. {module.module_name}",
+        "",
+        f"- 接受度：{module.acceptance_result}",
+        f"- 业务分：{module.score}",
+        f"- 命中属性：{module.attributes_number} 个",
+        f"- 命中指标：{module.indicators_number} 个",
+        f"- 结论：{module.conclusion}",
+    ]
+    matched_labels = [item for item in module.label_results if item.result == "matched"]
+    possible_labels = [item for item in module.label_results if item.result == "possible"]
+    if matched_labels:
+        lines.append("- 命中标签：" + "；".join(item.label_name for item in matched_labels))
+    if possible_labels:
+        lines.append("- 可能标签：" + "；".join(item.label_name for item in possible_labels))
+    for label in [*matched_labels, *possible_labels][:4]:
+        indicators = [item for item in label.indicator_results if item.result in ("matched", "possible")]
+        if not indicators:
+            continue
+        lines.append(f"  - {label.label_name}：{label.key_indicator_verify}")
+        lines.extend("    - " + _indicator_text(indicator) for indicator in indicators[:4])
+    lines.append("")
+    return lines
+
+
+def _indicator_text(indicator: BusinessIndicatorResult) -> str:
+    evidence = "；".join(indicator.evidence[:2]) or indicator.current_status
+    return (
+        f"{indicator.indicator_name}：{_result_text(indicator.result)}，"
+        f"置信度{indicator.confidence}，{indicator.evaluator}，{evidence}"
+    )
+
+
+def _result_text(result: str) -> str:
+    return {
+        "matched": "满足",
+        "possible": "可能满足",
+        "not_matched": "不满足",
+        "unknown": "证据不足",
+    }.get(result, result)
+
+
+def _render_next_steps(state: RecommenderState) -> list[str]:
+    business = state.get("business_recommendation")
+    lines = ["## 下一步核实清单", ""]
+    gaps = sorted({gap for analysis in state["dimension_analysis"] for gap in analysis.missing_evidence})
+    if business and business.selected_module:
+        selected = business.selected_module
+        lines.append(f"1. 围绕「{selected.module_name}」确认预算、现有系统、审批链路和落地时间。")
+    if gaps:
+        start = 2 if business and business.selected_module else 1
+        for idx, gap in enumerate(gaps[:6], start):
+            lines.append(f"{idx}. {gap}")
+    elif not (business and business.selected_module):
+        lines.append("1. 暂无明确数据缺口，建议先补充企业基础画像后再进行推荐。")
+    lines.append("")
+    return lines

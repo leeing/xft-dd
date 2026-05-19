@@ -12,12 +12,7 @@ from xft.pipeline.recommender.business_models import BusinessRecommendationConfi
 from xft.pipeline.recommender.models import (
     AnalysisDimensionsConfig,
     DimensionAnalysis,
-    MatchResult,
-    ProductModule,
-    ProductsConfig,
-    RecommendationOutput,
 )
-from xft.scoring.models import ScoringPolicy
 
 
 def merge_dicts(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
@@ -42,16 +37,11 @@ class RecommenderState(TypedDict):
     scenario_id: str | None
     scenario_name: str | None
     prompt_paths: dict[str, str]
-    products_config: ProductsConfig
     dimensions_config: AnalysisDimensionsConfig
     evidence_policy: EvidencePolicy
-    scoring_policy: ScoringPolicy
     business_config: BusinessRecommendationConfig | None
-    products: list[ProductModule]
     profile: Annotated[dict[str, Any], merge_dicts]
     dimension_analysis: list[DimensionAnalysis]
-    match_results: list[MatchResult]
-    recommendation: RecommendationOutput | None
     business_recommendation: BusinessRecommendationResult | None
     needs_web_enrichment: bool
     errors: Annotated[list[str], operator.add]

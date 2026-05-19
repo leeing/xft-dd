@@ -137,7 +137,7 @@ async def run_single(
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="xft diligence", description="enterprise due diligence tool")
     parser.add_argument("target", nargs="?", default=None, help="target company name")
-    parser.add_argument("--config", default="config")
+    parser.add_argument("--config", default="config/diligence")
     parser.add_argument("--only", help="run only these dimensions (comma-separated)")
     parser.add_argument("--skip", help="skip these dimensions (comma-separated)")
     parser.add_argument("--dry-run", action="store_true")

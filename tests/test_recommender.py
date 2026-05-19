@@ -6,11 +6,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-from xft.pipeline.recommender.config_loader import load_dimensions_config, load_products_config
+from xft.pipeline.recommender.config_loader import load_dimensions_config
 from xft.core.dimension_analyzer import analyze_dimensions
 from xft.pipeline.recommender.graph import run_recommendation
-from xft.pipeline.recommender.models import AnalysisDimension, EvidenceTemplate, MatchResult, ProductModule
-from xft.pipeline.recommender.recommendation_normalizer import normalize_recommendation_payload
+from xft.pipeline.recommender.models import AnalysisDimension, EvidenceTemplate
 from xft.warehouse.prophet_loader import load_prophet_data
 
 
@@ -19,7 +18,7 @@ def _write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False), encoding="utf-8")
 
 
-def _write_recommender_configs(tmp_path: Path) -> tuple[Path, Path]:
+def _write_recommender_configs(tmp_path: Path) -> Path:
     dimensions = {
         "version": "1.0",
         "dimensions": [
@@ -61,32 +60,9 @@ def _write_recommender_configs(tmp_path: Path) -> tuple[Path, Path]:
             },
         ],
     }
-    products = {
-        "version": "1.0",
-        "scenario": "product_recommendation",
-        "output_dir": str(tmp_path / "runs"),
-        "products": [
-            {
-                "module_id": "procurement_srm",
-                "module_name": "供应商关系管理(SRM)",
-                "priority": 90,
-                "target_needs": ["supply_chain_procurement"],
-                "match_rule": "制造业且有采购协同需求",
-            },
-            {
-                "module_id": "hr_attendance",
-                "module_name": "人力资源与考勤管理",
-                "priority": 80,
-                "target_needs": ["hr_workforce"],
-                "match_rule": "员工规模较大",
-            },
-        ],
-    }
     dimensions_path = tmp_path / "analysis_dimensions.yaml"
-    products_path = tmp_path / "products.yaml"
     dimensions_path.write_text(yaml.safe_dump(dimensions, allow_unicode=True), encoding="utf-8")
-    products_path.write_text(yaml.safe_dump(products, allow_unicode=True), encoding="utf-8")
-    return products_path, dimensions_path
+    return dimensions_path
 
 
 def _build_warehouse(tmp_path: Path) -> Path:
@@ -131,20 +107,16 @@ def _build_warehouse(tmp_path: Path) -> Path:
 
 
 def test_recommender_configs_load() -> None:
-    products = load_products_config("config/recommender/products.yaml")
-    dimensions = load_dimensions_config("config/recommender/analysis_dimensions.yaml")
+    dimensions = load_dimensions_config("config/recommend/sales_recommendation")
 
-    assert products.products
     assert dimensions.dimensions
-    assert {item.module_id for item in products.products}
     assert {item.id for item in dimensions.dimensions}
 
 
 def test_recommender_config_loader_supports_bundle_directory(tmp_path: Path) -> None:
-    products_path, dimensions_path = _write_recommender_configs(tmp_path)
+    dimensions_path = _write_recommender_configs(tmp_path)
     bundle = tmp_path / "bundle"
     bundle.mkdir()
-    (bundle / "products.yaml").write_text(products_path.read_text(encoding="utf-8"), encoding="utf-8")
     dimensions_dir = bundle / "dimensions"
     dimensions_dir.mkdir()
     raw_dimensions = yaml.safe_load(dimensions_path.read_text(encoding="utf-8"))["dimensions"]
@@ -154,10 +126,8 @@ def test_recommender_config_loader_supports_bundle_directory(tmp_path: Path) -> 
             encoding="utf-8",
         )
 
-    products = load_products_config(bundle)
     dimensions = load_dimensions_config(bundle)
 
-    assert [item.module_id for item in products.products] == ["procurement_srm", "hr_attendance"]
     assert {item.id for item in dimensions.dimensions} == {"supply_chain_procurement", "hr_workforce"}
 
 
@@ -257,115 +227,37 @@ def test_dimension_analyzer_uses_chinese_labels_for_risk_counts() -> None:
     assert "court_session" not in claim
 
 
-def test_recommendation_normalizer_repairs_llm_payload() -> None:
-    products = [
-        ProductModule(
-            module_id="finance_erp",
-            module_name="财务管理(ERP)",
-            priority=86,
-            target_needs=["finance_tax"],
-            match_rule="财务复杂度较高",
-        ),
-        ProductModule(
-            module_id="hr_attendance",
-            module_name="人力资源与考勤管理",
-            priority=80,
-            target_needs=["hr_workforce"],
-            match_rule="员工规模较大",
-        ),
-    ]
-    matches = [
-        MatchResult(
-            module_id="finance_erp",
-            module_name="财务管理(ERP)",
-            matched=True,
-            score=70,
-            confidence="中",
-            business_need="财务核算与业财协同",
-            reason="多组织财务管理复杂",
-            supporting_dimensions=["finance_tax"],
-            missing_evidence=["财务系统使用情况"],
-        ),
-        MatchResult(
-            module_id="hr_attendance",
-            module_name="人力资源与考勤管理",
-            matched=True,
-            score=60,
-            confidence="中",
-            business_need="人事考勤管理",
-            reason="员工规模较大",
-            supporting_dimensions=["hr_workforce"],
-            missing_evidence=["排班制度"],
-        ),
-    ]
-
-    output = normalize_recommendation_payload(
-        {
-            "summary": "",
-            "recommendations": [
-                {"rank": 9, "module_id": "unknown", "module_name": "非法模块", "score": 99},
-                {"rank": 2, "module_id": "hr_attendance", "module_name": "", "score": -5},
-                {"rank": 1, "module_id": "finance_erp", "module_name": "财务管理(ERP)", "score": 120},
-                {"rank": 3, "module_id": "finance_erp", "score": 90},
-            ],
-        },
-        company_name="测试公司",
-        scenario="product_recommendation",
-        products=products,
-        match_results=matches,
-        needs_web_enrichment=True,
-        profile_completeness=1.2,
-    )
-
-    assert [item.module_id for item in output.recommendations] == ["finance_erp", "hr_attendance"]
-    assert [item.rank for item in output.recommendations] == [1, 2]
-    assert output.recommendations[0].score == 100
-    assert output.recommendations[1].score == 0
-    assert output.recommendations[1].module_name == "人力资源与考勤管理"
-    assert output.profile_completeness == 1.0
-
-
 @pytest.mark.asyncio
 async def test_run_recommendation_mvp_without_llm(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr("xft.settings.settings.llm_api_key", "")
     monkeypatch.setattr("xft.settings.settings.minimax_api_key", "")
     warehouse = _build_warehouse(tmp_path)
-    products_path, dimensions_path = _write_recommender_configs(tmp_path)
 
     result = await run_recommendation(
         company_name="广东德美精细化工集团股份有限公司",
         warehouse_db=str(warehouse),
-        products_config_path=str(products_path),
-        dimensions_config_path=str(dimensions_path),
+        scenario_path="config/recommend/sales_recommendation",
         output_dir=str(tmp_path / "runs"),
         run_id="test-run",
+        use_llm=False,
     )
 
     assert result.status in ("success", "partial")
     output_dir = Path(result.output_dir)
     assert (output_dir / "profile.json").exists()
     assert (output_dir / "dimension_analysis.json").exists()
-    assert (output_dir / "match_results.json").exists()
+    assert not (output_dir / "match_results.json").exists()
+    assert not (output_dir / "internal_result.json").exists()
+    assert (output_dir / "business_label_result.json").exists()
     assert (output_dir / "result.json").exists()
     assert (output_dir / "report.md").exists()
     payload = json.loads((output_dir / "result.json").read_text(encoding="utf-8"))
-    assert payload["recommendations"]
-    assert payload["evidence_summary"]["local_evidence_count"] > 0
-    assert "by_dimension" in payload["evidence_summary"]
-    first_rec = payload["recommendations"][0]
-    assert first_rec["score_breakdown"]["final_score"] == first_rec["score"]
-    assert "matched_rules" in first_rec["score_breakdown"]
-    assert "scoring_summary" in payload
-    assert payload["scoring_summary"]["rules_evaluated"] >= 0
-    assert first_rec["evidence_trace"]
-    assert {"evidence_id", "claim", "source_type", "relation_to_profile"} <= set(first_rec["evidence_trace"][0])
+    assert "Module" in payload
+    assert "AcceptanceResult" in payload
+    business_payload = json.loads((output_dir / "business_label_result.json").read_text(encoding="utf-8"))
+    assert business_payload["modules"]
     report = (output_dir / "report.md").read_text(encoding="utf-8")
-    assert "推荐评分总览" in report
-    assert "分数构成" in report
+    assert "推荐模块总览" in report
+    assert "业务推荐结果" in report
     dimensions = json.loads((output_dir / "dimension_analysis.json").read_text(encoding="utf-8"))
-    assert dimensions[0]["analysis_prompt"] == "判断采购协同需求。"
-    assert dimensions[0]["evidence_policy"] == "制造业和规模只能作为间接线索。"
-    assert dimensions[0]["web_search_queries"] == [
-        "广东德美精细化工集团股份有限公司 供应商",
-        "广东德美精细化工集团股份有限公司 招投标",
-    ]
+    assert dimensions

@@ -7,7 +7,6 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-from xft.cli.scenario import _validate_business_product_alignment
 from xft.cli.main import main as xft_main
 
 
@@ -28,30 +27,22 @@ def test_xft_unknown_command(capsys: pytest.CaptureFixture[str]) -> None:
 
 
 def test_xft_scenario_validate(capsys: pytest.CaptureFixture[str]) -> None:
-    assert xft_main(["scenario", "validate", "config/scenarios/sales_recommendation"]) == 0
+    assert xft_main(["scenario", "validate", "config/recommend/sales_recommendation"]) == 0
     captured = capsys.readouterr()
     payload = json.loads(captured.out)
     assert payload["scenario_id"] == "sales_recommendation"
-    assert payload["products"] == payload["business_modules"] == 7
+    assert payload["business_modules"] == 7
     assert payload["dimensions"] > 0
-
-
-def test_scenario_validate_rejects_business_product_mismatch() -> None:
-    products = SimpleNamespace(products=[SimpleNamespace(module_id="old_product")])
-    business = SimpleNamespace(modules=[SimpleNamespace(module_id="daily_reimbursement")])
-
-    with pytest.raises(ValueError, match="products.yaml and business_modules.yaml module_id mismatch"):
-        _validate_business_product_alignment(products, business)
 
 
 def test_xft_scenario_inspect_writes_output(tmp_path: Path) -> None:
     output = tmp_path / "scenario_resolved.json"
 
-    assert xft_main(["scenario", "inspect", "config/scenarios/bank_marketing", "--output", str(output)]) == 0
+    assert xft_main(["scenario", "inspect", "config/recommend/bank_marketing", "--output", str(output)]) == 0
 
     payload = json.loads(output.read_text(encoding="utf-8"))
     assert payload["id"] == "bank_marketing"
-    assert len(payload["products_effective_hash"]) == 64
+    assert "business_modules_path" in payload
 
 
 def test_recommend_help() -> None:
@@ -94,7 +85,7 @@ def test_recommend_smoke_command_uses_offline_no_llm(monkeypatch: pytest.MonkeyP
                 "--warehouse",
                 "cache/company_warehouse.duckdb",
                 "--scenario",
-                "config/scenarios/sales_recommendation",
+                "config/recommend/sales_recommendation",
                 "--llm-debug",
                 "--llm-concurrency",
                 "2",

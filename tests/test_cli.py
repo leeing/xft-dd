@@ -54,7 +54,7 @@ def test_batch_and_positional_mutually_exclusive() -> None:
     assert result.returncode == 1
 
 
-def test_cli_default_config_is_directory() -> None:
+def test_cli_default_config_is_diligence_directory() -> None:
     import importlib
     import sys as _sys
 
@@ -65,7 +65,7 @@ def test_cli_default_config_is_directory() -> None:
     main_module = importlib.import_module("xft.cli.diligence")
     with patch.object(sys, "argv", ["xft diligence", "某公司"]):
         args = main_module._parse_args()
-    assert args.config == "config"
+    assert args.config == "config/diligence"
 
 
 def test_dry_run_no_external_calls(tmp_path: Path) -> None:

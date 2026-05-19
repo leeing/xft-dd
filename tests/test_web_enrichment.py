@@ -180,7 +180,7 @@ def test_web_search_config_loads(tmp_path: Path) -> None:
 
 
 def test_default_web_search_config_uses_minimax() -> None:
-    cfg = load_web_search_config("config/recommender/web_search.yaml")
+    cfg = load_web_search_config("config/recommend/sales_recommendation")
 
     assert cfg.default_providers == ["minimax_search"]
     assert cfg.providers["minimax_search"].enabled is True
