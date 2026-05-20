@@ -28,24 +28,39 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def _summarize_run(run_dir: Path) -> dict[str, Any]:
     profile = read_json(run_dir / "profile.json")
     result = read_json(run_dir / "result.json")
-    raw_recommendations = result.get("recommendations")
-    recommendations: list[Any] = raw_recommendations if isinstance(raw_recommendations, list) else []
-    top = recommendations[0] if recommendations and isinstance(recommendations[0], dict) else {}
+
+    # Support both new format (MarketingPoint/Module) and legacy (recommendations)
+    raw_points = result.get("MarketingPoint")
+    raw_recs = result.get("recommendations")
+    if isinstance(raw_points, list) and raw_points:
+        items = raw_points
+        top_module_name = str(result.get("Module") or "")
+        status = "success" if result.get("AcceptanceResult") not in (None, "", "无") else "partial"
+    elif isinstance(raw_recs, list) and raw_recs:
+        items = raw_recs
+        top = items[0] if isinstance(items[0], dict) else {}
+        top_module_name = str(top.get("module_name", ""))
+        status = "success"
+    else:
+        items = []
+        top_module_name = ""
+        status = "failed"
+
     gaps: list[str] = []
-    for item in recommendations:
+    for item in items:
         if isinstance(item, dict) and isinstance(item.get("data_gaps"), list):
             gaps.extend(str(gap) for gap in item["data_gaps"])
-    status = "success" if recommendations else "failed"
+
     return {
         "run_id": run_dir.name,
-        "company_name": profile.get("company_name") or result.get("company_name") or "",
+        "company_name": profile.get("company_name") or result.get("CompanyName") or result.get("company_name") or "",
         "status": status,
-        "top_module_id": top.get("module_id", ""),
-        "top_module_name": top.get("module_name", ""),
-        "top_score": top.get("score", ""),
-        "recommendation_count": len(recommendations),
-        "profile_completeness": profile.get("profile_completeness", result.get("profile_completeness", "")),
-        "needs_web_enrichment": result.get("needs_web_enrichment", ""),
+        "top_module_id": "",
+        "top_module_name": top_module_name,
+        "top_score": str(result.get("AcceptanceResult") or ""),
+        "recommendation_count": len(items),
+        "profile_completeness": profile.get("profile_completeness", ""),
+        "needs_web_enrichment": "",
         "data_gaps": "；".join(sorted(set(gaps))[:12]),
         "output_dir": str(run_dir),
     }
