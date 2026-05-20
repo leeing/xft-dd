@@ -219,6 +219,12 @@ labels:
 | `hybrid` | 规则先处理硬证据，LLM 补充模糊判断 | 可选 | 可选，通常在规则/本地证据不足时补证 |
 | `llm_web` | 本地库基本不可能有、必须查公开网页的信息 | 是 | 必选，默认 `when: always` |
 
+配置优先级建议：
+
+1. 能用 `profile` 字段或 DuckDB 明细表判断的指标，优先配置成 `rule`。
+2. 有明确本地信号、但需要补充解释或公开证据的指标，配置成 `hybrid` + `merge_policy: rule_first`。
+3. 只有公开网页才可能判断的指标，才配置成 `llm_web`。
+
 `rule` 可以使用 `rule.source_field` 直接读画像字段，也可以用 `data_sources` 从画像字段或 DuckDB 明细表取证据。当前表级 `data_sources` 支持：
 
 ```text
@@ -236,6 +242,12 @@ key_personnel.person_name/role/affiliate_company_count
 - `fixed_queries`: 固定搜索词，支持 `{company_name}`
 - `auto`: 可选 LLM 自动生成少量补充搜索词
 - `max_results`: 每个查询最多保留结果数
+
+重要约束：
+
+- `data_sources` 的 `text_contains` 必须配置具体 `keywords`，不要留空；否则本地证据会退化成“只要有记录就像命中”。
+- `fixed_queries` 应该带指标词，例如“海外出差”“售后派驻”“开票专员”，不要只写 `{company_name} 官网` / `{company_name} 新闻`。
+- Web 结果进入证据前会同时检查目标公司和指标相关词；`llm_web` 没有实际 Web 证据时会返回 `unknown`，不会空证据调用 LLM。
 
 Web-first 指标：
 

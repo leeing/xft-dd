@@ -7,7 +7,6 @@
 ```mermaid
 flowchart TB
     cli["uv run xft"] --> recommend["recommend 产品推荐"]
-    cli --> diligence["diligence 企业尽调"]
     cli --> warehouse["warehouse build"]
     cli --> scenario["scenario validate/inspect"]
     cli --> calibrate["calibrate 推荐校准"]
@@ -22,7 +21,6 @@ flowchart TB
 
 ```text
 recommend
-diligence
 calibrate
 warehouse
 scenario
@@ -30,7 +28,7 @@ runs
 cache
 ```
 
-已删除 `xft web` 和 `warehouse web-import`。
+已删除 `xft web`、`warehouse web-import` 和旧企业调研入口。
 
 ## 推荐流水线
 
@@ -111,8 +109,6 @@ config/recommend/sales_recommendation/
 | `business_modules.yaml` | 全局评分、全局接受策略、`modules_dir` |
 | `business_modules.d/*.yaml` | 一个文件一个业务模块，动态发现 |
 | `web_search.yaml` | 业务指标级 Web 搜索 provider 配置 |
-
-`config/diligence/` 是独立的尽调配置包，只服务 `uv run xft diligence`，不参与推荐主线。
 
 ## 业务模块配置加载
 

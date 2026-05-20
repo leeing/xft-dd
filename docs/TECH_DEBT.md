@@ -7,7 +7,6 @@
 产品化 CLI：
 
 - `uv run xft recommend`：产品推荐流水线
-- `uv run xft diligence`：企业尽调流水线
 - `uv run xft calibrate`：推荐校准
 - `uv run xft warehouse build`：本地 JSON 入库
 - `uv run xft scenario validate/inspect`：场景配置校验和审计
@@ -31,6 +30,7 @@ data_gather -> business_web_evidence -> business_recommend -> save
 - 校准 CLI 已可用。
 - `sales_recommendation` 已覆盖 7 个模块。
 - `rule / llm / hybrid / llm_web` 已支持。
+- `假勤管理`、`差旅报销` 已完成样板配置治理，后续应按同样方式治理 `日常报销`、`销项发票` 等模块。
 - 缺少业务人员标注后的 5-10 家真实样本。
 
 影响：
@@ -61,6 +61,8 @@ uv run xft calibrate \
 
 建议：
 
+- 检查 `data_sources.type=table` + `op=text_contains` 的指标是否配置了具体 `keywords`，不能留空。
+- 将已有本地结构化证据的 `llm_web` 指标改为 `rule` 或 `hybrid`。
 - 选 2-3 家企业人工检查 `business_web_trace.json`。
 - 检查 `business_indicator_evidence.json` 中 `source_type=web` 的证据是否可用于判断。
 - 根据噪声调整指标级 `web_search.when/effect/fixed_queries/auto`。
@@ -97,12 +99,11 @@ uv run xft calibrate \
 ## 已完成，不再作为技术债
 
 - 根包迁移到 `xft`。
-- 删除 `src/diligence`。
+- 删除旧企业调研流水线代码、配置和入口，项目聚焦推荐单主线。
 - 删除根目录 `.py` 入口脚本。
 - 删除旧兼容 wrapper。
 - Docker 入口统一为 `xft`。
 - 推荐主线稳定在 `xft.pipeline.recommender`。
-- 尽调场景稳定在 `xft.pipeline.diligence`。
 - 业务标注校准 CLI 闭环。
 - 搜索模型下沉到 `xft.core.search_models`。
 - 配置审计 manifest。

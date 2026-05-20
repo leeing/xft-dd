@@ -123,6 +123,8 @@ data_sources:
       - 渠道
 ```
 
+`text_contains` 类型的数据源必须配置具体 `keywords`。不要把 `keywords` 留空来表示“存在招聘记录”，存在性判断应使用 `op: exists`；否则指标会把任意招聘标题都当成命中，直接污染推荐结果。
+
 当前表级 `data_sources` 支持：
 
 ```text
@@ -183,6 +185,35 @@ prompt: 判断企业是否具备科技型企业资质。
 | `llm_confirm` | 规则给候选信号，LLM 负责确认；如 LLM 否定则降级 |
 | `require_both` | 规则和 LLM 都命中才 `matched` |
 
+当一个指标已经有 `data_sources`，但仍需要公开网页辅助判断时，优先使用 `hybrid`，不要直接写成 `llm_web`。常见配置：
+
+```yaml
+evaluator: hybrid
+merge_policy: rule_first
+standard: 招聘 JD 或公开信息显示存在境外出差、海外驻点、全球出差
+rule:
+  source_field: recent_recruitment_titles
+  op: contains_any
+  value:
+    - 境外出差
+    - 海外驻点
+    - 全球出差
+data_sources:
+  - type: table
+    table: recruitments
+    field: title
+    op: text_contains
+    keywords:
+      - 境外出差
+      - 海外驻点
+      - 全球出差
+web_search:
+  when: insufficient
+  effect: llm_evidence
+  fixed_queries:
+    - "{company_name} 境外出差 海外驻点"
+```
+
 ## 指标级 Web Policy
 
 `web_search` 是指标级补证策略。它只在推荐命令带 `--with-business-web` 时执行。
@@ -214,6 +245,18 @@ web_search:
 - `fixed_queries` 优先执行；`auto.enabled: true` 时可由 LLM 生成少量补充查询。
 - 搜索结果会作为 `source_type=web` 的指标证据进入 `business_indicator_evidence.json`。
 - `rule` 使用 `effect: possible_on_evidence` 时，Web 证据最多把结果提升到 `possible`，不会变成 `matched`。
+- Web 证据入库前会同时检查目标公司名/统一社会信用代码和指标相关词；只有公司相关但指标无关的泛页面会被过滤。
+- `llm_web` 没有实际 Web 证据时直接输出 `unknown`，不调用 LLM。
+
+## 配置治理顺序
+
+优化一个模块时，建议按这个顺序处理：
+
+1. 先列出所有 `llm_web` 指标，检查是否已经有 `data_sources`。
+2. 有本地结构化证据的指标改为 `rule` 或 `hybrid`，并补齐 `text_contains.keywords`。
+3. 保留为 `llm_web` 的指标，必须把 `fixed_queries` 改成指标专用查询。
+4. 跑 `scenario validate` 和一家公司样本，检查 `business_indicator_evidence.json` 是否能解释每个命中。
+5. 用 `calibrate` 对业务标注样本做错配复盘，再调整阈值、关键词和接受策略。
 
 ## 标签与模块
 

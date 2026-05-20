@@ -1,6 +1,6 @@
 # 冒烟验收
 
-本文档记录日常最小验收流程。目标是每次改配置或重构后，先确认推荐主线和尽调入口没有坏。
+本文档记录日常最小验收流程。目标是每次改配置或重构后，确认推荐主线没有坏。
 
 ## 1. 场景配置校验
 
@@ -91,22 +91,7 @@ business_web_trace.json
 - `llm/hybrid` 指标只在配置的 `when` 条件下补证。
 - `rule` 指标的 Web 证据最多产生 `possible`，不应直接变成 `matched`。
 
-## 4. 企业尽调流水线冒烟
-
-使用 dry-run 只预览搜索计划：
-
-```bash
-uv run xft diligence --dry-run "企业名称"
-```
-
-预期：
-
-- 命令退出码为 0。
-- 输出目标企业名。
-- 输出 active dimensions。
-- 输出 `dry-run complete, no external calls made`。
-
-## 5. 快速测试集
+## 4. 快速测试集
 
 ```bash
 uv run pytest \
@@ -119,7 +104,7 @@ uv run pytest \
   -q
 ```
 
-## 6. 完整质量门禁
+## 5. 完整质量门禁
 
 ```bash
 uv run ruff check src tests scripts

@@ -2,6 +2,8 @@
 
 本文档记录当前优先级。项目已经完成推荐主链路聚焦：旧维度分析、旧 Web enrichment、旧 evidence policy 和旧产品评分链路均已移除。下一步集中打磨业务模块配置质量。
 
+截至 2026-05-20，`假勤管理` 和 `差旅报销` 已作为配置治理样板完成一轮优化：能用本地结构化证据判断的指标优先改为 `rule` / `hybrid`，只保留确实依赖公开网页的指标为 `llm_web`。
+
 ## 当前状态
 
 推荐主线：
@@ -91,6 +93,12 @@ uv run xft calibrate \
 
 根据错配案例调整 `business_modules.d/*.yaml`。
 
+当前配置治理优先级：
+
+1. 继续治理 `日常报销`、`销项发票` 中剩余的高比例 `llm_web` 指标。
+2. 对所有 `data_sources.type=table` + `op=text_contains` 的指标检查 `keywords`，不能留空。
+3. 对所有 `llm_web` 指标检查 `fixed_queries`，避免只写 `{company_name} 官网` / `{company_name} 新闻`。
+
 ### 3. 业务 Web 证据质量抽查
 
 目标：确认指标级 `web_search` policy 能带来有效证据，而不是引入噪声。
@@ -116,5 +124,5 @@ uv run xft calibrate \
 - 不恢复旧产品评分引擎。
 - 不恢复 `analysis_dimensions.yaml`、`evidence_policy.yaml`、`web_extract_llm.yaml`。
 - 不恢复 `xft web` 或旧 Web enrichment。
-- 不继续把推荐能力塞回尽调链路；`xft diligence` 保持独立。
+- 不恢复旧企业调研链路；项目保持推荐单主线。
 - 不增加新的抽象框架，先保证推荐准确性和配置可读性。
