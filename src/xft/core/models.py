@@ -16,7 +16,7 @@ class ScenarioConfig(BaseModel):
     description: str | None = None
     extends: str | None = None
     web_search_config: str = "web_search.yaml"
-    business_modules_config: str | None = None
+    modules_config: str | None = None
     prompts: dict[str, str] = Field(default_factory=dict)
     output_dir: str | None = None
     web_cache_root: str | None = None

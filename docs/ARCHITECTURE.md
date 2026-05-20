@@ -12,8 +12,8 @@ flowchart TB
     cli --> calibrate["calibrate 推荐校准"]
 
     recommend --> wh["DuckDB company_profile + 明细表"]
-    recommend --> bizroot["business_modules.yaml"]
-    recommend --> bizdir["business_modules.d/*.yaml"]
+    recommend --> bizroot["modules.yaml"]
+    recommend --> bizdir["modules.d/*.yaml"]
     recommend --> webconf["web_search.yaml"]
 ```
 
@@ -36,8 +36,8 @@ cache
 
 ```mermaid
 flowchart LR
-    gather["data_gather 读取画像与本地证据"] --> web["business_web_evidence 可选业务 Web"]
-    web --> business["business_recommend rule / llm / hybrid / llm_web"]
+    gather["data_gather 读取画像与本地证据"] --> web["web_evidence 可选业务 Web"]
+    web --> business["recommend rule / llm / hybrid / llm_web"]
     business --> save["save 写结果"]
 ```
 
@@ -46,9 +46,9 @@ flowchart LR
 | 节点 | 职责 |
 | --- | --- |
 | `data_gather` | 从 DuckDB 读取 `company_profile`，并按指标 `data_sources` 加载本地证据 |
-| `business_web_evidence` | 仅在 `--with-business-web` 时，按指标 `web_search` policy 执行固定查询和可选自动查询 |
-| `business_recommend` | 根据业务模块、标签、指标配置生成推荐结果 |
-| `save` | 写入 `result.json`、`business_label_result.json`、`report.md` 等产物 |
+| `web_evidence` | 仅在 `--with-web` 时，按指标 `web_search` policy 执行固定查询和可选自动查询 |
+| `recommend` | 根据业务模块、标签、指标配置生成推荐结果 |
+| `save` | 写入 `result.json`、`label_result.json`、`report.md` 等产物 |
 
 不再存在：
 
@@ -71,14 +71,14 @@ flowchart TB
     etl --> duck["cache/company_warehouse.duckdb"]
     duck --> profile["company_profile"]
     duck --> details["recruitments / qualifications / branches 等明细表"]
-    profile --> local["business_evidence_loader"]
+    profile --> local["evidence_loader"]
     details --> local
-    local --> biz["business_recommend"]
-    webcfg["web_search.yaml"] --> web["business_web_evidence"]
-    modcfg["business_modules.d/*.yaml"] --> web
+    local --> biz["recommend"]
+    webcfg["web_search.yaml"] --> web["web_evidence"]
+    modcfg["modules.d/*.yaml"] --> web
     web --> biz
     biz --> result["result.json"]
-    biz --> detail["business_label_result.json"]
+    biz --> detail["label_result.json"]
     biz --> trace["decision_trace.json"]
 ```
 
@@ -89,8 +89,8 @@ flowchart TB
 ```text
 config/recommend/sales_recommendation/
   scenario.yaml
-  business_modules.yaml
-  business_modules.d/
+  modules.yaml
+  modules.d/
     个税管理.yaml
     假勤管理.yaml
     对公报账.yaml
@@ -106,27 +106,27 @@ config/recommend/sales_recommendation/
 | 文件 | 作用 |
 | --- | --- |
 | `scenario.yaml` | 场景入口，声明业务模块配置、Web provider 配置和输出目录 |
-| `business_modules.yaml` | 全局评分、全局接受策略、`modules_dir` |
-| `business_modules.d/*.yaml` | 一个文件一个业务模块，动态发现 |
+| `modules.yaml` | 全局评分、全局接受策略、`modules_dir` |
+| `modules.d/*.yaml` | 一个文件一个业务模块，动态发现 |
 | `web_search.yaml` | 业务指标级 Web 搜索 provider 配置 |
 
 ## 业务模块配置加载
 
-`business_modules.yaml` 可以继续兼容单文件 `modules`，但正式销售场景使用目录化模块：
+`modules.yaml` 可以继续兼容单文件 `modules`，但正式销售场景使用目录化模块：
 
 ```yaml
-modules_dir: business_modules.d
+modules_dir: modules.d
 ```
 
 加载规则：
 
-- loader 先读取 `business_modules.yaml` 的全局配置。
+- loader 先读取 `modules.yaml` 的全局配置。
 - 如果存在 `modules`，会先加载内联模块。
 - 如果存在 `modules_dir`，会按文件名排序加载目录下所有 `*.yaml`。
 - 每个模块文件可以是单个模块映射，也可以包含 `modules: [...]`。
 - `module_id` 必须全局唯一；同一模块下 `label_id`、同一标签下 `indicator_id` 必须唯一。
 
-这意味着增减模块只需要增删 `business_modules.d/*.yaml` 文件。
+这意味着增减模块只需要增删 `modules.d/*.yaml` 文件。
 
 ## 业务 Web
 
@@ -134,7 +134,7 @@ modules_dir: business_modules.d
 
 | 项 | 旧 Web enrichment | 当前业务 Web |
 | --- | --- | --- |
-| 入口 | `xft web enrich` / `--with-web` | `xft recommend --with-business-web` |
+| 入口 | `xft web enrich` / `--with-web` | `xft recommend --with-web` |
 | 粒度 | 维度分析 | 业务指标 |
 | 查询来源 | `analysis_dimensions.yaml` | 指标 `web_search.fixed_queries`，必要时由 LLM 生成少量补充查询 |
 | 抽取方式 | 独立 Web 抽取 LLM | 作为指标证据交给业务 evaluator |
@@ -149,10 +149,10 @@ modules_dir: business_modules.d
 业务 Web 输出：
 
 ```text
-business_web_queries.jsonl
-business_web_results.jsonl
-business_web_trace.json
-business_indicator_evidence.json
+web_queries.jsonl
+web_results.jsonl
+web_trace.json
+indicator_evidence.json
 ```
 
 ## 产物
@@ -162,8 +162,8 @@ business_indicator_evidence.json
 | 文件 | 内容 |
 | --- | --- |
 | `result.json` | 最终业务交付结果 |
-| `business_label_result.json` | 全量业务模块、标签、指标结果 |
-| `business_indicator_evidence.json` | 指标证据 |
+| `label_result.json` | 全量业务模块、标签、指标结果 |
+| `indicator_evidence.json` | 指标证据 |
 | `profile.json` | 企业画像 |
 | `decision_trace.json` | 规则、LLM、业务 Web 决策过程 |
 | `llm_calls.jsonl` | LLM 调用明细 |

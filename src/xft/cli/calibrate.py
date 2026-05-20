@@ -25,10 +25,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--limit", type=int, default=10)
     parser.add_argument("--labels", help="CSV file with business expected/acceptable modules")
     parser.add_argument("--with-llm", action="store_true")
-    parser.add_argument("--with-business-web", action="store_true")
-    parser.add_argument("--business-web-refresh", action="store_true")
+    parser.add_argument("--with-web", action="store_true")
+    parser.add_argument("--web-refresh", action="store_true")
     parser.add_argument("--web-config")
-    parser.add_argument("--business-web-provider", help="comma-separated business Web provider names")
+    parser.add_argument("--web-provider", help="comma-separated business Web provider names")
     return parser
 
 
@@ -73,10 +73,10 @@ async def _main_async(argv: list[str] | None = None) -> int:
             batch_output=args.batch_output,
             limit=args.limit,
             use_llm=args.with_llm,
-            with_business_web=args.with_business_web,
-            refresh_business_web=args.business_web_refresh,
+            with_web=args.with_web,
+            refresh_web=args.web_refresh,
             web_config_path=args.web_config,
-            business_web_providers=csv(args.business_web_provider),
+            web_providers=csv(args.web_provider),
             labels_path=args.labels,
         )
     except OSError as exc:
@@ -85,10 +85,10 @@ async def _main_async(argv: list[str] | None = None) -> int:
     sys.stdout.write(f"[{batch.status}] calibration batch: {batch.batch_dir}\n")
     sys.stdout.write(f"calibration_json: {json_path}\n")
     sys.stdout.write(f"calibration_md: {md_path}\n")
-    sys.stdout.write(f"business_web_review_samples: {review_path}\n")
+    sys.stdout.write(f"web_review_samples: {review_path}\n")
     sys.stdout.write(f"companies: {report.company_count}, average_top_score: {report.average_top_score:.1f}\n")
-    if report.with_business_web:
-        sys.stdout.write(f"web: coverage={report.business_web_evidence_coverage:.1%}\n")
+    if report.with_web:
+        sys.stdout.write(f"web: coverage={report.web_evidence_coverage:.1%}\n")
     if report.labeled_count:
         sys.stdout.write(
             "labels: "

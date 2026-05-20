@@ -4,23 +4,23 @@ from __future__ import annotations
 
 from typing import Any
 
-from xft.pipeline.recommender.business_models import (
-    BusinessModuleConfig,
-    BusinessRecommendationConfig,
-    BusinessRecommendationResult,
+from xft.pipeline.recommender.models import (
+    ModuleConfig,
+    RecommendationConfig,
+    RecommendationResult,
 )
 from xft.utils.misc import result_text
 
 
-def render_business_result_json(
+def render_result_json(
     *,
     profile: dict[str, Any],
-    business_result: BusinessRecommendationResult | None,
-    config: BusinessRecommendationConfig | None,
+    result: RecommendationResult | None,
+    config: RecommendationConfig | None,
 ) -> dict[str, Any]:
     """Render the stable business result JSON shape."""
-    company_name = str(profile.get("company_name") or business_result.company_name if business_result else "")
-    if business_result is None or business_result.selected_module is None or config is None:
+    company_name = str(profile.get("company_name") or result.company_name if result else "")
+    if result is None or result.selected_module is None or config is None:
         return {
             "Acceptance": [],
             "USCI": str(profile.get("credit_code") or ""),
@@ -35,7 +35,7 @@ def render_business_result_json(
             "AcceptanceResult": "低",
         }
 
-    selected = business_result.selected_module
+    selected = result.selected_module
     module_config = _module_config(config, selected.module_id)
     matched_labels = [item for item in selected.label_results if item.result == "matched"]
     matched_indicators = [
@@ -66,7 +66,7 @@ def render_business_result_json(
         ],
         "CoreBusinessAreas": _core_business_areas(profile),
         "AttributesNumber": selected.attributes_number,
-        "CompanyName": str(profile.get("company_name") or business_result.company_name),
+        "CompanyName": str(profile.get("company_name") or result.company_name),
         "IndicatorsNumber": selected.indicators_number,
         "MarketingPoint": _marketing_points(module_config, matched_labels),
         "Module": selected.module_name,
@@ -75,11 +75,11 @@ def render_business_result_json(
     }
 
 
-def _module_config(config: BusinessRecommendationConfig, module_id: str) -> BusinessModuleConfig | None:
+def _module_config(config: RecommendationConfig, module_id: str) -> ModuleConfig | None:
     return next((item for item in config.modules if item.module_id == module_id), None)
 
 
-def _marketing_points(module: BusinessModuleConfig | None, matched_labels: list[Any]) -> list[dict[str, Any]]:
+def _marketing_points(module: ModuleConfig | None, matched_labels: list[Any]) -> list[dict[str, Any]]:
     if module is None:
         return []
     points: list[dict[str, Any]] = []

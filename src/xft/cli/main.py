@@ -26,7 +26,7 @@ def _print_help() -> None:
                 "usage: xft <command> [options]",
                 "",
                 "commands:",
-                "  recommend    run product recommendation",
+                "  recommend    run business recommendation",
                 "  calibrate    run recommendation calibration",
                 "  warehouse    build DuckDB warehouse",
                 "  scenario     inspect or validate scenario bundles",

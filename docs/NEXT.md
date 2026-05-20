@@ -9,7 +9,7 @@
 推荐主线：
 
 ```text
-data_gather -> business_web_evidence -> business_recommend -> save
+data_gather -> web_evidence -> recommend -> save
 ```
 
 当前核心配置：
@@ -17,8 +17,8 @@ data_gather -> business_web_evidence -> business_recommend -> save
 ```text
 config/recommend/sales_recommendation/
   scenario.yaml
-  business_modules.yaml
-  business_modules.d/*.yaml
+  modules.yaml
+  modules.d/*.yaml
   web_search.yaml
 ```
 
@@ -26,8 +26,8 @@ config/recommend/sales_recommendation/
 
 ```text
 result.json
-business_label_result.json
-business_indicator_evidence.json
+label_result.json
+indicator_evidence.json
 profile.json
 decision_trace.json
 llm_calls.jsonl
@@ -60,14 +60,14 @@ warehouse web-import
 ```bash
 uv run xft scenario validate config/recommend/sales_recommendation
 uv run xft recommend --no-llm --scenario config/recommend/sales_recommendation "企业名称"
-uv run xft recommend --with-business-web --scenario config/recommend/sales_recommendation "企业名称"
+uv run xft recommend --with-web --scenario config/recommend/sales_recommendation "企业名称"
 ```
 
 关注点：
 
 - `result.json` 是唯一最终业务结果。
-- `business_label_result.json` 能解释每个模块、标签、指标。
-- `business_indicator_evidence.json` 能解释每个指标用了哪些本地或 Web 证据。
+- `label_result.json` 能解释每个模块、标签、指标。
+- `indicator_evidence.json` 能解释每个指标用了哪些本地或 Web 证据。
 - 不再出现旧产物 `dimension_analysis.json`、`internal_result.json`、`match_results.json`。
 
 ### 2. 业务配置调优
@@ -76,8 +76,8 @@ uv run xft recommend --with-business-web --scenario config/recommend/sales_recom
 
 | 想调什么 | 文件 |
 | --- | --- |
-| 全局分数、全局接受策略、模块目录 | `business_modules.yaml` |
-| 单个产品模块的标签、指标、话术、规则 | `business_modules.d/<模块名>.yaml` |
+| 全局分数、全局接受策略、模块目录 | `modules.yaml` |
+| 单个产品模块的标签、指标、话术、规则 | `modules.d/<模块名>.yaml` |
 | 业务 Web provider 和每次查询结果数量 | `web_search.yaml` |
 | 场景输出目录和业务 Web 缓存目录 | `scenario.yaml` |
 
@@ -91,7 +91,7 @@ uv run xft calibrate \
   --limit 10
 ```
 
-根据错配案例调整 `business_modules.d/*.yaml`。
+根据错配案例调整 `modules.d/*.yaml`。
 
 当前配置治理优先级：
 
@@ -105,8 +105,8 @@ uv run xft calibrate \
 
 建议：
 
-1. 选 2-3 家企业运行 `--with-business-web --llm-debug`。
-2. 人工检查 `business_web_trace.json` 和 `business_indicator_evidence.json`。
+1. 选 2-3 家企业运行 `--with-web --llm-debug`。
+2. 人工检查 `web_trace.json` 和 `indicator_evidence.json`。
 3. 根据噪声调整对应指标的 `web_search.when/effect/fixed_queries/auto`。
 4. 必要时调整 `web_search.yaml` 的 provider 或 `max_results_per_query`。
 
@@ -115,8 +115,8 @@ uv run xft calibrate \
 当前仓库只保留 `sales_recommendation` 正式场景。新增场景建议：
 
 1. 复制 `config/recommend/sales_recommendation/`。
-2. 保留 `scenario.yaml`、`business_modules.yaml`、`web_search.yaml` 结构。
-3. 为新场景维护独立 `business_modules.d/*.yaml`。
+2. 保留 `scenario.yaml`、`modules.yaml`、`web_search.yaml` 结构。
+3. 为新场景维护独立 `modules.d/*.yaml`。
 4. 用同一批企业对比不同场景的 `result.json`。
 
 ## 近期不做

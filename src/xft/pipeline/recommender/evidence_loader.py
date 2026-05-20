@@ -6,11 +6,11 @@ from typing import Any
 
 import duckdb
 
-from xft.pipeline.recommender.business_models import (
-    BusinessDataSourceConfig,
-    BusinessIndicatorConfig,
-    BusinessModuleConfig,
-    BusinessRecommendationConfig,
+from xft.pipeline.recommender.models import (
+    DataSourceConfig,
+    IndicatorConfig,
+    ModuleConfig,
+    RecommendationConfig,
 )
 from xft.utils.misc import contains, get_nested
 
@@ -32,14 +32,14 @@ ALLOWED_TABLE_FIELDS: dict[str, set[str]] = {
 }
 
 
-def indicator_key(module: BusinessModuleConfig, label_id: str, indicator: BusinessIndicatorConfig) -> str:
+def indicator_key(module: ModuleConfig, label_id: str, indicator: IndicatorConfig) -> str:
     """Return the stable key used for evidence maps and traces."""
     return f"{module.module_id}.{label_id}.{indicator.indicator_id}"
 
 
-def load_business_evidence(
+def load_evidence(
     *,
-    config: BusinessRecommendationConfig | None,
+    config: RecommendationConfig | None,
     warehouse_db: str,
     profile: dict[str, Any],
 ) -> dict[str, list[dict[str, Any]]]:
@@ -76,7 +76,7 @@ def load_business_evidence(
 def _load_source(
     conn: duckdb.DuckDBPyConnection,
     *,
-    source: BusinessDataSourceConfig,
+    source: DataSourceConfig,
     profile: dict[str, Any],
     credit_code: str,
 ) -> list[dict[str, Any]]:
@@ -87,7 +87,7 @@ def _load_source(
     return []
 
 
-def _field_evidence(source: BusinessDataSourceConfig, profile: dict[str, Any]) -> dict[str, Any]:
+def _field_evidence(source: DataSourceConfig, profile: dict[str, Any]) -> dict[str, Any]:
     value = get_nested(profile, source.path or "")
     matched = _source_matches(value=value, source=source)
     return {
@@ -105,7 +105,7 @@ def _field_evidence(source: BusinessDataSourceConfig, profile: dict[str, Any]) -
 def _table_evidence(
     conn: duckdb.DuckDBPyConnection,
     *,
-    source: BusinessDataSourceConfig,
+    source: DataSourceConfig,
     credit_code: str,
 ) -> list[dict[str, Any]]:
     table = source.table or ""
@@ -158,7 +158,7 @@ def _table_evidence(
     ]
 
 
-def _source_matches(*, value: Any, source: BusinessDataSourceConfig) -> bool:  # noqa: C901, PLR0911
+def _source_matches(*, value: Any, source: DataSourceConfig) -> bool:  # noqa: C901, PLR0911
     if source.op == "text_contains":
         keywords = source.keywords or ([str(source.value)] if source.value not in (None, "") else [])
         if not keywords:

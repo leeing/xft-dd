@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from xft.pipeline.recommender.business_models import (
-    BusinessIndicatorConfig,
-    BusinessResult,
-    BusinessWebSearchEffect,
-    BusinessWebSearchWhen,
+from xft.pipeline.recommender.models import (
+    IndicatorConfig,
+    Result,
+    WebSearchEffect,
+    WebSearchWhen,
 )
 
 
@@ -17,16 +17,16 @@ class WebSearchDecision:
     """Resolved Web search decision for one business indicator."""
 
     enabled: bool
-    when: BusinessWebSearchWhen
-    effect: BusinessWebSearchEffect
+    when: WebSearchWhen
+    effect: WebSearchEffect
     reason: str
 
 
 def should_search_indicator(  # noqa: PLR0911
     *,
-    indicator: BusinessIndicatorConfig,
+    indicator: IndicatorConfig,
     local_evidence: list[dict[str, object]],
-    rule_result: BusinessResult | None,
+    rule_result: Result | None,
 ) -> WebSearchDecision:
     """Resolve whether an indicator should execute Web search."""
     web = indicator.web_search
@@ -54,7 +54,7 @@ def should_search_indicator(  # noqa: PLR0911
     return WebSearchDecision(enabled=False, when=when, effect=effect, reason="local_evidence_sufficient")
 
 
-def _default_when(indicator: BusinessIndicatorConfig) -> BusinessWebSearchWhen:
+def _default_when(indicator: IndicatorConfig) -> WebSearchWhen:
     if indicator.evaluator == "llm_web":
         return "always"
     if indicator.evaluator == "rule":
@@ -62,7 +62,7 @@ def _default_when(indicator: BusinessIndicatorConfig) -> BusinessWebSearchWhen:
     return "insufficient"
 
 
-def _default_effect(indicator: BusinessIndicatorConfig) -> BusinessWebSearchEffect:
+def _default_effect(indicator: IndicatorConfig) -> WebSearchEffect:
     if indicator.evaluator == "rule":
         return "evidence_only"
     return "llm_evidence"

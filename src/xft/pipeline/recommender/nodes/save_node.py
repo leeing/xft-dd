@@ -5,8 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from xft.pipeline.recommender.business_result_renderer import render_business_result_json
+from xft.pipeline.recommender.evidence_utils import merge_indicator_evidence
 from xft.pipeline.recommender.report_renderer import render_report
+from xft.pipeline.recommender.result_renderer import render_result_json
 from xft.pipeline.recommender.state import RecommenderState
 from xft.progress import display
 from xft.utils.file_io import write_json, write_jsonl
@@ -42,9 +43,9 @@ async def save_node(state: RecommenderState) -> dict[str, object]:
     out_dir = Path(state["output_root"]) / state["run_id"]
     out_dir.mkdir(parents=True, exist_ok=True)
     profile_path = out_dir / "profile.json"
-    business_label_path = out_dir / "business_label_result.json"
-    business_indicator_evidence_path = out_dir / "business_indicator_evidence.json"
-    business_web_trace_path = out_dir / "business_web_trace.json"
+    business_label_path = out_dir / "label_result.json"
+    indicator_evidence_path = out_dir / "indicator_evidence.json"
+    web_trace_path = out_dir / "web_trace.json"
     llm_calls_path = out_dir / "llm_calls.jsonl"
     llm_metrics_path = out_dir / "llm_metrics.json"
     decision_trace_path = out_dir / "decision_trace.json"
@@ -55,18 +56,18 @@ async def save_node(state: RecommenderState) -> dict[str, object]:
     llm_events = state.get("llm_call_events", [])
     write_jsonl(llm_calls_path, llm_events)
     write_json(llm_metrics_path, _llm_metrics(llm_events))
-    business = state.get("business_recommendation")
+    business = state.get("recommendation")
     write_json(
-        business_indicator_evidence_path,
-        _merge_business_evidence(state.get("business_evidence", {}), state.get("business_web_evidence", {})),
+        indicator_evidence_path,
+        merge_indicator_evidence(state.get("evidence", {}), state.get("web_evidence", {})),
     )
-    write_json(business_web_trace_path, {"trace": state.get("business_web_trace", [])})
+    write_json(web_trace_path, {"trace": state.get("web_trace", [])})
     business_label_payload = business.model_dump() if business else {"warning": "business result not generated"}
     write_json(business_label_path, business_label_payload)
-    business_payload = render_business_result_json(
+    business_payload = render_result_json(
         profile=state.get("profile", {}),
-        business_result=business,
-        config=state.get("business_config"),
+        result=business,
+        config=state.get("modules_config"),
     )
     write_json(result_path, business_payload)
     write_json(decision_trace_path, _decision_trace(state, llm_events))
@@ -86,15 +87,15 @@ def _decision_trace(state: RecommenderState, llm_events: list[dict[str, Any]]) -
         "company_name": state["company_name"],
         "run_id": state["run_id"],
         "scenario_id": state.get("scenario_id"),
-        "business_web_trace": state.get("business_web_trace", []),
-        "business_rule_trace": _business_rule_trace(state),
+        "web_trace": state.get("web_trace", []),
+        "rule_trace": _rule_trace(state),
         "llm_call_trace": llm_events,
     }
 
 
-def _business_rule_trace(state: RecommenderState) -> list[dict[str, Any]]:
-    business = state.get("business_recommendation")
-    config = state.get("business_config")
+def _rule_trace(state: RecommenderState) -> list[dict[str, Any]]:
+    business = state.get("recommendation")
+    config = state.get("modules_config")
     if business is None or config is None:
         return []
     config_by_indicator = {
@@ -128,13 +129,3 @@ def _business_rule_trace(state: RecommenderState) -> list[dict[str, Any]]:
             }
         )
     return rows
-
-
-def _merge_business_evidence(
-    local: dict[str, list[dict[str, Any]]],
-    web: dict[str, list[dict[str, Any]]],
-) -> dict[str, list[dict[str, Any]]]:
-    merged = {key: list(value) for key, value in local.items()}
-    for key, items in web.items():
-        merged.setdefault(key, []).extend(items)
-    return merged

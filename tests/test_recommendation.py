@@ -3,18 +3,19 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
-import yaml
 import pytest
+import yaml
 
 from xft.core.search_models import SearchItem, make_item_id
-from xft.pipeline.recommender.business_config_loader import load_business_recommendation_config
-from xft.pipeline.recommender.business_evidence_loader import load_business_evidence
-from xft.pipeline.recommender.business_evaluator import evaluate_business_recommendation
-from xft.pipeline.recommender.business_models import BusinessRecommendationConfig
-from xft.pipeline.recommender.business_result_renderer import render_business_result_json
-from xft.pipeline.recommender.business_web_evidence import run_business_web_evidence
-from xft.pipeline.recommender.business_web_policy import should_search_indicator
+from xft.pipeline.recommender.config_loader import load_recommendation_config
+from xft.pipeline.recommender.evidence_loader import load_evidence
+from xft.pipeline.recommender.evaluator import evaluate_recommendation
+from xft.pipeline.recommender.models import RecommendationConfig
+from xft.pipeline.recommender.result_renderer import render_result_json
+from xft.pipeline.recommender.web_evidence import run_web_evidence
+from xft.pipeline.recommender.web_policy import should_search_indicator
 from xft.pipeline.recommender.graph import run_recommendation
 from xft.web.models import ProviderSearchResponse
 from xft.warehouse.prophet_loader import load_prophet_data
@@ -154,7 +155,7 @@ class _QueryEchoBusinessProvider:
         )
 
 
-def _write_business_web_config(tmp_path: Path) -> Path:
+def _write_web_config(tmp_path: Path) -> Path:
     path = tmp_path / "web_search.yaml"
     path.write_text(
         yaml.safe_dump(
@@ -180,8 +181,8 @@ def _write_business_web_config(tmp_path: Path) -> Path:
     return path
 
 
-async def test_business_recommendation_no_llm_generates_result_json_shape() -> None:
-    config = load_business_recommendation_config("config/recommend/sales_recommendation")
+async def test_recommendation_no_llm_generates_result_json_shape() -> None:
+    config = load_recommendation_config("config/recommend/sales_recommendation")
     assert config is not None
 
     profile = {
@@ -196,7 +197,7 @@ async def test_business_recommendation_no_llm_generates_result_json_shape() -> N
         "recent_recruitment_titles": ["区域销售经理", "渠道业务员", "售后维修工程师"],
     }
 
-    result = await evaluate_business_recommendation(
+    result = await evaluate_recommendation(
         config=config,
         company_name="广东泰琪丰电子有限公司",
         profile=profile,
@@ -211,7 +212,7 @@ async def test_business_recommendation_no_llm_generates_result_json_shape() -> N
     assert tech_cert.evaluator == "rule"
     assert tech_cert.result in {"matched", "not_matched"}
 
-    payload = render_business_result_json(profile=profile, business_result=result, config=config)
+    payload = render_result_json(profile=profile, result=result, config=config)
 
     assert payload["CompanyName"] == "广东泰琪丰电子有限公司"
     assert payload["USCI"] == "91440000MA5UW5Y08T"
@@ -222,11 +223,11 @@ async def test_business_recommendation_no_llm_generates_result_json_shape() -> N
     assert payload["MarketingPoint"]
 
 
-def test_business_config_loader_accepts_scenario_bundle() -> None:
-    config = load_business_recommendation_config("config/recommend/sales_recommendation")
+def test_modules_config_loader_accepts_scenario_bundle() -> None:
+    config = load_recommendation_config("config/recommend/sales_recommendation")
 
     assert config is not None
-    assert config.modules_dir == "business_modules.d"
+    assert config.modules_dir == "modules.d"
     module_ids = {module.module_id for module in config.modules}
     assert module_ids == {
         "假勤管理",
@@ -253,15 +254,15 @@ def test_business_config_loader_accepts_scenario_bundle() -> None:
     assert travel_counts == {"hybrid": 10, "llm_web": 3}
 
 
-def test_business_config_loader_discovers_module_files(tmp_path: Path) -> None:
+def test_modules_config_loader_discovers_module_files(tmp_path: Path) -> None:
     root = tmp_path / "scenario"
-    module_dir = root / "business_modules.d"
+    module_dir = root / "modules.d"
     module_dir.mkdir(parents=True)
-    (root / "business_modules.yaml").write_text(
+    (root / "modules.yaml").write_text(
         yaml.safe_dump(
             {
                 "acceptance_policy": {"levels": [{"result": "低", "min_matched_labels": 0, "conclusion": "低"}]},
-                "modules_dir": "business_modules.d",
+                "modules_dir": "modules.d",
             },
             allow_unicode=True,
         ),
@@ -293,14 +294,14 @@ def test_business_config_loader_discovers_module_files(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    config = load_business_recommendation_config(root)
+    config = load_recommendation_config(root)
 
     assert config is not None
     assert [module.module_id for module in config.modules] == ["attendance"]
 
 
 def test_web_search_policy_loads_for_llm_and_rule() -> None:
-    config = BusinessRecommendationConfig.model_validate(
+    config = RecommendationConfig.model_validate(
         {
             "acceptance_policy": {"levels": [{"result": "recommended", "min_matched_labels": 1, "conclusion": "ok"}]},
             "modules": [
@@ -359,7 +360,7 @@ def test_web_search_policy_loads_for_llm_and_rule() -> None:
 
 def test_web_policy_keeps_llm_web_web_first() -> None:
     indicator = (
-        BusinessRecommendationConfig.model_validate(
+        RecommendationConfig.model_validate(
             {
                 "acceptance_policy": {"levels": [{"result": "低", "min_matched_labels": 0, "conclusion": "低"}]},
                 "modules": [
@@ -400,7 +401,7 @@ def test_web_policy_keeps_llm_web_web_first() -> None:
 
 def test_web_policy_triggers_llm_when_insufficient() -> None:
     indicator = (
-        BusinessRecommendationConfig.model_validate(
+        RecommendationConfig.model_validate(
             {
                 "acceptance_policy": {"levels": [{"result": "低", "min_matched_labels": 0, "conclusion": "低"}]},
                 "modules": [
@@ -442,7 +443,7 @@ def test_web_policy_triggers_llm_when_insufficient() -> None:
 
 def test_web_policy_rule_not_matched_only_triggers_after_rule_miss() -> None:
     indicator = (
-        BusinessRecommendationConfig.model_validate(
+        RecommendationConfig.model_validate(
             {
                 "acceptance_policy": {"levels": [{"result": "低", "min_matched_labels": 0, "conclusion": "低"}]},
                 "modules": [
@@ -520,7 +521,7 @@ async def test_indicator_data_sources_load_and_drive_rule_result(tmp_path: Path)
         "credit_code": "91440000MA5UW5Y08T",
         "industry": "制造业",
     }
-    config = BusinessRecommendationConfig.model_validate(
+    config = RecommendationConfig.model_validate(
         {
             "acceptance_policy": {"levels": [{"result": "低", "min_matched_labels": 0, "conclusion": "低"}]},
             "modules": [
@@ -565,13 +566,13 @@ async def test_indicator_data_sources_load_and_drive_rule_result(tmp_path: Path)
             ],
         }
     )
-    evidence = load_business_evidence(config=config, warehouse_db=str(db), profile=profile)
+    evidence = load_evidence(config=config, warehouse_db=str(db), profile=profile)
 
-    result = await evaluate_business_recommendation(
+    result = await evaluate_recommendation(
         config=config,
         company_name="广东泰琪丰电子有限公司",
         profile=profile,
-        business_evidence=evidence,
+        evidence=evidence,
         use_llm=False,
     )
 
@@ -585,7 +586,7 @@ async def test_indicator_data_sources_load_and_drive_rule_result(tmp_path: Path)
 
 
 async def test_llm_web_fixed_queries_are_rendered_without_llm() -> None:
-    config = BusinessRecommendationConfig.model_validate(
+    config = RecommendationConfig.model_validate(
         {
             "acceptance_policy": {"levels": [{"result": "低", "min_matched_labels": 0, "conclusion": "低"}]},
             "modules": [
@@ -616,7 +617,7 @@ async def test_llm_web_fixed_queries_are_rendered_without_llm() -> None:
         }
     )
 
-    result = await evaluate_business_recommendation(
+    result = await evaluate_recommendation(
         config=config,
         company_name="测试公司",
         profile={"company_name": "测试公司"},
@@ -628,8 +629,8 @@ async def test_llm_web_fixed_queries_are_rendered_without_llm() -> None:
     assert [item["query"] for item in trace] == ["测试公司 海外代工", "测试公司 出口营收"]
 
 
-async def test_business_web_evidence_executes_fixed_queries(tmp_path: Path) -> None:
-    config = BusinessRecommendationConfig.model_validate(
+async def test_web_evidence_executes_fixed_queries(tmp_path: Path) -> None:
+    config = RecommendationConfig.model_validate(
         {
             "acceptance_policy": {"levels": [{"result": "低", "min_matched_labels": 0, "conclusion": "低"}]},
             "modules": [
@@ -661,11 +662,11 @@ async def test_business_web_evidence_executes_fixed_queries(tmp_path: Path) -> N
         }
     )
 
-    result = await run_business_web_evidence(
+    result = await run_web_evidence(
         config=config,
         company_name="测试公司",
         profile={"company_name": "测试公司", "credit_code": "91440000MA5UW5Y08T"},
-        web_config_path=str(_write_business_web_config(tmp_path)),
+        web_config_path=str(_write_web_config(tmp_path)),
         output_dir=tmp_path / "run",
         provider_factory=lambda _name, _config: _FakeBusinessProvider(),
         query_planner=lambda **_: [],
@@ -677,13 +678,13 @@ async def test_business_web_evidence_executes_fixed_queries(tmp_path: Path) -> N
     assert result.evidence[key][0]["source_type"] == "web"
     assert "海外代工新闻" in result.evidence[key][0]["evidence"]
     assert any(item.get("auto") is True and item.get("status") == "skipped" for item in result.trace)
-    assert (tmp_path / "run" / "business_web_queries.jsonl").exists()
-    assert (tmp_path / "run" / "business_web_results.jsonl").exists()
-    assert (tmp_path / "run" / "business_web_trace.json").exists()
+    assert (tmp_path / "run" / "web_queries.jsonl").exists()
+    assert (tmp_path / "run" / "web_results.jsonl").exists()
+    assert (tmp_path / "run" / "web_trace.json").exists()
 
 
-async def test_business_web_evidence_runs_llm_fixed_queries(tmp_path: Path) -> None:
-    config = BusinessRecommendationConfig.model_validate(
+async def test_web_evidence_runs_llm_fixed_queries(tmp_path: Path) -> None:
+    config = RecommendationConfig.model_validate(
         {
             "acceptance_policy": {"levels": [{"result": "低", "min_matched_labels": 0, "conclusion": "低"}]},
             "modules": [
@@ -714,11 +715,11 @@ async def test_business_web_evidence_runs_llm_fixed_queries(tmp_path: Path) -> N
         }
     )
 
-    result = await run_business_web_evidence(
+    result = await run_web_evidence(
         config=config,
         company_name="测试公司",
         profile={"company_name": "测试公司"},
-        web_config_path=str(_write_business_web_config(tmp_path)),
+        web_config_path=str(_write_web_config(tmp_path)),
         output_dir=tmp_path / "out",
         provider_factory=lambda _name, _config: _QueryEchoBusinessProvider(),
         refresh=True,
@@ -730,8 +731,74 @@ async def test_business_web_evidence_runs_llm_fixed_queries(tmp_path: Path) -> N
     assert result.trace[0]["trigger_reason"] == "local_evidence_insufficient"
 
 
-async def test_business_web_evidence_runs_auto_queries_after_fixed_queries(tmp_path: Path) -> None:
-    config = BusinessRecommendationConfig.model_validate(
+async def test_web_evidence_reuses_duplicate_query_per_indicator(tmp_path: Path) -> None:
+    config = RecommendationConfig.model_validate(
+        {
+            "acceptance_policy": {"levels": [{"result": "低", "min_matched_labels": 0, "conclusion": "低"}]},
+            "modules": [
+                {
+                    "module_id": "m",
+                    "module_name": "模块",
+                    "labels": [
+                        {
+                            "label_id": "a",
+                            "label_name": "标签A",
+                            "indicators": [
+                                {
+                                    "indicator_id": "overseas_oem",
+                                    "indicator_name": "海外代工",
+                                    "evaluator": "llm_web",
+                                    "standard": "存在海外代工业务线索",
+                                    "web_search": {"fixed_queries": ["{company_name} 海外代工"]},
+                                }
+                            ],
+                        },
+                        {
+                            "label_id": "b",
+                            "label_name": "标签B",
+                            "indicators": [
+                                {
+                                    "indicator_id": "overseas_oem",
+                                    "indicator_name": "海外代工",
+                                    "evaluator": "llm_web",
+                                    "standard": "存在海外代工业务线索",
+                                    "web_search": {"fixed_queries": ["{company_name} 海外代工"]},
+                                }
+                            ],
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+
+    calls = 0
+
+    class DuplicateQueryProvider(_FakeBusinessProvider):
+        async def search(self, query: str, *, dimension_id: str) -> ProviderSearchResponse:
+            nonlocal calls
+            calls += 1
+            return await super().search(query, dimension_id=dimension_id)
+
+    result = await run_web_evidence(
+        config=config,
+        company_name="测试公司",
+        profile={"company_name": "测试公司"},
+        web_config_path=str(_write_web_config(tmp_path)),
+        output_dir=tmp_path / "out",
+        provider_factory=lambda _name, _config: DuplicateQueryProvider(),
+        refresh=True,
+    )
+
+    assert calls == 1
+    assert result.queries == 2
+    assert "m.a.overseas_oem" in result.evidence
+    assert "m.b.overseas_oem" in result.evidence
+    assert {row["indicator_key"] for row in result.trace} == {"m.a.overseas_oem", "m.b.overseas_oem"}
+
+
+async def test_web_evidence_runs_auto_queries_after_fixed_queries(tmp_path: Path) -> None:
+    config = RecommendationConfig.model_validate(
         {
             "acceptance_policy": {"levels": [{"result": "低", "min_matched_labels": 0, "conclusion": "低"}]},
             "modules": [
@@ -768,11 +835,11 @@ async def test_business_web_evidence_runs_auto_queries_after_fixed_queries(tmp_p
     async def fake_query_planner(**kwargs: object) -> list[str]:
         return ["测试公司 个税 管理 招聘"]
 
-    result = await run_business_web_evidence(
+    result = await run_web_evidence(
         config=config,
         company_name="测试公司",
         profile={"company_name": "测试公司"},
-        web_config_path=str(_write_business_web_config(tmp_path)),
+        web_config_path=str(_write_web_config(tmp_path)),
         output_dir=tmp_path / "out",
         provider_factory=lambda _name, _config: _FakeBusinessProvider(),
         query_planner=fake_query_planner,
@@ -784,7 +851,7 @@ async def test_business_web_evidence_runs_auto_queries_after_fixed_queries(tmp_p
 
 
 async def test_plan_auto_queries_with_llm_returns_bounded_queries(monkeypatch: pytest.MonkeyPatch) -> None:
-    from xft.pipeline.recommender.business_web_evidence import _plan_auto_queries_with_llm
+    from xft.pipeline.recommender.web_evidence import _plan_auto_queries_with_llm
 
     class FakeMessage:
         content = '{"queries": ["测试公司 差旅 招聘", "测试公司 费控 系统", "多余 查询"]}'
@@ -805,11 +872,11 @@ async def test_plan_auto_queries_with_llm_returns_bounded_queries(monkeypatch: p
     def fake_client() -> FakeClient:
         return FakeClient()
 
-    monkeypatch.setattr("xft.pipeline.recommender.business_web_evidence.get_ai_client", fake_client)
-    monkeypatch.setattr("xft.pipeline.recommender.business_web_evidence.settings.llm_api_key", "test")
+    monkeypatch.setattr("xft.pipeline.recommender.web_evidence.get_ai_client", fake_client)
+    monkeypatch.setattr("xft.pipeline.recommender.web_evidence.settings.llm_api_key", "test")
 
     indicator = (
-        BusinessRecommendationConfig.model_validate(
+        RecommendationConfig.model_validate(
             {
                 "acceptance_policy": {"levels": [{"result": "低", "min_matched_labels": 0, "conclusion": "低"}]},
                 "modules": [
@@ -860,7 +927,7 @@ async def test_plan_auto_queries_with_llm_returns_bounded_queries(monkeypatch: p
 async def test_plan_auto_queries_coerces_single_string_and_includes_indicator_terms(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from xft.pipeline.recommender.business_web_evidence import _plan_auto_queries_with_llm
+    from xft.pipeline.recommender.web_evidence import _plan_auto_queries_with_llm
 
     seen_kwargs: dict[str, object] = {}
 
@@ -881,11 +948,11 @@ async def test_plan_auto_queries_coerces_single_string_and_includes_indicator_te
     class FakeClient:
         chat = FakeChat()
 
-    monkeypatch.setattr("xft.pipeline.recommender.business_web_evidence.get_ai_client", FakeClient)
-    monkeypatch.setattr("xft.pipeline.recommender.business_web_evidence.settings.llm_api_key", "test")
+    monkeypatch.setattr("xft.pipeline.recommender.web_evidence.get_ai_client", FakeClient)
+    monkeypatch.setattr("xft.pipeline.recommender.web_evidence.settings.llm_api_key", "test")
 
     indicator = (
-        BusinessRecommendationConfig.model_validate(
+        RecommendationConfig.model_validate(
             {
                 "acceptance_policy": {"levels": [{"result": "低", "min_matched_labels": 0, "conclusion": "低"}]},
                 "modules": [
@@ -934,8 +1001,8 @@ async def test_plan_auto_queries_coerces_single_string_and_includes_indicator_te
     assert seen_kwargs["response_format"] == {"type": "json_object"}
 
 
-async def test_business_web_evidence_filters_results_for_other_companies(tmp_path: Path) -> None:
-    config = BusinessRecommendationConfig.model_validate(
+async def test_web_evidence_filters_results_for_other_companies(tmp_path: Path) -> None:
+    config = RecommendationConfig.model_validate(
         {
             "acceptance_policy": {"levels": [{"result": "低", "min_matched_labels": 0, "conclusion": "低"}]},
             "modules": [
@@ -962,11 +1029,11 @@ async def test_business_web_evidence_filters_results_for_other_companies(tmp_pat
         }
     )
 
-    result = await run_business_web_evidence(
+    result = await run_web_evidence(
         config=config,
         company_name="测试公司",
         profile={"company_name": "测试公司", "credit_code": "91440000MA5UW5Y08T"},
-        web_config_path=str(_write_business_web_config(tmp_path)),
+        web_config_path=str(_write_web_config(tmp_path)),
         output_dir=tmp_path / "out",
         provider_factory=lambda _name, _config: _NoisyBusinessProvider(),
         refresh=True,
@@ -979,8 +1046,8 @@ async def test_business_web_evidence_filters_results_for_other_companies(tmp_pat
     assert result.trace[0]["filtered_result_count"] == 1
 
 
-async def test_business_web_evidence_filters_company_only_indicator_noise(tmp_path: Path) -> None:
-    config = BusinessRecommendationConfig.model_validate(
+async def test_web_evidence_filters_company_only_indicator_noise(tmp_path: Path) -> None:
+    config = RecommendationConfig.model_validate(
         {
             "acceptance_policy": {"levels": [{"result": "低", "min_matched_labels": 0, "conclusion": "低"}]},
             "modules": [
@@ -1008,11 +1075,11 @@ async def test_business_web_evidence_filters_company_only_indicator_noise(tmp_pa
         }
     )
 
-    result = await run_business_web_evidence(
+    result = await run_web_evidence(
         config=config,
         company_name="测试公司",
         profile={"company_name": "测试公司", "credit_code": "91440000MA5UW5Y08T"},
-        web_config_path=str(_write_business_web_config(tmp_path)),
+        web_config_path=str(_write_web_config(tmp_path)),
         output_dir=tmp_path / "run",
         provider_factory=lambda _name, _config: _CompanyOnlyBusinessProvider(),
         query_planner=lambda **_: [],
@@ -1023,8 +1090,8 @@ async def test_business_web_evidence_filters_company_only_indicator_noise(tmp_pa
     assert result.trace[0]["filtered_result_count"] == 1
 
 
-async def test_business_web_evidence_feeds_indicator_result() -> None:
-    config = BusinessRecommendationConfig.model_validate(
+async def test_web_evidence_feeds_indicator_result() -> None:
+    config = RecommendationConfig.model_validate(
         {
             "acceptance_policy": {"levels": [{"result": "低", "min_matched_labels": 0, "conclusion": "低"}]},
             "modules": [
@@ -1065,12 +1132,12 @@ async def test_business_web_evidence_feeds_indicator_result() -> None:
     }
     trace = [{"indicator_key": key, "query": "测试公司 海外代工", "result_count": 1}]
 
-    result = await evaluate_business_recommendation(
+    result = await evaluate_recommendation(
         config=config,
         company_name="测试公司",
         profile={"company_name": "测试公司"},
-        business_evidence=evidence,
-        business_web_trace=trace,
+        evidence=evidence,
+        web_trace=trace,
         use_llm=False,
     )
 
@@ -1082,7 +1149,7 @@ async def test_business_web_evidence_feeds_indicator_result() -> None:
 
 
 async def test_llm_web_without_web_evidence_skips_llm(monkeypatch: pytest.MonkeyPatch) -> None:
-    config = BusinessRecommendationConfig.model_validate(
+    config = RecommendationConfig.model_validate(
         {
             "acceptance_policy": {"levels": [{"result": "低", "min_matched_labels": 0, "conclusion": "低"}]},
             "modules": [
@@ -1114,14 +1181,14 @@ async def test_llm_web_without_web_evidence_skips_llm(monkeypatch: pytest.Monkey
         msg = "llm_web without web evidence should not call LLM"
         raise AssertionError(msg)
 
-    monkeypatch.setattr("xft.pipeline.recommender.business_evaluator.get_ai_client", fail_get_ai_client)
-    monkeypatch.setattr("xft.pipeline.recommender.business_evaluator.settings.llm_api_key", "test")
+    monkeypatch.setattr("xft.pipeline.recommender.evaluator.get_ai_client", fail_get_ai_client)
+    monkeypatch.setattr("xft.pipeline.recommender.evaluator.settings.llm_api_key", "test")
 
-    result = await evaluate_business_recommendation(
+    result = await evaluate_recommendation(
         config=config,
         company_name="测试公司",
         profile={"company_name": "测试公司"},
-        business_evidence={},
+        evidence={},
         use_llm=True,
     )
 
@@ -1132,8 +1199,60 @@ async def test_llm_web_without_web_evidence_skips_llm(monkeypatch: pytest.Monkey
     assert "Web 证据不足" in indicator.current_status
 
 
+async def test_business_evaluator_records_llm_failure_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    config = RecommendationConfig.model_validate(
+        {
+            "acceptance_policy": {"levels": [{"result": "低", "min_matched_labels": 0, "conclusion": "低"}]},
+            "modules": [
+                {
+                    "module_id": "m",
+                    "module_name": "模块",
+                    "labels": [
+                        {
+                            "label_id": "l",
+                            "label_name": "标签",
+                            "indicators": [
+                                {
+                                    "indicator_id": "i",
+                                    "indicator_name": "指标",
+                                    "evaluator": "llm",
+                                    "standard": "判断公开证据",
+                                    "prompt": "判断公开证据。",
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+    async def fail_completion(*_args: object, **_kwargs: object) -> object:
+        msg = "boom"
+        raise RuntimeError(msg)
+
+    monkeypatch.setattr("xft.pipeline.recommender.evaluator.settings.llm_api_key", "test")
+    monkeypatch.setattr("xft.pipeline.recommender.evaluator.create_json_chat_completion", fail_completion)
+
+    events: list[dict[str, Any]] = []
+    result = await evaluate_recommendation(
+        config=config,
+        company_name="测试公司",
+        profile={"company_name": "测试公司"},
+        evidence={},
+        use_llm=True,
+        llm_events=events,
+    )
+
+    assert result is not None
+    assert len(events) == 1
+    assert events[0]["status"] == "failed"
+    assert events[0]["name"] == "m.l.i"
+    assert result.warnings == ["m.l.i: RuntimeError: boom"]
+
+
 async def test_rule_web_evidence_can_only_raise_to_possible() -> None:
-    config = BusinessRecommendationConfig.model_validate(
+    config = RecommendationConfig.model_validate(
         {
             "acceptance_policy": {"levels": [{"result": "低", "min_matched_labels": 0, "conclusion": "低"}]},
             "modules": [
@@ -1164,7 +1283,7 @@ async def test_rule_web_evidence_can_only_raise_to_possible() -> None:
             ],
         }
     )
-    business_evidence = {
+    evidence = {
         "travel.travel_need.industry": [
             {
                 "source_type": "web",
@@ -1175,11 +1294,11 @@ async def test_rule_web_evidence_can_only_raise_to_possible() -> None:
         ]
     }
 
-    result = await evaluate_business_recommendation(
+    result = await evaluate_recommendation(
         config=config,
         company_name="测试公司",
         profile={"company_name": "测试公司", "basic": {"industry": "软件服务"}},
-        business_evidence=business_evidence,
+        evidence=evidence,
         use_llm=False,
     )
 
@@ -1191,7 +1310,7 @@ async def test_rule_web_evidence_can_only_raise_to_possible() -> None:
 
 
 async def test_llm_validation_error_falls_back_to_unknown_not_matched(monkeypatch: pytest.MonkeyPatch) -> None:
-    config = BusinessRecommendationConfig.model_validate(
+    config = RecommendationConfig.model_validate(
         {
             "acceptance_policy": {
                 "levels": [
@@ -1243,14 +1362,14 @@ async def test_llm_validation_error_falls_back_to_unknown_not_matched(monkeypatc
     class FakeClient:
         chat = FakeChat()
 
-    monkeypatch.setattr("xft.pipeline.recommender.business_evaluator.get_ai_client", FakeClient)
-    monkeypatch.setattr("xft.pipeline.recommender.business_evaluator.settings.llm_api_key", "test")
+    monkeypatch.setattr("xft.pipeline.recommender.evaluator.get_ai_client", FakeClient)
+    monkeypatch.setattr("xft.pipeline.recommender.evaluator.settings.llm_api_key", "test")
 
-    result = await evaluate_business_recommendation(
+    result = await evaluate_recommendation(
         config=config,
         company_name="测试公司",
         profile={"company_name": "测试公司", "branch_count": 0, "notes": "分支机构字段仅为指标名"},
-        business_evidence={
+        evidence={
             "attendance.branches.branch": [
                 {"source_type": "web", "matched": True, "evidence": "其他公司存在分支机构。"}
             ]
@@ -1267,7 +1386,7 @@ async def test_llm_validation_error_falls_back_to_unknown_not_matched(monkeypatc
 
 
 async def test_low_confidence_web_only_module_is_capped_below_high() -> None:
-    config = BusinessRecommendationConfig.model_validate(
+    config = RecommendationConfig.model_validate(
         {
             "acceptance_policy": {
                 "levels": [
@@ -1314,16 +1433,16 @@ async def test_low_confidence_web_only_module_is_capped_below_high() -> None:
             ],
         }
     )
-    business_evidence = {
+    evidence = {
         "travel.a.ia": [{"source_type": "web", "matched": True, "evidence": "测试公司疑似存在A。"}],
         "travel.b.ib": [{"source_type": "web", "matched": True, "evidence": "测试公司疑似存在B。"}],
     }
 
-    result = await evaluate_business_recommendation(
+    result = await evaluate_recommendation(
         config=config,
         company_name="测试公司",
         profile={"company_name": "测试公司"},
-        business_evidence=business_evidence,
+        evidence=evidence,
         use_llm=False,
     )
 
@@ -1366,14 +1485,14 @@ async def test_run_recommendation_business_first_ignores_dimension_outputs(tmp_p
                 "extends": str(Path("config/recommend/sales_recommendation/scenario.yaml").resolve()),
                 "id": "test",
                 "name": "test",
-                "business_modules_config": "business_modules.yaml",
+                "modules_config": "modules.yaml",
                 "output_dir": str(tmp_path / "runs"),
             },
             allow_unicode=True,
         ),
         encoding="utf-8",
     )
-    (scenario_dir / "business_modules.yaml").write_text(
+    (scenario_dir / "modules.yaml").write_text(
         yaml.safe_dump(
             {
                 "acceptance_policy": {"levels": [{"result": "低", "min_matched_labels": 0, "conclusion": "低"}]},

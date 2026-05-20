@@ -29,7 +29,7 @@ def test_xft_scenario_validate(capsys: pytest.CaptureFixture[str]) -> None:
     captured = capsys.readouterr()
     payload = json.loads(captured.out)
     assert payload["scenario_id"] == "sales_recommendation"
-    assert payload["business_modules"] == 7
+    assert payload["modules"] == 7
     assert "dimensions" not in payload
 
 
@@ -40,7 +40,7 @@ def test_xft_scenario_inspect_writes_output(tmp_path: Path) -> None:
 
     payload = json.loads(output.read_text(encoding="utf-8"))
     assert payload["id"] == "sales_recommendation"
-    assert "business_modules_path" in payload
+    assert "modules_path" in payload
 
 
 def test_recommend_help() -> None:
@@ -87,9 +87,9 @@ def test_recommend_smoke_command_uses_offline_no_llm(monkeypatch: pytest.MonkeyP
                 "--llm-debug",
                 "--llm-concurrency",
                 "2",
-                "--with-business-web",
-                "--business-web-refresh",
-                "--business-web-provider",
+                "--with-web",
+                "--web-refresh",
+                "--web-provider",
                 "fake_search",
                 "烟测公司",
             ]
@@ -100,6 +100,6 @@ def test_recommend_smoke_command_uses_offline_no_llm(monkeypatch: pytest.MonkeyP
     assert captured["use_llm"] is False
     assert captured["llm_debug"] is True
     assert captured["llm_concurrency"] == 2
-    assert captured["with_business_web"] is True
-    assert captured["refresh_business_web"] is True
-    assert captured["business_web_providers"] == ["fake_search"]
+    assert captured["with_web"] is True
+    assert captured["refresh_web"] is True
+    assert captured["web_providers"] == ["fake_search"]

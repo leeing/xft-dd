@@ -1,6 +1,6 @@
 # 业务评分规则
 
-当前推荐结果完全由 `business_modules.yaml` 和 `business_modules.d/*.yaml` 驱动。旧的产品评分引擎 `xft.scoring`、`products.yaml`、`scoring_policy.yaml` 已删除。
+当前推荐结果完全由 `modules.yaml` 和 `modules.d/*.yaml` 驱动。旧的产品评分引擎 `xft.scoring`、`products.yaml`、`scoring_policy.yaml` 已删除。
 
 ## 结果层级
 
@@ -51,7 +51,7 @@ flowchart TB
 
 ## 分数配置
 
-`business_modules.yaml` 配置全局分数映射：
+`modules.yaml` 配置全局分数映射：
 
 ```yaml
 scoring:
@@ -75,12 +75,12 @@ module.score = module.base_score + sum(label.score) + sum(indicator.score)
 
 再限制在 0-100。
 
-正式销售场景的模块定义在 `business_modules.d/*.yaml`：
+正式销售场景的模块定义在 `modules.d/*.yaml`：
 
 ```text
-business_modules.yaml        全局 scoring、acceptance_policy、modules_dir
-business_modules.d/假勤管理.yaml   单个业务模块
-business_modules.d/差旅报销.yaml   单个业务模块
+modules.yaml        全局 scoring、acceptance_policy、modules_dir
+modules.d/假勤管理.yaml   单个业务模块
+modules.d/差旅报销.yaml   单个业务模块
 ```
 
 新增模块时添加一个模块 YAML 文件；删除模块时删除对应文件。loader 会动态加载 `modules_dir` 下所有 `*.yaml`。
@@ -153,7 +153,7 @@ evidence_hints:
 LLM 输出会写入：
 
 ```text
-business_label_result.json
+label_result.json
 decision_trace.json
 llm_calls.jsonl
 llm_metrics.json
@@ -216,7 +216,7 @@ web_search:
 
 ## 指标级 Web Policy
 
-`web_search` 是指标级补证策略。它只在推荐命令带 `--with-business-web` 时执行。
+`web_search` 是指标级补证策略。它只在推荐命令带 `--with-web` 时执行。
 
 `llm_web` 适合必须查公开网页才能判断的指标，默认 Web-first；`llm/hybrid` 可在本地证据不足时补证；`rule` 可在规则未命中时补线索，但不能直接从 Web 证据变成 `matched`。
 
@@ -243,7 +243,7 @@ web_search:
 
 - `llm_web` 必须配置 `web_search`。
 - `fixed_queries` 优先执行；`auto.enabled: true` 时可由 LLM 生成少量补充查询。
-- 搜索结果会作为 `source_type=web` 的指标证据进入 `business_indicator_evidence.json`。
+- 搜索结果会作为 `source_type=web` 的指标证据进入 `indicator_evidence.json`。
 - `rule` 使用 `effect: possible_on_evidence` 时，Web 证据最多把结果提升到 `possible`，不会变成 `matched`。
 - Web 证据入库前会同时检查目标公司名/统一社会信用代码和指标相关词；只有公司相关但指标无关的泛页面会被过滤。
 - `llm_web` 没有实际 Web 证据时直接输出 `unknown`，不调用 LLM。
@@ -255,7 +255,7 @@ web_search:
 1. 先列出所有 `llm_web` 指标，检查是否已经有 `data_sources`。
 2. 有本地结构化证据的指标改为 `rule` 或 `hybrid`，并补齐 `text_contains.keywords`。
 3. 保留为 `llm_web` 的指标，必须把 `fixed_queries` 改成指标专用查询。
-4. 跑 `scenario validate` 和一家公司样本，检查 `business_indicator_evidence.json` 是否能解释每个命中。
+4. 跑 `scenario validate` 和一家公司样本，检查 `indicator_evidence.json` 是否能解释每个命中。
 5. 用 `calibrate` 对业务标注样本做错配复盘，再调整阈值、关键词和接受策略。
 
 ## 标签与模块
@@ -300,5 +300,5 @@ acceptance_policy:
 uv run xft scenario validate config/recommend/sales_recommendation
 uv run xft recommend --no-llm --scenario config/recommend/sales_recommendation "企业名称"
 uv run xft recommend --llm-debug --scenario config/recommend/sales_recommendation "企业名称"
-uv run xft recommend --with-business-web --scenario config/recommend/sales_recommendation "企业名称"
+uv run xft recommend --with-web --scenario config/recommend/sales_recommendation "企业名称"
 ```

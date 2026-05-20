@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from dataclasses import dataclass
 from time import perf_counter
 from typing import Any
 
@@ -21,17 +22,17 @@ from xft.ai.llm_trace import (
     print_llm_start,
     print_llm_success,
 )
-from xft.pipeline.recommender.business_models import (
-    BusinessConfidence,
-    BusinessIndicatorConfig,
-    BusinessIndicatorResult,
-    BusinessLabelConfig,
-    BusinessLabelResult,
-    BusinessModuleConfig,
-    BusinessModuleResult,
-    BusinessRecommendationConfig,
-    BusinessRecommendationResult,
-    BusinessResult,
+from xft.pipeline.recommender.models import (
+    Confidence,
+    IndicatorConfig,
+    IndicatorResult,
+    LabelConfig,
+    LabelResult,
+    ModuleConfig,
+    ModuleResult,
+    RecommendationConfig,
+    RecommendationResult,
+    Result,
 )
 from xft.progress import display
 from xft.settings import settings
@@ -42,8 +43,8 @@ MAX_EVIDENCE_ITEMS = 24
 
 
 class _LlmIndicatorPayload(BaseModel):
-    result: BusinessResult
-    confidence: BusinessConfidence
+    result: Result
+    confidence: Confidence
     current_status: str
     evidence: list[str] = Field(default_factory=list)
 
@@ -60,6 +61,23 @@ class _LlmIndicatorPayload(BaseModel):
         return [text] if text else []
 
 
+@dataclass
+class EvaluationContext:
+    config: RecommendationConfig
+    company_name: str
+    profile: dict[str, Any]
+    evidence: dict[str, list[dict[str, Any]]]
+    web_trace_by_indicator: dict[str, list[dict[str, Any]]]
+    use_llm: bool
+    llm_debug: bool
+    llm_events: list[dict[str, Any]]
+    semaphore: asyncio.Semaphore
+
+    @property
+    def llm_available(self) -> bool:
+        return self.use_llm and bool(settings.llm_api_key or settings.minimax_api_key)
+
+
 def _evidence_item_to_text(value: Any) -> str:
     if value in (None, ""):
         return ""
@@ -74,49 +92,44 @@ def _evidence_item_to_text(value: Any) -> str:
     return str(value).strip()
 
 
-async def evaluate_business_recommendation(  # noqa: PLR0913
+async def evaluate_recommendation(  # noqa: PLR0913
     *,
-    config: BusinessRecommendationConfig | None,
+    config: RecommendationConfig | None,
     company_name: str,
     profile: dict[str, Any],
-    business_evidence: dict[str, list[dict[str, Any]]] | None = None,
-    business_web_trace: list[dict[str, Any]] | None = None,
+    evidence: dict[str, list[dict[str, Any]]] | None = None,
+    web_trace: list[dict[str, Any]] | None = None,
     use_llm: bool,
     llm_debug: bool = False,
     llm_concurrency: int = 4,
     llm_events: list[dict[str, Any]] | None = None,
-) -> BusinessRecommendationResult | None:
+) -> RecommendationResult | None:
     """Evaluate the optional business recommendation layer."""
     if config is None:
         return None
 
     warnings: list[str] = []
-    modules: list[BusinessModuleResult] = []
-    all_indicators: list[BusinessIndicatorResult] = []
+    modules: list[ModuleResult] = []
+    all_indicators: list[IndicatorResult] = []
     concurrency = max(1, llm_concurrency)
     semaphore = asyncio.Semaphore(concurrency)
     llm_events = llm_events if llm_events is not None else []
-    business_evidence = business_evidence or {}
-    web_trace_by_indicator = _web_trace_by_indicator(business_web_trace or [])
+    evidence = evidence or {}
+    web_trace_by_indicator = _web_trace_by_indicator(web_trace or [])
     if llm_debug and use_llm and (settings.llm_api_key or settings.minimax_api_key):
         display.info(f"LLM 业务指标并发: {concurrency}")
-    module_results = await asyncio.gather(
-        *[
-            _evaluate_module(
-                config=config,
-                module=module,
-                company_name=company_name,
-                profile=profile,
-                business_evidence=business_evidence,
-                web_trace_by_indicator=web_trace_by_indicator,
-                use_llm=use_llm,
-                llm_debug=llm_debug,
-                llm_events=llm_events,
-                semaphore=semaphore,
-            )
-            for module in config.modules
-        ]
+    ctx = EvaluationContext(
+        config=config,
+        company_name=company_name,
+        profile=profile,
+        evidence=evidence,
+        web_trace_by_indicator=web_trace_by_indicator,
+        use_llm=use_llm,
+        llm_debug=llm_debug,
+        llm_events=llm_events,
+        semaphore=semaphore,
     )
+    module_results = await asyncio.gather(*[_evaluate_module(ctx=ctx, module=module) for module in config.modules])
     for module_result, module_warnings in module_results:
         warnings.extend(module_warnings)
         modules.append(module_result)
@@ -124,7 +137,7 @@ async def evaluate_business_recommendation(  # noqa: PLR0913
             all_indicators.extend(label.indicator_results)
 
     selected = _select_module(modules)
-    return BusinessRecommendationResult(
+    return RecommendationResult(
         company_name=str(profile.get("company_name") or company_name),
         selected_module=selected,
         modules=modules,
@@ -133,35 +146,19 @@ async def evaluate_business_recommendation(  # noqa: PLR0913
     )
 
 
-async def _evaluate_module(  # noqa: PLR0913
+async def _evaluate_module(
     *,
-    config: BusinessRecommendationConfig,
-    module: BusinessModuleConfig,
-    company_name: str,
-    profile: dict[str, Any],
-    business_evidence: dict[str, list[dict[str, Any]]],
-    web_trace_by_indicator: dict[str, list[dict[str, Any]]],
-    use_llm: bool,
-    llm_debug: bool,
-    llm_events: list[dict[str, Any]],
-    semaphore: asyncio.Semaphore,
-) -> tuple[BusinessModuleResult, list[str]]:
+    ctx: EvaluationContext,
+    module: ModuleConfig,
+) -> tuple[ModuleResult, list[str]]:
     warnings: list[str] = []
-    labels: list[BusinessLabelResult] = []
+    labels: list[LabelResult] = []
     label_results = await asyncio.gather(
         *[
             _evaluate_label(
-                config=config,
+                ctx=ctx,
                 module=module,
                 label=label,
-                company_name=company_name,
-                profile=profile,
-                business_evidence=business_evidence,
-                web_trace_by_indicator=web_trace_by_indicator,
-                use_llm=use_llm,
-                llm_debug=llm_debug,
-                llm_events=llm_events,
-                semaphore=semaphore,
             )
             for label in module.labels
         ]
@@ -172,9 +169,9 @@ async def _evaluate_module(  # noqa: PLR0913
 
     attributes_number = sum(1 for item in labels if item.result == "matched")
     indicators_number = sum(item.matched_indicators for item in labels)
-    acceptance_result, conclusion = _acceptance(config, module, attributes_number, indicators_number)
+    acceptance_result, conclusion = _acceptance(ctx.config, module, attributes_number, indicators_number)
     acceptance_result, conclusion = _cap_acceptance_for_confidence(
-        config=config,
+        config=ctx.config,
         module=module,
         labels=labels,
         acceptance_result=acceptance_result,
@@ -183,7 +180,7 @@ async def _evaluate_module(  # noqa: PLR0913
     )
     score = module.base_score + sum(item.score for item in labels)
     return (
-        BusinessModuleResult(
+        ModuleResult(
             module_id=module.module_id,
             module_name=module.module_name,
             score=score,
@@ -197,37 +194,21 @@ async def _evaluate_module(  # noqa: PLR0913
     )
 
 
-async def _evaluate_label(  # noqa: PLR0913
+async def _evaluate_label(
     *,
-    config: BusinessRecommendationConfig,
-    module: BusinessModuleConfig,
-    label: BusinessLabelConfig,
-    company_name: str,
-    profile: dict[str, Any],
-    business_evidence: dict[str, list[dict[str, Any]]],
-    web_trace_by_indicator: dict[str, list[dict[str, Any]]],
-    use_llm: bool,
-    llm_debug: bool,
-    llm_events: list[dict[str, Any]],
-    semaphore: asyncio.Semaphore,
-) -> tuple[BusinessLabelResult, list[str]]:
+    ctx: EvaluationContext,
+    module: ModuleConfig,
+    label: LabelConfig,
+) -> tuple[LabelResult, list[str]]:
     warnings: list[str] = []
-    indicators: list[BusinessIndicatorResult] = []
+    indicators: list[IndicatorResult] = []
     indicator_results = await asyncio.gather(
         *[
             _evaluate_indicator_with_fallback(
-                config=config,
+                ctx=ctx,
                 module=module,
                 label=label,
                 indicator=indicator,
-                company_name=company_name,
-                profile=profile,
-                business_evidence=business_evidence,
-                web_trace_by_indicator=web_trace_by_indicator,
-                use_llm=use_llm,
-                llm_debug=llm_debug,
-                llm_events=llm_events,
-                semaphore=semaphore,
             )
             for indicator in label.indicators
         ]
@@ -240,16 +221,16 @@ async def _evaluate_label(  # noqa: PLR0913
     matched = sum(1 for item in indicators if item.result == "matched")
     possible = sum(1 for item in indicators if item.result == "possible")
     if matched >= label.min_matched_indicators:
-        label_result: BusinessResult = "matched"
+        label_result: Result = "matched"
     elif possible or matched:
         label_result = "possible"
     elif all(item.result == "unknown" for item in indicators):
         label_result = "unknown"
     else:
         label_result = "not_matched"
-    score = config.scoring.label_scores.score_for(label_result)
+    score = ctx.config.scoring.label_scores.score_for(label_result)
     return (
-        BusinessLabelResult(
+        LabelResult(
             module_id=module.module_id,
             module_name=module.module_name,
             label_id=label.label_id,
@@ -265,34 +246,19 @@ async def _evaluate_label(  # noqa: PLR0913
     )
 
 
-async def _evaluate_indicator_with_fallback(  # noqa: PLR0913
+async def _evaluate_indicator_with_fallback(
     *,
-    config: BusinessRecommendationConfig,
-    module: BusinessModuleConfig,
-    label: BusinessLabelConfig,
-    indicator: BusinessIndicatorConfig,
-    company_name: str,
-    profile: dict[str, Any],
-    business_evidence: dict[str, list[dict[str, Any]]],
-    web_trace_by_indicator: dict[str, list[dict[str, Any]]],
-    use_llm: bool,
-    llm_debug: bool,
-    llm_events: list[dict[str, Any]],
-    semaphore: asyncio.Semaphore,
-) -> tuple[BusinessIndicatorResult, str | None]:
+    ctx: EvaluationContext,
+    module: ModuleConfig,
+    label: LabelConfig,
+    indicator: IndicatorConfig,
+) -> tuple[IndicatorResult, str | None]:
     try:
         result = await _evaluate_indicator(
-            config=config,
+            ctx=ctx,
             module=module,
             label=label,
             indicator=indicator,
-            company_name=company_name,
-            profile=profile,
-            business_evidence=business_evidence,
-            use_llm=use_llm,
-            llm_debug=llm_debug,
-            llm_events=llm_events,
-            semaphore=semaphore,
         )
     except (
         OpenAIError,
@@ -305,15 +271,12 @@ async def _evaluate_indicator_with_fallback(  # noqa: PLR0913
     ) as exc:
         recorded = bool(getattr(exc, "_xft_llm_event_recorded", False))
         should_record_failure = (
-            indicator.evaluator in ("llm", "hybrid", "llm_web")
-            and use_llm
-            and (settings.llm_api_key or settings.minimax_api_key)
-            and not recorded
+            indicator.evaluator in ("llm", "hybrid", "llm_web") and ctx.llm_available and not recorded
         )
         if should_record_failure:
-            llm_events.append(
+            ctx.llm_events.append(
                 llm_event(
-                    stage="business_indicator",
+                    stage="indicator",
                     name=_indicator_key(module, label, indicator),
                     model=settings.llm_model,
                     status="failed",
@@ -327,118 +290,97 @@ async def _evaluate_indicator_with_fallback(  # noqa: PLR0913
                     error=exc,
                 )
             )
-        if llm_debug and not recorded:
+        if ctx.llm_debug and not recorded:
             print_llm_failure(
                 title=f"业务指标:{_indicator_key(module, label, indicator)}",
                 elapsed_seconds=0,
                 error=exc,
                 fallback="本地 evidence_hints 兜底判断",
             )
-        indicator_evidence = _indicator_evidence(business_evidence, module, label, indicator)
-        if indicator.evaluator in ("llm", "llm_web", "hybrid") and use_llm:
+        indicator_evidence = _indicator_evidence(ctx.evidence, module, label, indicator)
+        if indicator.evaluator in ("llm", "llm_web", "hybrid") and ctx.use_llm:
             result = _llm_failure_indicator_result(
-                config=config,
+                config=ctx.config,
                 module=module,
                 label=label,
                 indicator=indicator,
-                profile=profile,
+                profile=ctx.profile,
                 indicator_evidence=indicator_evidence,
                 exc=exc,
             )
         else:
             result = _fallback_indicator_result(
-                config=config,
+                config=ctx.config,
                 module=module,
                 label=label,
                 indicator=indicator,
-                profile=profile,
+                profile=ctx.profile,
                 indicator_evidence=indicator_evidence,
             )
-        result = _with_actual_web_trace(result, web_trace_by_indicator, module, label, indicator)
+        result = _with_actual_web_trace(result, ctx.web_trace_by_indicator, module, label, indicator)
         return result, f"{_indicator_key(module, label, indicator)}: {exception_summary(exc)}"
     else:
-        return _with_actual_web_trace(result, web_trace_by_indicator, module, label, indicator), None
+        return _with_actual_web_trace(result, ctx.web_trace_by_indicator, module, label, indicator), None
 
 
-async def _evaluate_indicator(  # noqa: PLR0913
+async def _evaluate_indicator(
     *,
-    config: BusinessRecommendationConfig,
-    module: BusinessModuleConfig,
-    label: BusinessLabelConfig,
-    indicator: BusinessIndicatorConfig,
-    company_name: str,
-    profile: dict[str, Any],
-    business_evidence: dict[str, list[dict[str, Any]]],
-    use_llm: bool,
-    llm_debug: bool,
-    llm_events: list[dict[str, Any]],
-    semaphore: asyncio.Semaphore,
-) -> BusinessIndicatorResult:
-    indicator_evidence = _indicator_evidence(business_evidence, module, label, indicator)
+    ctx: EvaluationContext,
+    module: ModuleConfig,
+    label: LabelConfig,
+    indicator: IndicatorConfig,
+) -> IndicatorResult:
+    indicator_evidence = _indicator_evidence(ctx.evidence, module, label, indicator)
     if indicator.evaluator == "llm_web" and not _has_matched_web_evidence(indicator_evidence):
         return _llm_web_missing_evidence_indicator_result(
-            config=config,
+            config=ctx.config,
             module=module,
             label=label,
             indicator=indicator,
-            company_name=company_name,
+            company_name=ctx.company_name,
             indicator_evidence=indicator_evidence,
         )
     if indicator.evaluator == "rule":
-        return _evaluate_rule_indicator(config, module, label, indicator, profile, indicator_evidence)
+        return _evaluate_rule_indicator(ctx.config, module, label, indicator, ctx.profile, indicator_evidence)
     if indicator.evaluator == "hybrid":
         return await _evaluate_hybrid_indicator(
-            config=config,
+            ctx=ctx,
             module=module,
             label=label,
             indicator=indicator,
-            company_name=company_name,
-            profile=profile,
-            business_evidence=business_evidence,
-            use_llm=use_llm,
-            llm_debug=llm_debug,
-            llm_events=llm_events,
-            semaphore=semaphore,
         )
-    if use_llm and (settings.llm_api_key or settings.minimax_api_key):
-        async with semaphore:
+    if ctx.llm_available:
+        async with ctx.semaphore:
             return await _evaluate_llm_indicator(
-                config=config,
+                config=ctx.config,
                 module=module,
                 label=label,
                 indicator=indicator,
-                company_name=company_name,
-                profile=profile,
+                company_name=ctx.company_name,
+                profile=ctx.profile,
                 indicator_evidence=indicator_evidence,
-                llm_debug=llm_debug,
-                llm_events=llm_events,
+                llm_debug=ctx.llm_debug,
+                llm_events=ctx.llm_events,
             )
     return _fallback_indicator_result(
-        config=config,
+        config=ctx.config,
         module=module,
         label=label,
         indicator=indicator,
-        profile=profile,
+        profile=ctx.profile,
         indicator_evidence=indicator_evidence,
     )
 
 
-async def _evaluate_hybrid_indicator(  # noqa: PLR0913
+async def _evaluate_hybrid_indicator(
     *,
-    config: BusinessRecommendationConfig,
-    module: BusinessModuleConfig,
-    label: BusinessLabelConfig,
-    indicator: BusinessIndicatorConfig,
-    company_name: str,
-    profile: dict[str, Any],
-    business_evidence: dict[str, list[dict[str, Any]]],
-    use_llm: bool,
-    llm_debug: bool,
-    llm_events: list[dict[str, Any]],
-    semaphore: asyncio.Semaphore,
-) -> BusinessIndicatorResult:
-    indicator_evidence = _indicator_evidence(business_evidence, module, label, indicator)
-    rule_result = _evaluate_rule_indicator(config, module, label, indicator, profile, indicator_evidence)
+    ctx: EvaluationContext,
+    module: ModuleConfig,
+    label: LabelConfig,
+    indicator: IndicatorConfig,
+) -> IndicatorResult:
+    indicator_evidence = _indicator_evidence(ctx.evidence, module, label, indicator)
+    rule_result = _evaluate_rule_indicator(ctx.config, module, label, indicator, ctx.profile, indicator_evidence)
     trace: dict[str, Any] = {
         "merge_policy": indicator.merge_policy,
         "rule_result": rule_result.result,
@@ -455,13 +397,13 @@ async def _evaluate_hybrid_indicator(  # noqa: PLR0913
     if indicator.merge_policy == "require_both" and rule_result.result != "matched":
         trace["final_decision"] = "rule did not match, require_both failed without llm"
         return rule_result.model_copy(update={"evaluator": "hybrid", "hybrid_trace": trace})
-    if not (use_llm and (settings.llm_api_key or settings.minimax_api_key)):
+    if not ctx.llm_available:
         fallback = _fallback_indicator_result(
-            config=config,
+            config=ctx.config,
             module=module,
             label=label,
             indicator=indicator,
-            profile=profile,
+            profile=ctx.profile,
             indicator_evidence=indicator_evidence,
         )
         trace.update(
@@ -475,17 +417,17 @@ async def _evaluate_hybrid_indicator(  # noqa: PLR0913
         if rule_result.result == "matched":
             return rule_result.model_copy(update={"evaluator": "hybrid", "hybrid_trace": trace})
         return fallback.model_copy(update={"evaluator": "hybrid", "hybrid_trace": trace})
-    async with semaphore:
+    async with ctx.semaphore:
         llm_result = await _evaluate_llm_indicator(
-            config=config,
+            config=ctx.config,
             module=module,
             label=label,
             indicator=indicator,
-            company_name=company_name,
-            profile=profile,
+            company_name=ctx.company_name,
+            profile=ctx.profile,
             indicator_evidence=indicator_evidence,
-            llm_debug=llm_debug,
-            llm_events=llm_events,
+            llm_debug=ctx.llm_debug,
+            llm_events=ctx.llm_events,
         )
     trace.update(
         {
@@ -501,22 +443,22 @@ async def _evaluate_hybrid_indicator(  # noqa: PLR0913
     return final.model_copy(
         update={
             "evaluator": "hybrid",
-            "score": config.scoring.indicator_scores.score_for(final.result),
+            "score": ctx.config.scoring.indicator_scores.score_for(final.result),
             "hybrid_trace": trace,
         }
     )
 
 
 def _merge_hybrid_result(
-    rule_result: BusinessIndicatorResult,
-    llm_result: BusinessIndicatorResult,
+    rule_result: IndicatorResult,
+    llm_result: IndicatorResult,
     *,
     policy: str,
-) -> BusinessIndicatorResult:
+) -> IndicatorResult:
     if policy == "llm_confirm":
         if rule_result.result == "matched" and llm_result.result == "not_matched":
-            result: BusinessResult = "possible"
-            confidence: BusinessConfidence = "中"
+            result: Result = "possible"
+            confidence: Confidence = "中"
         elif rule_result.result == "matched" and llm_result.result == "unknown":
             result = "possible"
             confidence = "中"
@@ -544,17 +486,17 @@ def _hybrid_decision_text(rule_result: str, llm_result: str, policy: str) -> str
 
 
 def _evaluate_rule_indicator(  # noqa: PLR0913
-    config: BusinessRecommendationConfig,
-    module: BusinessModuleConfig,
-    label: BusinessLabelConfig,
-    indicator: BusinessIndicatorConfig,
+    config: RecommendationConfig,
+    module: ModuleConfig,
+    label: LabelConfig,
+    indicator: IndicatorConfig,
     profile: dict[str, Any],
     indicator_evidence: list[dict[str, Any]] | None = None,
-) -> BusinessIndicatorResult:
+) -> IndicatorResult:
     indicator_evidence = indicator_evidence or []
     if indicator.data_sources:
         matched = any(bool(item.get("matched")) for item in indicator_evidence)
-        data_source_result: BusinessResult = "matched" if matched else "not_matched"
+        data_source_result: Result = "matched" if matched else "not_matched"
         evidence = [str(item.get("evidence")) for item in indicator_evidence if item.get("evidence")]
         current_status = "；".join(evidence[:2]) if evidence else "未命中已配置的本地数据源。"
         return _indicator_result(
@@ -573,7 +515,7 @@ def _evaluate_rule_indicator(  # noqa: PLR0913
         raise ValueError(msg)
     value = get_nested(profile, indicator.rule.source_field)
     matched = _compare(value, indicator.rule.op, indicator.rule.value)
-    rule_result: BusinessResult = "matched" if matched else "not_matched"
+    rule_result: Result = "matched" if matched else "not_matched"
     evidence = [f"{indicator.rule.source_field} = {_display_value(value)}"] if value not in (None, "", [], {}) else []
     current_status = _rule_current_status(indicator, value, matched=matched)
     web_evidence = [
@@ -622,16 +564,16 @@ def _evaluate_rule_indicator(  # noqa: PLR0913
 
 async def _evaluate_llm_indicator(  # noqa: PLR0913
     *,
-    config: BusinessRecommendationConfig,
-    module: BusinessModuleConfig,
-    label: BusinessLabelConfig,
-    indicator: BusinessIndicatorConfig,
+    config: RecommendationConfig,
+    module: ModuleConfig,
+    label: LabelConfig,
+    indicator: IndicatorConfig,
     company_name: str,
     profile: dict[str, Any],
     indicator_evidence: list[dict[str, Any]] | None = None,
     llm_debug: bool,
     llm_events: list[dict[str, Any]],
-) -> BusinessIndicatorResult:
+) -> IndicatorResult:
     key = _indicator_key(module, label, indicator)
     indicator_evidence = indicator_evidence or []
     web_trace = _render_web_search_trace(company_name=company_name, indicator=indicator)
@@ -683,7 +625,7 @@ async def _evaluate_llm_indicator(  # noqa: PLR0913
     except (OpenAIError, json.JSONDecodeError, ValidationError, OSError, RuntimeError, TypeError, ValueError) as exc:
         llm_events.append(
             llm_event(
-                stage="business_indicator",
+                stage="indicator",
                 name=key,
                 model=settings.llm_model,
                 status="failed",
@@ -706,7 +648,7 @@ async def _evaluate_llm_indicator(  # noqa: PLR0913
         raise
     llm_events.append(
         llm_event(
-            stage="business_indicator",
+            stage="indicator",
             name=key,
             model=settings.llm_model,
             status="success",
@@ -744,20 +686,20 @@ async def _evaluate_llm_indicator(  # noqa: PLR0913
 
 
 def _indicator_key(
-    module: BusinessModuleConfig,
-    label: BusinessLabelConfig,
-    indicator: BusinessIndicatorConfig,
+    module: ModuleConfig,
+    label: LabelConfig,
+    indicator: IndicatorConfig,
 ) -> str:
     return f"{module.module_id}.{label.label_id}.{indicator.indicator_id}"
 
 
 def _indicator_evidence(
-    business_evidence: dict[str, list[dict[str, Any]]],
-    module: BusinessModuleConfig,
-    label: BusinessLabelConfig,
-    indicator: BusinessIndicatorConfig,
+    evidence: dict[str, list[dict[str, Any]]],
+    module: ModuleConfig,
+    label: LabelConfig,
+    indicator: IndicatorConfig,
 ) -> list[dict[str, Any]]:
-    return business_evidence.get(_indicator_key(module, label, indicator), [])
+    return evidence.get(_indicator_key(module, label, indicator), [])
 
 
 def _has_matched_web_evidence(items: list[dict[str, Any]]) -> bool:
@@ -774,12 +716,12 @@ def _web_trace_by_indicator(rows: list[dict[str, Any]]) -> dict[str, list[dict[s
 
 
 def _with_actual_web_trace(
-    result: BusinessIndicatorResult,
+    result: IndicatorResult,
     grouped: dict[str, list[dict[str, Any]]],
-    module: BusinessModuleConfig,
-    label: BusinessLabelConfig,
-    indicator: BusinessIndicatorConfig,
-) -> BusinessIndicatorResult:
+    module: ModuleConfig,
+    label: LabelConfig,
+    indicator: IndicatorConfig,
+) -> IndicatorResult:
     actual = grouped.get(_indicator_key(module, label, indicator), [])
     if not actual:
         return result
@@ -801,7 +743,7 @@ def _compact_indicator_evidence(items: list[dict[str, Any]]) -> list[dict[str, A
     ]
 
 
-def _render_web_search_trace(company_name: str, indicator: BusinessIndicatorConfig) -> list[dict[str, Any]]:
+def _render_web_search_trace(company_name: str, indicator: IndicatorConfig) -> list[dict[str, Any]]:
     if indicator.web_search is None:
         return []
     trace: list[dict[str, Any]] = [
@@ -833,21 +775,21 @@ def _render_web_search_trace(company_name: str, indicator: BusinessIndicatorConf
 
 def _fallback_indicator_result(  # noqa: PLR0913
     *,
-    config: BusinessRecommendationConfig,
-    module: BusinessModuleConfig,
-    label: BusinessLabelConfig,
-    indicator: BusinessIndicatorConfig,
+    config: RecommendationConfig,
+    module: ModuleConfig,
+    label: LabelConfig,
+    indicator: IndicatorConfig,
     profile: dict[str, Any],
     indicator_evidence: list[dict[str, Any]] | None = None,
-) -> BusinessIndicatorResult:
+) -> IndicatorResult:
     indicator_evidence = indicator_evidence or []
     source_evidence = [
         str(item.get("evidence")) for item in indicator_evidence if item.get("matched") and item.get("evidence")
     ]
     evidence = source_evidence or _hint_evidence(profile, indicator.evidence_hints)
     if evidence:
-        result: BusinessResult = "matched"
-        confidence: BusinessConfidence = "中"
+        result: Result = "matched"
+        confidence: Confidence = "中"
         current_status = "；".join(evidence[:2])
     else:
         result = "unknown"
@@ -872,14 +814,14 @@ def _fallback_indicator_result(  # noqa: PLR0913
 
 def _llm_failure_indicator_result(  # noqa: PLR0913
     *,
-    config: BusinessRecommendationConfig,
-    module: BusinessModuleConfig,
-    label: BusinessLabelConfig,
-    indicator: BusinessIndicatorConfig,
+    config: RecommendationConfig,
+    module: ModuleConfig,
+    label: LabelConfig,
+    indicator: IndicatorConfig,
     profile: dict[str, Any],
     indicator_evidence: list[dict[str, Any]],
     exc: Exception,
-) -> BusinessIndicatorResult:
+) -> IndicatorResult:
     return _indicator_result(
         config=config,
         module=module,
@@ -899,13 +841,13 @@ def _llm_failure_indicator_result(  # noqa: PLR0913
 
 def _llm_web_missing_evidence_indicator_result(  # noqa: PLR0913
     *,
-    config: BusinessRecommendationConfig,
-    module: BusinessModuleConfig,
-    label: BusinessLabelConfig,
-    indicator: BusinessIndicatorConfig,
+    config: RecommendationConfig,
+    module: ModuleConfig,
+    label: LabelConfig,
+    indicator: IndicatorConfig,
     company_name: str,
     indicator_evidence: list[dict[str, Any]],
-) -> BusinessIndicatorResult:
+) -> IndicatorResult:
     return _indicator_result(
         config=config,
         module=module,
@@ -922,19 +864,19 @@ def _llm_web_missing_evidence_indicator_result(  # noqa: PLR0913
 
 def _indicator_result(  # noqa: PLR0913
     *,
-    config: BusinessRecommendationConfig,
-    module: BusinessModuleConfig,
-    label: BusinessLabelConfig,
-    indicator: BusinessIndicatorConfig,
-    result: BusinessResult,
-    confidence: BusinessConfidence,
+    config: RecommendationConfig,
+    module: ModuleConfig,
+    label: LabelConfig,
+    indicator: IndicatorConfig,
+    result: Result,
+    confidence: Confidence,
     current_status: str,
     evidence: list[str],
     evidence_details: list[dict[str, Any]] | None = None,
     web_search_trace: list[dict[str, Any]] | None = None,
     hybrid_trace: dict[str, Any] | None = None,
-) -> BusinessIndicatorResult:
-    return BusinessIndicatorResult(
+) -> IndicatorResult:
+    return IndicatorResult(
         module_id=module.module_id,
         module_name=module.module_name,
         label_id=label.label_id,
@@ -955,8 +897,8 @@ def _indicator_result(  # noqa: PLR0913
 
 
 def _acceptance(
-    config: BusinessRecommendationConfig,
-    module: BusinessModuleConfig,
+    config: RecommendationConfig,
+    module: ModuleConfig,
     attributes_number: int,
     indicators_number: int,
 ) -> tuple[str, str]:
@@ -972,9 +914,9 @@ def _acceptance(
 
 def _cap_acceptance_for_confidence(  # noqa: PLR0913
     *,
-    config: BusinessRecommendationConfig,
-    module: BusinessModuleConfig,
-    labels: list[BusinessLabelResult],
+    config: RecommendationConfig,
+    module: ModuleConfig,
+    labels: list[LabelResult],
     acceptance_result: str,
     attributes_number: int,
     indicators_number: int,
@@ -1008,8 +950,8 @@ def _cap_acceptance_for_confidence(  # noqa: PLR0913
 
 def _acceptance_conclusion(
     *,
-    config: BusinessRecommendationConfig,
-    module: BusinessModuleConfig,
+    config: RecommendationConfig,
+    module: ModuleConfig,
     result: str,
     attributes_number: int,
     indicators_number: int,
@@ -1021,7 +963,7 @@ def _acceptance_conclusion(
     return level.conclusion.format(attributes_number=attributes_number, indicators_number=indicators_number)
 
 
-def _has_high_trust_matched_indicator(labels: list[BusinessLabelResult]) -> bool:
+def _has_high_trust_matched_indicator(labels: list[LabelResult]) -> bool:
     for label in labels:
         for indicator in label.indicator_results:
             if indicator.result != "matched":
@@ -1035,7 +977,7 @@ def _has_high_trust_matched_indicator(labels: list[BusinessLabelResult]) -> bool
     return False
 
 
-def _select_module(modules: list[BusinessModuleResult]) -> BusinessModuleResult | None:
+def _select_module(modules: list[ModuleResult]) -> ModuleResult | None:
     if not modules:
         return None
     return sorted(modules, key=lambda item: (-item.score, -item.attributes_number, item.module_id))[0]
@@ -1054,9 +996,6 @@ def _compare(value: Any, op: str, expected: Any) -> bool:  # noqa: C901, PLR0911
         return value not in (None, "", [], {})
     if op == "contains":
         return contains(value, expected)
-    if op == "contains_any":
-        values = expected if isinstance(expected, list) else [expected]
-        return any(contains(value, item) for item in values)
     if op == "contains_any":
         values = expected if isinstance(expected, list) else [expected]
         return any(contains(value, item) for item in values)
@@ -1102,7 +1041,7 @@ def _as_number(value: Any) -> float | None:
     return None
 
 
-def _rule_current_status(indicator: BusinessIndicatorConfig, value: Any, *, matched: bool) -> str:
+def _rule_current_status(indicator: IndicatorConfig, value: Any, *, matched: bool) -> str:
     if matched:
         return f"{indicator.indicator_name}满足：{_display_value(value)}"
     if value in (None, "", [], {}):

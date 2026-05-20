@@ -14,7 +14,7 @@ uv run xft scenario validate config/recommend/sales_recommendation
 {
   "scenario_id": "sales_recommendation",
   "web_enabled": true,
-  "business_modules": 7
+  "modules": 7
 }
 ```
 
@@ -34,8 +34,8 @@ uv run xft recommend --no-llm \
 - 输出 `[success]` 或可接受的 `partial`。
 - 生成 `result.json`。
 - 生成 `report.md`。
-- 生成 `business_label_result.json`。
-- 生成 `business_indicator_evidence.json`。
+- 生成 `label_result.json`。
+- 生成 `indicator_evidence.json`。
 - 生成 `profile.json`、`decision_trace.json`、`config_manifest.json`。
 - 不生成 `dimension_analysis.json`、`match_results.json`、`internal_result.json`。
 
@@ -63,7 +63,7 @@ uv run xft recommend --llm-debug \
 启用业务指标级 Web policy：
 
 ```bash
-uv run xft recommend --with-business-web \
+uv run xft recommend --with-web \
   --scenario config/recommend/sales_recommendation \
   "企业名称"
 ```
@@ -71,7 +71,7 @@ uv run xft recommend --with-business-web \
 刷新业务 Web 缓存：
 
 ```bash
-uv run xft recommend --with-business-web --business-web-refresh \
+uv run xft recommend --with-web --web-refresh \
   --scenario config/recommend/sales_recommendation \
   "企业名称"
 ```
@@ -79,10 +79,10 @@ uv run xft recommend --with-business-web --business-web-refresh \
 业务 Web 预期额外生成：
 
 ```text
-business_indicator_evidence.json
-business_web_queries.jsonl
-business_web_results.jsonl
-business_web_trace.json
+indicator_evidence.json
+web_queries.jsonl
+web_results.jsonl
+web_trace.json
 ```
 
 抽查重点：
@@ -99,7 +99,7 @@ uv run pytest \
   tests/test_scenario_bundle.py \
   tests/test_xft_cli.py \
   tests/test_batch_delivery.py \
-  tests/test_business_recommendation.py \
+  tests/test_recommendation.py \
   tests/test_runtime_calibration.py \
   -q
 ```

@@ -41,8 +41,8 @@ resp = await client.chat.completions.create(
 
 ```python
 class _LlmIndicatorPayload(BaseModel):
-    result: BusinessResult
-    confidence: BusinessConfidence
+    result: Result
+    confidence: Confidence
     current_status: str
     evidence: list[str] = []
 

@@ -2,7 +2,7 @@
 
 XFT 用本地企业画像、业务规则、LLM 和可选的业务指标级 Web 搜索，生成面向销售/业务人员的产品推荐结果。
 
-当前产品推荐的配置文件聚焦到 `business_modules.yaml` + `business_modules.d/*.yaml`。
+当前产品推荐的配置文件聚焦到 `modules.yaml` + `modules.d/*.yaml`。
 
 ## 一句话流程
 
@@ -19,7 +19,7 @@ flowchart LR
 推荐图：
 
 ```text
-data_gather -> business_web_evidence -> business_recommend -> save
+data_gather -> web_evidence -> recommend -> save
 ```
 
 ## 快速运行
@@ -52,7 +52,7 @@ uv run xft scenario validate config/recommend/sales_recommendation
   "scenario_name": "销售产品推荐",
   "root": "config/recommend/sales_recommendation",
   "web_enabled": true,
-  "business_modules": 7
+  "modules": 7
 }
 ```
 
@@ -74,22 +74,22 @@ uv run xft recommend "企业名称"
 
 ### 6. 启用业务 Web 证据
 
-业务 Web 服务 `business_modules.d` 中配置了 `web_search` 的指标。`llm_web` 默认 Web-first，`llm/hybrid/rule` 可按 `web_search.when` 在证据不足或规则未命中时补证。
+业务 Web 服务 `modules.d` 中配置了 `web_search` 的指标。`llm_web` 默认 Web-first，`llm/hybrid/rule` 可按 `web_search.when` 在证据不足或规则未命中时补证。
 
 ```bash
-uv run xft recommend --with-business-web "企业名称"
+uv run xft recommend --with-web "企业名称"
 ```
 
 刷新业务 Web 缓存：
 
 ```bash
-uv run xft recommend --with-business-web --business-web-refresh "企业名称"
+uv run xft recommend --with-web --web-refresh "企业名称"
 ```
 
 指定 provider：
 
 ```bash
-uv run xft recommend --with-business-web --business-web-provider minimax_search "企业名称"
+uv run xft recommend --with-web --web-provider minimax_search "企业名称"
 ```
 
 ## 输出文件
@@ -100,11 +100,11 @@ uv run xft recommend --with-business-web --business-web-provider minimax_search 
 | --- | --- |
 | `result.json` | 最终业务交付结果，业务人员优先看这个 |
 | `report.md` | 人类可读推荐报告 |
-| `business_label_result.json` | 全量模块、标签、指标判断明细 |
-| `business_indicator_evidence.json` | 本地证据和业务 Web 证据合并后的指标证据 |
-| `business_web_queries.jsonl` | 业务 Web 查询记录，仅启用业务 Web 时生成 |
-| `business_web_results.jsonl` | 业务 Web 搜索结果，仅启用业务 Web 时生成 |
-| `business_web_trace.json` | 业务 Web 执行 trace，仅启用业务 Web 时生成 |
+| `label_result.json` | 全量模块、标签、指标判断明细 |
+| `indicator_evidence.json` | 本地证据和业务 Web 证据合并后的指标证据 |
+| `web_queries.jsonl` | 业务 Web 查询记录，仅启用业务 Web 时生成 |
+| `web_results.jsonl` | 业务 Web 搜索结果，仅启用业务 Web 时生成 |
+| `web_trace.json` | 业务 Web 执行 trace，仅启用业务 Web 时生成 |
 | `profile.json` | 企业画像 |
 | `decision_trace.json` | 规则、LLM、业务 Web 决策过程 |
 | `llm_calls.jsonl` | LLM 原始调用记录 |
@@ -119,8 +119,8 @@ uv run xft recommend --with-business-web --business-web-provider minimax_search 
 ```text
 config/recommend/sales_recommendation/
   scenario.yaml
-  business_modules.yaml
-  business_modules.d/
+  modules.yaml
+  modules.d/
     个税管理.yaml
     假勤管理.yaml
     对公报账.yaml
@@ -142,13 +142,13 @@ name: 销售产品推荐
 description: 面向企业软件销售线索的产品模块推荐场景
 
 web_search_config: web_search.yaml
-business_modules_config: business_modules.yaml
+modules_config: modules.yaml
 
 output_dir: ../../../recommendation_runs/sales_recommendation
-web_cache_root: ../../../data/web_business/sales_recommendation
+web_cache_root: ../../../data/web/sales_recommendation
 ```
 
-### `business_modules.yaml`
+### `modules.yaml`
 
 全局配置文件只放版本、场景、评分、全局接受策略和模块目录：
 
@@ -177,10 +177,10 @@ acceptance_policy:
     - result: 低
       min_matched_labels: 0
       conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为低。
-modules_dir: business_modules.d
+modules_dir: modules.d
 ```
 
-### `business_modules.d/*.yaml`
+### `modules.d/*.yaml`
 
 一个业务模块一个文件。新增模块时添加一个 YAML 文件，删除模块时删除对应文件，系统会动态识别 `modules_dir` 下所有 `*.yaml`。
 
@@ -313,7 +313,7 @@ execution:
   max_results_per_query: 5
 ```
 
-场景里的 `web_cache_root` 会覆盖 `cache_root`，销售推荐默认写到 `data/web_business/sales_recommendation`。
+场景里的 `web_cache_root` 会覆盖 `cache_root`，销售推荐默认写到 `data/web/sales_recommendation`。
 
 ## LLM 调试
 
@@ -367,7 +367,7 @@ company_name,expected_top_module,acceptable_modules,comment
 uv run xft calibrate \
   --company-list company.txt \
   --labels calibration_labels.csv \
-  --with-business-web \
+  --with-web \
   --limit 10
 ```
 

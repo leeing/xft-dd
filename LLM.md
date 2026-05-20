@@ -4,7 +4,7 @@
 
 | 维度 | Web 搜索 | LLM 指标评估 |
 |------|----------|-------------|
-| 阶段 | `business_web_evidence` | `business_recommend` |
+| 阶段 | `web_evidence` | `recommend` |
 | API | MiniMax Search API | MiniMax LLM (M2.7) |
 | 目的 | 从互联网检索企业公开信息 | 基于证据判断指标是否命中 |
 | 调用次数（崭亮实业） | **8 次**（去重后） | **78 次** |
@@ -30,7 +30,7 @@
 
 优化前 130 次 HTTP 搜索（62x `{company_name} 官网` + 62x `{company_name} 新闻`），优化后 8 次。
 
-实现：`business_web_evidence.py` 内 `_query_cache`，key 为 `query:provider`，首次执行后缓存结果，后续指标复用。
+实现：`web_evidence.py` 内 `_query_cache`，key 为 `query:provider`，首次执行后缓存结果，后续指标复用。
 
 ### LLM 调用：不建议合并
 
@@ -113,8 +113,8 @@ Auto query 走 `_plan_auto_queries_with_llm`，额外消耗 1 次 LLM 调用生�
 
 | 文件 | 职责 |
 |------|------|
-| `business_web_evidence.py` | Web 搜索执行、去重缓存、auto query 规划 |
-| `business_web_policy.py` | 搜索触发策略（when/effect 决策） |
-| `business_evaluator.py` | LLM 指标评估（`_evaluate_llm_indicator`） |
-| `business_models.py` | `BusinessWebSearchConfig`、`_LlmIndicatorPayload` |
+| `web_evidence.py` | Web 搜索执行、去重缓存、auto query 规划 |
+| `web_policy.py` | 搜索触发策略（when/effect 决策） |
+| `evaluator.py` | LLM 指标评估（`_evaluate_llm_indicator`） |
+| `business_models.py` | `WebSearchConfig`、`_LlmIndicatorPayload` |
 | `ERROR.md` | LLM 输出解析错误分析与修复 |

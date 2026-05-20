@@ -24,10 +24,10 @@ class ScenarioBundle:
         return str(_resolve_path(self.root, self.config.web_search_config))
 
     @property
-    def business_modules_path(self) -> str | None:
-        if not self.config.business_modules_config:
+    def modules_path(self) -> str | None:
+        if not self.config.modules_config:
             return None
-        return str(_resolve_path(self.root, self.config.business_modules_config))
+        return str(_resolve_path(self.root, self.config.modules_config))
 
     @property
     def output_dir(self) -> str | None:
@@ -49,7 +49,7 @@ class ScenarioBundle:
         payload = self.config.model_dump(mode="json", exclude_none=True)
         payload["root"] = str(self.root)
         payload["web_search_path"] = self.web_search_path
-        payload["business_modules_path"] = self.business_modules_path
+        payload["modules_path"] = self.modules_path
         payload["prompt_paths"] = self.prompt_paths
         return payload
 
@@ -139,7 +139,7 @@ def _resolve_config_paths(root: Path, data: dict[str, Any]) -> dict[str, Any]:
     resolved = dict(data)
     for field in (
         "web_search_config",
-        "business_modules_config",
+        "modules_config",
     ):
         value = resolved.get(field)
         if isinstance(value, str) and value:

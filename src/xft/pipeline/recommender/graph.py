@@ -11,12 +11,12 @@ from langgraph.graph import END, START, StateGraph
 
 from xft.constants import DEFAULT_SCENARIO, DEFAULT_WAREHOUSE
 from xft.core.scenario import load_scenario
-from xft.pipeline.recommender.business_config_loader import load_business_recommendation_config
+from xft.pipeline.recommender.config_loader import load_recommendation_config
 from xft.pipeline.recommender.models import RecommendationRunResult
-from xft.pipeline.recommender.nodes.business_recommend_node import business_recommend_node
-from xft.pipeline.recommender.nodes.business_web_evidence_node import business_web_evidence_node
 from xft.pipeline.recommender.nodes.data_gather_node import data_gather_node
+from xft.pipeline.recommender.nodes.recommend_node import recommend_node
 from xft.pipeline.recommender.nodes.save_node import save_node
+from xft.pipeline.recommender.nodes.web_evidence_node import web_evidence_node
 from xft.pipeline.recommender.state import RecommenderState
 from xft.progress import display
 from xft.runtime.config_manifest import ConfigManifest, file_ref, model_hash, write_config_manifest
@@ -30,13 +30,13 @@ def _get_graph() -> Any:
     if "graph" not in _cache:
         graph = StateGraph(RecommenderState)
         graph.add_node("data_gather", data_gather_node)
-        graph.add_node("business_web_evidence", business_web_evidence_node)
-        graph.add_node("business_recommend", business_recommend_node)
+        graph.add_node("web_evidence", web_evidence_node)
+        graph.add_node("recommend", recommend_node)
         graph.add_node("save", save_node)
         graph.add_edge(START, "data_gather")
-        graph.add_edge("data_gather", "business_web_evidence")
-        graph.add_edge("business_web_evidence", "business_recommend")
-        graph.add_edge("business_recommend", "save")
+        graph.add_edge("data_gather", "web_evidence")
+        graph.add_edge("web_evidence", "recommend")
+        graph.add_edge("recommend", "save")
         graph.add_edge("save", END)
         _cache["graph"] = graph.compile()
     return _cache["graph"]
@@ -56,9 +56,9 @@ async def run_recommendation(  # noqa: PLR0913
     run_id: str | None = None,
     use_llm: bool = True,
     web_config_path: str | None = None,
-    with_business_web: bool = False,
-    refresh_business_web: bool = False,
-    business_web_providers: list[str] | None = None,
+    with_web: bool = False,
+    refresh_web: bool = False,
+    web_providers: list[str] | None = None,
     llm_debug: bool = False,
     llm_concurrency: int = 4,
 ) -> RecommendationRunResult:
@@ -68,9 +68,9 @@ async def run_recommendation(  # noqa: PLR0913
         msg = f"scenario not found: {scenario_path or DEFAULT_SCENARIO}"
         raise FileNotFoundError(msg)
     web_search_path = web_config_path or scenario.web_search_path
-    business_path = scenario.business_modules_path
+    modules_path = scenario.modules_path
     prompt_paths = scenario.prompt_paths
-    business_config = load_business_recommendation_config(business_path)
+    modules_config = load_recommendation_config(modules_path)
     root = output_dir or scenario.output_dir or "recommendation_runs"
     rid = run_id or make_recommendation_run_id(company_name)
     out_dir = Path(root) / rid
@@ -85,18 +85,18 @@ async def run_recommendation(  # noqa: PLR0913
         scenario=scenario,
         scenario_resolved_path=scenario_resolved_path,
         web_search_path=web_search_path,
-        business_path=business_path,
+        modules_path=modules_path,
         prompt_paths=prompt_paths,
-        business_config=business_config,
+        modules_config=modules_config,
         use_llm=use_llm,
-        with_business_web=with_business_web,
-        refresh_business_web=refresh_business_web,
+        with_web=with_web,
+        refresh_web=refresh_web,
         llm_debug=llm_debug,
         llm_concurrency=llm_concurrency,
     )
-    if not with_business_web:
-        log.info("business_web_disabled", company_name=company_name, use_llm=use_llm)
-        display.skip("业务 Web 证据: 未启用 (使用 --with-business-web 开启)")
+    if not with_web:
+        log.info("web_disabled", company_name=company_name, use_llm=use_llm)
+        display.skip("业务 Web 证据: 未启用 (使用 --with-web 开启)")
     initial: RecommenderState = {
         "company_name": company_name,
         "warehouse_db": warehouse_db,
@@ -106,19 +106,18 @@ async def run_recommendation(  # noqa: PLR0913
         "llm_debug": llm_debug,
         "llm_concurrency": llm_concurrency,
         "llm_call_events": [],
-        "with_business_web": with_business_web,
-        "refresh_business_web": refresh_business_web,
-        "business_web_config_path": web_search_path,
-        "business_web_providers": business_web_providers,
+        "with_web": with_web,
+        "refresh_web": refresh_web,
+        "web_config_path": web_search_path,
+        "web_providers": web_providers,
         "scenario_id": scenario.config.id,
         "scenario_name": scenario.config.name,
-        "prompt_paths": prompt_paths,
-        "business_config": business_config,
+        "modules_config": modules_config,
         "profile": {},
-        "business_evidence": {},
-        "business_web_evidence": {},
-        "business_web_trace": [],
-        "business_recommendation": None,
+        "evidence": {},
+        "web_evidence": {},
+        "web_trace": [],
+        "recommendation": None,
         "needs_web_enrichment": False,
         "errors": [],
         "output_dir": "",
@@ -157,21 +156,21 @@ def _write_config_manifest(  # noqa: PLR0913
     scenario: Any,
     scenario_resolved_path: Path | None,
     web_search_path: str,
-    business_path: str | None,
+    modules_path: str | None,
     prompt_paths: dict[str, str],
-    business_config: Any,
+    modules_config: Any,
     use_llm: bool,
-    with_business_web: bool,
-    refresh_business_web: bool,
+    with_web: bool,
+    refresh_web: bool,
     llm_debug: bool,
     llm_concurrency: int,
 ) -> Path:
     files = {
         "web_search": file_ref(web_search_path),
     }
-    if business_path:
-        files["business_modules"] = file_ref(business_path)
-        files.update(_business_module_files(business_path, business_config))
+    if modules_path:
+        files["modules"] = file_ref(modules_path)
+        files.update(_module_files(modules_path, modules_config))
     files["scenario"] = file_ref(Path(scenario.root) / "scenario.yaml")
     for key, path in sorted(prompt_paths.items()):
         files[f"prompt:{key}"] = file_ref(path)
@@ -186,27 +185,27 @@ def _write_config_manifest(  # noqa: PLR0913
         warehouse_db=warehouse_db,
         mode={
             "use_llm": use_llm,
-            "with_business_web": with_business_web,
-            "refresh_business_web": refresh_business_web,
+            "with_web": with_web,
+            "refresh_web": refresh_web,
             "llm_debug": llm_debug,
             "llm_concurrency": llm_concurrency,
         },
         files=files,
         effective_hashes={
-            "business_modules": model_hash(business_config) if business_config is not None else "",
+            "modules": model_hash(modules_config) if modules_config is not None else "",
         },
     )
     return write_config_manifest(out_dir / "config_manifest.json", manifest)
 
 
-def _business_module_files(business_path: str, business_config: Any) -> dict[str, Any]:
-    modules_dir = getattr(business_config, "modules_dir", None)
+def _module_files(modules_path: str, modules_config: Any) -> dict[str, Any]:
+    modules_dir = getattr(modules_config, "modules_dir", None)
     if not isinstance(modules_dir, str) or not modules_dir.strip():
         return {}
-    base = Path(business_path).parent
+    base = Path(modules_path).parent
     module_dir = Path(modules_dir)
     if not module_dir.is_absolute():
         module_dir = base / module_dir
     if not module_dir.is_dir():
         return {}
-    return {f"business_module:{path.stem}": file_ref(path) for path in sorted(module_dir.glob("*.yaml"))}
+    return {f"module:{path.stem}": file_ref(path) for path in sorted(module_dir.glob("*.yaml"))}

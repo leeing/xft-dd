@@ -16,7 +16,7 @@
 推荐主线：
 
 ```text
-data_gather -> business_web_evidence -> business_recommend -> save
+data_gather -> web_evidence -> recommend -> save
 ```
 
 ## 高优先级技术债
@@ -47,7 +47,7 @@ uv run xft calibrate \
   --limit 10
 ```
 
-根据错配案例调整 `business_modules.d/*.yaml`。
+根据错配案例调整 `modules.d/*.yaml`。
 
 ### 2. 业务 Web 证据仍需抽样确认
 
@@ -55,16 +55,16 @@ uv run xft calibrate \
 
 现状：
 
-- 配置了 `web_search` 的指标可以通过 `--with-business-web` 执行固定查询；`auto.enabled` 可生成少量补充查询。
-- 业务 Web 证据会进入 `business_indicator_evidence.json`。
+- 配置了 `web_search` 的指标可以通过 `--with-web` 执行固定查询；`auto.enabled` 可生成少量补充查询。
+- 业务 Web 证据会进入 `indicator_evidence.json`。
 - 需要确认查询词、provider 结果和证据噪声是否满足销售使用。
 
 建议：
 
 - 检查 `data_sources.type=table` + `op=text_contains` 的指标是否配置了具体 `keywords`，不能留空。
 - 将已有本地结构化证据的 `llm_web` 指标改为 `rule` 或 `hybrid`。
-- 选 2-3 家企业人工检查 `business_web_trace.json`。
-- 检查 `business_indicator_evidence.json` 中 `source_type=web` 的证据是否可用于判断。
+- 选 2-3 家企业人工检查 `web_trace.json`。
+- 检查 `indicator_evidence.json` 中 `source_type=web` 的证据是否可用于判断。
 - 根据噪声调整指标级 `web_search.when/effect/fixed_queries/auto`。
 
 ### 3. 新业务场景尚未沉淀
@@ -79,7 +79,7 @@ uv run xft calibrate \
 建议：
 
 - 复制 `sales_recommendation` 建立新场景。
-- 独立维护新场景 `business_modules.d/*.yaml`。
+- 独立维护新场景 `modules.d/*.yaml`。
 - 用相同企业对比两个场景的 `result.json`。
 
 ## 中低优先级技术债
@@ -109,9 +109,9 @@ uv run xft calibrate \
 - 配置审计 manifest。
 - ruff / mypy / pytest 质量门禁恢复为绿色。
 - README 改为业务人员视角。
-- 业务版 `result.json` 与 `business_modules.yaml` 落地。
+- 业务版 `result.json` 与 `modules.yaml` 落地。
 - `sales_recommendation` 业务结果层覆盖 7 个模块。
-- 模块配置拆分为 `business_modules.d/*.yaml`。
+- 模块配置拆分为 `modules.d/*.yaml`。
 - 删除旧推荐链：
   - `llm_match_node.py`
   - `llm_recommend_node.py`
@@ -133,6 +133,6 @@ uv run xft calibrate \
 
 ## 当前建议优先级
 
-1. 扩大真实业务标注样本，校准 `business_modules.d/*.yaml`。
+1. 扩大真实业务标注样本，校准 `modules.d/*.yaml`。
 2. 人工抽查业务 Web 证据质量。
 3. 验证第二个真实业务场景。

@@ -7,28 +7,28 @@ from typing import Any
 
 from xft.core.config_loader import read_yaml
 from xft.core.scenario import maybe_scenario_path
-from xft.pipeline.recommender.business_models import BusinessRecommendationConfig
+from xft.pipeline.recommender.models import RecommendationConfig
 
 
-def load_business_recommendation_config(path: str | Path | None) -> BusinessRecommendationConfig | None:
+def load_recommendation_config(path: str | Path | None) -> RecommendationConfig | None:
     """Load optional business recommendation config."""
     if path is None:
         return None
     scenario = maybe_scenario_path(path)
     if scenario is not None:
-        return load_business_recommendation_config(scenario.business_modules_path)
+        return load_recommendation_config(scenario.modules_path)
     config_path = Path(path)
     if config_path.is_dir():
-        config_path = config_path / "business_modules.yaml"
+        config_path = config_path / "modules.yaml"
     if not config_path.exists():
         return None
-    return BusinessRecommendationConfig.model_validate(_load_business_config_data(config_path))
+    return RecommendationConfig.model_validate(_load_modules_config_data(config_path))
 
 
-def _load_business_config_data(config_path: Path) -> dict[str, Any]:
+def _load_modules_config_data(config_path: Path) -> dict[str, Any]:
     data = read_yaml(config_path)
     if not isinstance(data, dict):
-        msg = f"business_modules.yaml must be a mapping: {config_path}"
+        msg = f"modules.yaml must be a mapping: {config_path}"
         raise TypeError(msg)
     modules = list(_as_list(data.get("modules")))
     modules_dir = data.get("modules_dir")

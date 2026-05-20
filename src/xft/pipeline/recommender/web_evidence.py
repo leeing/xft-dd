@@ -17,14 +17,14 @@ from xft.ai.chat_json import create_json_chat_completion
 from xft.ai.client import get_ai_client
 from xft.ai.json_extractor import extract_json
 from xft.core.search_models import SearchItem
-from xft.pipeline.recommender.business_evidence_loader import indicator_key
-from xft.pipeline.recommender.business_models import (
-    BusinessIndicatorConfig,
-    BusinessLabelConfig,
-    BusinessModuleConfig,
-    BusinessRecommendationConfig,
+from xft.pipeline.recommender.evidence_loader import indicator_key
+from xft.pipeline.recommender.models import (
+    IndicatorConfig,
+    LabelConfig,
+    ModuleConfig,
+    RecommendationConfig,
 )
-from xft.pipeline.recommender.business_web_policy import WebSearchDecision, should_search_indicator
+from xft.pipeline.recommender.web_policy import WebSearchDecision, should_search_indicator
 from xft.settings import settings
 from xft.utils.file_io import read_jsonl, write_json, write_jsonl
 from xft.utils.misc import str_or_none
@@ -37,7 +37,7 @@ MAX_QUERY_TERMS = 3
 
 
 @dataclass(frozen=True)
-class BusinessWebRunResult:
+class WebRunResult:
     """Business indicator Web evidence result."""
 
     evidence: dict[str, list[dict[str, Any]]]
@@ -45,6 +45,60 @@ class BusinessWebRunResult:
     queries: int
     results: int
     output_dir: str
+
+
+@dataclass(frozen=True)
+class WebRunPaths:
+    out_dir: Path
+    queries_path: Path
+    results_path: Path
+    trace_path: Path
+    evidence_path: Path
+
+
+@dataclass(frozen=True)
+class WebRunContext:
+    company_name: str
+    profile: dict[str, Any]
+    web_config: Any
+    provider_names: list[str]
+    provider_factory: Any
+    query_planner: Any
+    local_evidence_map: dict[str, list[dict[str, Any]]]
+
+    @property
+    def resolved_company_name(self) -> str:
+        return str(self.profile.get("company_name") or self.company_name)
+
+
+@dataclass(frozen=True)
+class WebQuerySpec:
+    module: ModuleConfig
+    label: LabelConfig
+    indicator: IndicatorConfig
+    indicator_key: str
+    decision: WebSearchDecision
+    query: str
+    auto: bool
+    provider_name: str
+
+
+@dataclass
+class WebAccumulator:
+    query_rows: list[dict[str, Any]]
+    result_rows: list[dict[str, Any]]
+    trace: list[dict[str, Any]]
+    evidence: dict[str, list[dict[str, Any]]]
+    query_index: int
+    query_cache: dict[str, tuple[dict[str, Any], list[dict[str, Any]]]]
+
+    @classmethod
+    def create(cls) -> WebAccumulator:
+        return cls(query_rows=[], result_rows=[], trace=[], evidence={}, query_index=0, query_cache={})
+
+    def next_query_id(self) -> str:
+        self.query_index += 1
+        return f"bq_{self.query_index:04d}"
 
 
 class _AutoQueryPayload(BaseModel):
@@ -62,9 +116,9 @@ class _AutoQueryPayload(BaseModel):
         return [str(value)]
 
 
-async def run_business_web_evidence(  # noqa: C901, PLR0912, PLR0913, PLR0915
+async def run_web_evidence(  # noqa: PLR0913
     *,
-    config: BusinessRecommendationConfig | None,
+    config: RecommendationConfig | None,
     company_name: str,
     profile: dict[str, Any],
     web_config_path: str,
@@ -73,61 +127,103 @@ async def run_business_web_evidence(  # noqa: C901, PLR0912, PLR0913, PLR0915
     refresh: bool = False,
     provider_factory: Any = build_provider,
     query_planner: Any | None = None,
-    business_evidence: dict[str, list[dict[str, Any]]] | None = None,
-) -> BusinessWebRunResult:
+    evidence: dict[str, list[dict[str, Any]]] | None = None,
+) -> WebRunResult:
     """Execute indicator-level Web queries and convert results into evidence."""
-    out_dir = Path(output_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    queries_path = out_dir / "business_web_queries.jsonl"
-    results_path = out_dir / "business_web_results.jsonl"
-    trace_path = out_dir / "business_web_trace.json"
-    evidence_path = out_dir / "business_indicator_evidence.json"
-    if not refresh and queries_path.exists() and results_path.exists():
-        cached_queries = read_jsonl(queries_path)
-        cached_results = read_jsonl(results_path)
-        cached_evidence, cached_trace = _evidence_from_rows(cached_queries, cached_results)
-        return BusinessWebRunResult(
-            evidence=cached_evidence,
-            trace=cached_trace,
-            queries=len(cached_queries),
-            results=len(cached_results),
-            output_dir=str(out_dir),
-        )
+    paths = _web_paths(output_dir)
+    if not refresh and (cached := _cached_web_result(paths)):
+        return cached
     if config is None:
-        return BusinessWebRunResult(evidence={}, trace=[], queries=0, results=0, output_dir=str(out_dir))
+        return _empty_web_result(paths)
     web_config = load_web_search_config(web_config_path)
     if not web_config.enabled:
-        return BusinessWebRunResult(evidence={}, trace=[], queries=0, results=0, output_dir=str(out_dir))
+        return _empty_web_result(paths)
+
+    ctx = WebRunContext(
+        company_name=company_name,
+        profile=profile,
+        web_config=web_config,
+        provider_names=_enabled_provider_names(web_config, providers),
+        provider_factory=provider_factory,
+        query_planner=query_planner or _plan_auto_queries_with_llm,
+        local_evidence_map=evidence or {},
+    )
+    specs, planning_trace = await _plan_web_queries(config=config, ctx=ctx)
+    acc = await _execute_web_queries(ctx=ctx, specs=specs, initial_trace=planning_trace)
+    write_jsonl(paths.queries_path, acc.query_rows)
+    write_jsonl(paths.results_path, acc.result_rows)
+    write_json(paths.trace_path, {"queries": acc.query_rows, "trace": acc.trace})
+    write_json(paths.evidence_path, acc.evidence)
+    return WebRunResult(
+        evidence=acc.evidence,
+        trace=acc.trace,
+        queries=len(acc.query_rows),
+        results=len(acc.result_rows),
+        output_dir=str(paths.out_dir),
+    )
+
+
+def _web_paths(output_dir: str | Path) -> WebRunPaths:
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    return WebRunPaths(
+        out_dir=out_dir,
+        queries_path=out_dir / "web_queries.jsonl",
+        results_path=out_dir / "web_results.jsonl",
+        trace_path=out_dir / "web_trace.json",
+        evidence_path=out_dir / "indicator_evidence.json",
+    )
+
+
+def _cached_web_result(paths: WebRunPaths) -> WebRunResult | None:
+    if not paths.queries_path.exists() or not paths.results_path.exists():
+        return None
+    cached_queries = read_jsonl(paths.queries_path)
+    cached_results = read_jsonl(paths.results_path)
+    cached_evidence, cached_trace = _evidence_from_rows(cached_queries, cached_results)
+    return WebRunResult(
+        evidence=cached_evidence,
+        trace=cached_trace,
+        queries=len(cached_queries),
+        results=len(cached_results),
+        output_dir=str(paths.out_dir),
+    )
+
+
+def _empty_web_result(paths: WebRunPaths) -> WebRunResult:
+    return WebRunResult(evidence={}, trace=[], queries=0, results=0, output_dir=str(paths.out_dir))
+
+
+def _enabled_provider_names(web_config: Any, providers: list[str] | None) -> list[str]:
     provider_names = providers or web_config.default_providers
-    provider_names = [
+    return [
         name for name in provider_names if web_config.providers.get(name, None) and web_config.providers[name].enabled
     ]
-    query_rows: list[dict[str, Any]] = []
-    result_rows: list[dict[str, Any]] = []
+
+
+async def _plan_web_queries(
+    *,
+    config: RecommendationConfig,
+    ctx: WebRunContext,
+) -> tuple[list[WebQuerySpec], list[dict[str, Any]]]:
+    specs: list[WebQuerySpec] = []
     trace: list[dict[str, Any]] = []
-    evidence: dict[str, list[dict[str, Any]]] = {}
-    query_index = 0
-    planner = query_planner or _plan_auto_queries_with_llm
-    local_evidence_map = business_evidence or {}
-    _query_cache: dict[str, tuple[dict[str, Any], list[dict[str, Any]]]] = {}
     for module in config.modules:
         for label in module.labels:
             for indicator in label.indicators:
                 if indicator.web_search is None:
                     continue
                 key = indicator_key(module, label.label_id, indicator)
-                indicator_local_evidence = local_evidence_map.get(key, [])
-                decision = should_search_indicator(
-                    indicator=indicator, local_evidence=indicator_local_evidence, rule_result=None
-                )
+                local_evidence = ctx.local_evidence_map.get(key, [])
+                decision = should_search_indicator(indicator=indicator, local_evidence=local_evidence, rule_result=None)
                 if not decision.enabled:
                     trace.append(_skip_trace(module, label, indicator, key, decision))
                     continue
-                fixed_queries = _render_queries(company_name=company_name, indicator=indicator)
+                fixed_queries = _render_queries(company_name=ctx.company_name, indicator=indicator)
                 auto_queries = await _auto_queries(
-                    query_planner=planner,
-                    company_name=company_name,
-                    profile=profile,
+                    query_planner=ctx.query_planner,
+                    company_name=ctx.company_name,
+                    profile=ctx.profile,
                     module=module,
                     label=label,
                     indicator=indicator,
@@ -136,66 +232,94 @@ async def run_business_web_evidence(  # noqa: C901, PLR0912, PLR0913, PLR0915
                     trace.append(_auto_trace(module, label, indicator, key))
                 query_specs = [(query, False) for query in fixed_queries] + [(query, True) for query in auto_queries]
                 for query, is_auto in query_specs:
-                    for provider_name in provider_names:
-                        provider_cfg = web_config.providers[provider_name]
-                        cache_key = f"{query}:{provider_name}"
-                        if cache_key in _query_cache:
-                            cached_query_row, cached_rows = _query_cache[cache_key]
-                            per_key_row = {
-                                **cached_query_row,
-                                "indicator_key": key,
-                                "module_id": module.module_id,
-                                "label_id": label.label_id,
-                                "indicator_id": indicator.indicator_id,
-                                "auto": is_auto,
-                                "trigger_reason": decision.reason,
-                                "when": decision.when,
-                                "effect": decision.effect,
-                            }
-                            query_rows.append(per_key_row)
-                            result_rows.extend(cached_rows)
-                            trace.append(_trace_row(per_key_row, cached_rows))
-                            if result_evidence := _result_evidence(per_key_row, cached_rows):
-                                evidence.setdefault(key, []).extend(result_evidence)
-                            continue
-                        query_index += 1
-                        query_id = f"bq_{query_index:04d}"
-                        query_row, rows = await _run_one_query(
-                            provider_name=provider_name,
-                            provider_cfg=provider_cfg,
-                            provider_factory=provider_factory,
-                            query=query,
-                            query_id=query_id,
-                            indicator_key=key,
-                            module=module,
-                            label=label,
-                            indicator=indicator,
-                            company_name=company_name,
-                            profile=profile,
-                            max_results=min(
-                                indicator.web_search.max_results,
-                                web_config.execution.max_results_per_query,
-                            ),
-                            auto=is_auto,
-                            decision=decision,
-                        )
-                        _query_cache[cache_key] = (query_row, rows)
-                        query_rows.append(query_row)
-                        result_rows.extend(rows)
-                        trace.append(_trace_row(query_row, rows))
-                        if result_evidence := _result_evidence(query_row, rows):
-                            evidence.setdefault(key, []).extend(result_evidence)
-    write_jsonl(queries_path, query_rows)
-    write_jsonl(results_path, result_rows)
-    write_json(trace_path, {"queries": query_rows, "trace": trace})
-    write_json(evidence_path, evidence)
-    return BusinessWebRunResult(
-        evidence=evidence,
-        trace=trace,
-        queries=len(query_rows),
-        results=len(result_rows),
-        output_dir=str(out_dir),
-    )
+                    specs.extend(
+                        [
+                            WebQuerySpec(
+                                module=module,
+                                label=label,
+                                indicator=indicator,
+                                indicator_key=key,
+                                decision=decision,
+                                query=query,
+                                auto=is_auto,
+                                provider_name=provider_name,
+                            )
+                            for provider_name in ctx.provider_names
+                        ]
+                    )
+    return specs, trace
+
+
+def _query_row_for_spec(
+    cached_query_row: dict[str, Any],
+    spec: WebQuerySpec,
+) -> dict[str, Any]:
+    return {
+        **cached_query_row,
+        "indicator_key": spec.indicator_key,
+        "module_id": spec.module.module_id,
+        "label_id": spec.label.label_id,
+        "indicator_id": spec.indicator.indicator_id,
+        "auto": spec.auto,
+        "trigger_reason": spec.decision.reason,
+        "when": spec.decision.when,
+        "effect": spec.decision.effect,
+    }
+
+
+def _append_web_rows(
+    *,
+    acc: WebAccumulator,
+    key: str,
+    query_row: dict[str, Any],
+    rows: list[dict[str, Any]],
+) -> None:
+    acc.query_rows.append(query_row)
+    acc.result_rows.extend(rows)
+    acc.trace.append(_trace_row(query_row, rows))
+    if result_evidence := _result_evidence(query_row, rows):
+        acc.evidence.setdefault(key, []).extend(result_evidence)
+
+
+async def _execute_web_queries(
+    *,
+    ctx: WebRunContext,
+    specs: list[WebQuerySpec],
+    initial_trace: list[dict[str, Any]],
+) -> WebAccumulator:
+    acc = WebAccumulator.create()
+    acc.trace.extend(initial_trace)
+    for spec in specs:
+        provider_cfg = ctx.web_config.providers[spec.provider_name]
+        cache_key = f"{spec.query}:{spec.provider_name}"
+        if cache_key in acc.query_cache:
+            cached_query_row, cached_rows = acc.query_cache[cache_key]
+            per_key_row = _query_row_for_spec(cached_query_row, spec)
+            _append_web_rows(acc=acc, key=spec.indicator_key, query_row=per_key_row, rows=cached_rows)
+            continue
+        web_search = spec.indicator.web_search
+        if web_search is None:
+            continue
+        query_id = acc.next_query_id()
+        query_row, rows = await _run_one_query(
+            provider_name=spec.provider_name,
+            provider_cfg=provider_cfg,
+            provider_factory=ctx.provider_factory,
+            query=spec.query,
+            query_id=query_id,
+            indicator_key=spec.indicator_key,
+            module=spec.module,
+            label=spec.label,
+            indicator=spec.indicator,
+            company_name=ctx.company_name,
+            profile=ctx.profile,
+            max_results=min(web_search.max_results, ctx.web_config.execution.max_results_per_query),
+            auto=spec.auto,
+            decision=spec.decision,
+        )
+        acc.query_cache[cache_key] = (query_row, rows)
+        _append_web_rows(acc=acc, key=spec.indicator_key, query_row=query_row, rows=rows)
+    return acc
 
 
 async def _run_one_query(  # noqa: PLR0913
@@ -206,9 +330,9 @@ async def _run_one_query(  # noqa: PLR0913
     query: str,
     query_id: str,
     indicator_key: str,
-    module: BusinessModuleConfig,
-    label: BusinessLabelConfig,
-    indicator: BusinessIndicatorConfig,
+    module: ModuleConfig,
+    label: LabelConfig,
+    indicator: IndicatorConfig,
     company_name: str,
     profile: dict[str, Any],
     max_results: int,
@@ -275,7 +399,7 @@ async def _run_one_query(  # noqa: PLR0913
     return query_row, rows
 
 
-def _render_queries(*, company_name: str, indicator: BusinessIndicatorConfig) -> list[str]:
+def _render_queries(*, company_name: str, indicator: IndicatorConfig) -> list[str]:
     if indicator.web_search is None:
         return []
     return _indicatorized_queries(
@@ -291,9 +415,9 @@ async def _auto_queries(  # noqa: PLR0913
     query_planner: Any | None,
     company_name: str,
     profile: dict[str, Any],
-    module: BusinessModuleConfig,
-    label: BusinessLabelConfig,
-    indicator: BusinessIndicatorConfig,
+    module: ModuleConfig,
+    label: LabelConfig,
+    indicator: IndicatorConfig,
 ) -> list[str]:
     web = indicator.web_search
     if web is None or not web.auto.enabled or web.auto.max_queries <= 0 or query_planner is None:
@@ -305,8 +429,6 @@ async def _auto_queries(  # noqa: PLR0913
         module_name=module.module_name,
         label_id=label.label_id,
         label_name=label.label_name,
-        module=module,
-        label=label,
         indicator=indicator,
         intent=web.auto.intent,
         max_queries=web.auto.max_queries,
@@ -323,10 +445,9 @@ async def _plan_auto_queries_with_llm(  # noqa: PLR0913
     module_name: str,
     label_id: str,
     label_name: str,
-    indicator: BusinessIndicatorConfig,
+    indicator: IndicatorConfig,
     max_queries: int,
     intent: str,
-    **_: Any,
 ) -> list[str]:
     if not (settings.llm_api_key or settings.minimax_api_key):
         return []
@@ -400,7 +521,7 @@ def _result_evidence(query_row: dict[str, Any], rows: list[dict[str, Any]]) -> l
 def _indicatorized_queries(
     *,
     company_name: str,
-    indicator: BusinessIndicatorConfig,
+    indicator: IndicatorConfig,
     queries: list[str],
     max_queries: int,
 ) -> list[str]:
@@ -426,7 +547,7 @@ def _query_needs_indicator_terms(query: str, company_name: str) -> bool:
     return not tokens or all(token in generic for token in tokens)
 
 
-def _indicator_terms(indicator: BusinessIndicatorConfig) -> list[str]:
+def _indicator_terms(indicator: IndicatorConfig) -> list[str]:
     chunks = [indicator.indicator_name, indicator.indicator_id, indicator.standard, indicator.prompt or ""]
     chunks.extend(indicator.evidence_hints)
     ignored = {"官网", "新闻", "公司", "企业", "信息", "公开", "判断", "是否", "满足", "指标"}
@@ -469,7 +590,7 @@ def _is_company_relevant(raw: Any, *, company_name: str, profile: dict[str, Any]
     return any(name and name in haystack for name in names)
 
 
-def _is_indicator_relevant(raw: Any, *, company_name: str, indicator: BusinessIndicatorConfig, query: str) -> bool:
+def _is_indicator_relevant(raw: Any, *, company_name: str, indicator: IndicatorConfig, query: str) -> bool:
     terms = [*_indicator_terms(indicator), *_query_terms(query=query, company_name=company_name)]
     if not terms:
         return True
@@ -537,9 +658,9 @@ def _trace_row(query_row: dict[str, Any], rows: list[dict[str, Any]]) -> dict[st
 
 
 def _skip_trace(
-    module: BusinessModuleConfig,
-    label: BusinessLabelConfig,
-    indicator: BusinessIndicatorConfig,
+    module: ModuleConfig,
+    label: LabelConfig,
+    indicator: IndicatorConfig,
     key: str,
     decision: WebSearchDecision,
 ) -> dict[str, Any]:
@@ -556,9 +677,9 @@ def _skip_trace(
 
 
 def _auto_trace(
-    module: BusinessModuleConfig,
-    label: BusinessLabelConfig,
-    indicator: BusinessIndicatorConfig,
+    module: ModuleConfig,
+    label: LabelConfig,
+    indicator: IndicatorConfig,
     key: str,
 ) -> dict[str, Any]:
     return {
