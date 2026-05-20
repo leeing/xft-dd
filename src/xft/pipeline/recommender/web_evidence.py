@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 from xft.ai.chat_json import create_json_chat_completion
 from xft.ai.client import get_ai_client
 from xft.ai.json_extractor import extract_json
-from xft.core.search_models import SearchItem
+from xft.core.search_models import SearchItem, make_item_id
 from xft.pipeline.recommender.evidence_loader import indicator_key
 from xft.pipeline.recommender.models import (
     IndicatorConfig,
@@ -154,6 +154,28 @@ async def run_web_evidence(  # noqa: PLR0913
     n_auto = sum(1 for s in specs if s.auto)
     display.info(f"  共 {len(specs)} 个查询 (其中 {n_auto} 个自动生成), 开始执行...")
     acc = await _execute_web_queries(ctx=ctx, specs=specs, initial_trace=planning_trace)
+
+    if web_config.fetch.enabled and acc.result_rows:
+        display.info("  crawl4ai 抓取页面内容...")
+        url_text_map = await _enrich_result_rows(
+            acc.result_rows,
+            company_name=ctx.company_name,
+            fetch_config=web_config.fetch,
+        )
+        for row in acc.result_rows:
+            url = str(row.get("url") or "")
+            if url in url_text_map:
+                row["full_text_preview"] = url_text_map[url][:500]
+        query_by_id = {str(q.get("query_id")): q for q in acc.query_rows}
+        acc.evidence = {}
+        by_indicator: dict[str, list[dict[str, Any]]] = {}
+        for row in acc.result_rows:
+            by_indicator.setdefault(str(row.get("indicator_key") or ""), []).append(row)
+        for key, rows in by_indicator.items():
+            query_row = query_by_id.get(str(rows[0].get("query_id") or ""), {})
+            acc.evidence[key] = _result_evidence(query_row, rows)
+        display.info(f"  抓取完成: {len(url_text_map)} 个页面")
+
     write_jsonl(paths.queries_path, acc.query_rows)
     write_jsonl(paths.results_path, acc.result_rows)
     write_json(paths.trace_path, {"queries": acc.query_rows, "trace": acc.trace})
@@ -524,6 +546,56 @@ def _result_evidence(query_row: dict[str, Any], rows: list[dict[str, Any]]) -> l
         }
         for row in rows
     ]
+
+
+async def _enrich_result_rows(
+    result_rows: list[dict[str, Any]],
+    *,
+    company_name: str,
+    fetch_config: Any,
+) -> dict[str, str]:
+    """crawl4ai-fetch unique URLs from search results and return {url: full_text} mapping."""
+    from xft.utils.fetch import enrich_items
+
+    url_map: dict[str, dict[str, Any]] = {}
+    for row in result_rows:
+        url = str(row.get("url") or "")
+        if not url or url.startswith("metaso://"):
+            continue
+        if url not in url_map:
+            url_map[url] = row
+
+    if not url_map:
+        return {}
+
+    now = datetime.now(UTC)
+    candidates: list[SearchItem] = []
+    for url, row in url_map.items():
+        candidates.append(
+            SearchItem(
+                id=make_item_id(url=url, title=str(row.get("title") or ""), snippet=str(row.get("snippet") or "")),
+                title=str(row.get("title") or ""),
+                url=url,
+                snippet=str(row.get("snippet") or ""),
+                full_text=str(row.get("full_text_preview") or ""),
+                query=str(row.get("query") or ""),
+                dimension_id=str(row.get("indicator_key") or ""),
+                source="minimax",
+                rank=0,
+                fetched_at=now,
+            )
+        )
+
+    enriched = await enrich_items(
+        candidates,
+        blocked_domains=fetch_config.blocked_domains,
+        target=company_name,
+        fetch_timeout=fetch_config.timeout_seconds,
+        concurrency=fetch_config.concurrency,
+        max_full_text_chars=fetch_config.max_chars,
+    )
+
+    return {item.url: item.full_text for item in enriched if item.url and item.full_text}
 
 
 def _indicatorized_queries(
