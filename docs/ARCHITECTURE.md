@@ -50,6 +50,8 @@ CLI 入口：
 src/xft/cli/recommend.py
 ```
 
+`xft recommend --module <module_id>` 会在配置加载后、进入 graph 前过滤 `modules_config.modules`。这个参数可重复传入，用于调试单个或少量模块；过滤条件写入 `config_manifest.json` 的 `mode.module_ids`。
+
 ## 数据流
 
 ```mermaid

@@ -106,12 +106,25 @@ uv run xft recommend --with-web --web-refresh "企业名称"
 uv run xft recommend --with-web --web-provider minimax_search "企业名称"
 ```
 
+只测试一个模块：
+
+```bash
+uv run xft recommend --module 个税管理 --with-web "企业名称"
+```
+
+同时测试多个模块：
+
+```bash
+uv run xft recommend --module 个税管理 --module 差旅报销 "企业名称"
+```
+
 ## 常用参数
 
 | 参数 | 用途 | 什么时候用 |
 | --- | --- | --- |
 | `--warehouse` | 指定 DuckDB 文件，默认 `cache/company_warehouse.duckdb` | 有多份企业画像库时 |
 | `--scenario` | 指定场景目录，默认 `config/recommender/xft` | 跑非默认场景时 |
+| `--module` | 只评估指定 `module_id`，可重复传入 | 调试单个模块的规则、LLM、Web 搜索词时 |
 | `--output-dir` | 指定输出目录，默认来自 `scenario.yaml` | 临时试跑或隔离结果时 |
 | `--no-llm` | 关闭 LLM，只跑规则和兜底判断 | 快速冒烟、排查规则配置时 |
 | `--with-web` | 启用指标级 Web 补证 | 需要公开网页证据时 |
@@ -434,6 +447,8 @@ python -m xft.keys encode <plaintext_key>
 3. 如果本地证据误命中，优先调整 `data_sources.keywords` 或 `rule`。
 4. 如果 Web 噪声误导，调整对应指标的 `fixed_queries`、`when`、`effect`。
 5. 如果接受度过高或过低，调整 `modules.yaml` 的 `acceptance_policy`。
+
+调试单个模块时先加 `--module <module_id>`，缩小输出和 LLM/Web 调用范围。确认该模块稳定后，再去掉 `--module` 做全场景对比。
 
 ### LLM 成本或速度有问题
 

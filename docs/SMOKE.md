@@ -59,6 +59,21 @@ MarketingPoint
 Conclusion
 ```
 
+只验收单个模块时加 `--module`：
+
+```bash
+uv run xft recommend --no-llm \
+  --scenario config/recommender/xft \
+  --module 个税管理 \
+  "企业名称"
+```
+
+预期：
+
+- 只评估指定 `module_id`。
+- `config_manifest.json` 的 `mode.module_ids` 记录本次过滤条件。
+- 指定不存在的模块时，命令返回失败并提示可用 `module_id`。
+
 ## 3. LLM 验收
 
 ```bash
