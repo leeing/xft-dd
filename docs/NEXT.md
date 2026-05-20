@@ -13,8 +13,10 @@ config/recommender/xft
 推荐主链路：
 
 ```text
-data_gather -> web_evidence -> recommend -> save
+data_gather -> recommend -> save
 ```
+
+Web 补证已经内聚到 `recommend` 阶段：开启 `--with-web` 后，每个指标在计算时按 `web_search.when` 判断是否需要搜索。
 
 核心配置：
 

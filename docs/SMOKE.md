@@ -100,9 +100,10 @@ indicator_evidence.json
 
 抽查重点：
 
-- `llm_web` 指标应先执行 Web 查询。
+- `llm_web` 指标计算时应先执行 Web 查询。
 - `llm_web` 无实际 Web 证据时应输出 `unknown`，不空证据调用 LLM。
-- `llm` / `hybrid` 只在指标 `web_search.when` 条件满足时补证。
+- `llm` / `hybrid` 只在当前指标 `web_search.when` 条件满足时补证。
+- `rule` 已命中时不应搜索；规则未命中且 `when: rule_not_matched` 时才搜索。
 - `rule` 配 `possible_on_evidence` 时，Web 证据最多提升到 `possible`。
 - 查询词应包含指标词，不应都是 `{company_name} 官网` 这类泛查询。
 

@@ -14,7 +14,7 @@ from xft.pipeline.recommender.evidence_loader import load_evidence
 from xft.pipeline.recommender.evaluator import evaluate_recommendation
 from xft.pipeline.recommender.models import RecommendationConfig
 from xft.pipeline.recommender.result_renderer import render_result_json
-from xft.pipeline.recommender.web_evidence import run_web_evidence
+from xft.pipeline.recommender.web_resolver import WebResolver
 from xft.pipeline.recommender.web_policy import should_search_indicator
 from xft.pipeline.recommender.graph import run_recommendation
 from xft.web.models import ProviderSearchResponse
@@ -179,6 +179,37 @@ def _write_web_config(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     return path
+
+
+async def _resolve_all_web(  # noqa: PLR0913
+    *,
+    config: RecommendationConfig,
+    tmp_path: Path,
+    provider_factory: Any,
+    profile: dict[str, Any] | None = None,
+    query_planner: Any | None = None,
+    refresh: bool = False,
+) -> Any:
+    resolver = WebResolver(
+        company_name="测试公司",
+        profile=profile or {"company_name": "测试公司"},
+        web_config_path=str(_write_web_config(tmp_path)),
+        output_dir=tmp_path / "out",
+        provider_factory=provider_factory,
+        query_planner=query_planner,
+        refresh=refresh,
+    )
+    for module in config.modules:
+        for label in module.labels:
+            for indicator in label.indicators:
+                await resolver.resolve(
+                    module=module,
+                    label=label,
+                    indicator=indicator,
+                    local_evidence=[],
+                    rule_result=None,
+                )
+    return resolver.write_outputs()
 
 
 async def test_recommendation_no_llm_generates_result_json_shape() -> None:
@@ -481,10 +512,13 @@ def test_web_policy_rule_not_matched_only_triggers_after_rule_miss() -> None:
 
     matched_decision = should_search_indicator(indicator=indicator, local_evidence=[], rule_result="matched")
     missed_decision = should_search_indicator(indicator=indicator, local_evidence=[], rule_result="not_matched")
+    deferred_decision = should_search_indicator(indicator=indicator, local_evidence=[], rule_result=None)
 
     assert matched_decision.enabled is False
     assert missed_decision.enabled is True
     assert missed_decision.reason == "rule_not_matched"
+    assert deferred_decision.enabled is False
+    assert deferred_decision.reason == "rule_result_required"
 
 
 async def test_indicator_data_sources_load_and_drive_rule_result(tmp_path: Path) -> None:
@@ -662,12 +696,10 @@ async def test_web_evidence_executes_fixed_queries(tmp_path: Path) -> None:
         }
     )
 
-    result = await run_web_evidence(
+    result = await _resolve_all_web(
         config=config,
-        company_name="测试公司",
+        tmp_path=tmp_path,
         profile={"company_name": "测试公司", "credit_code": "91440000MA5UW5Y08T"},
-        web_config_path=str(_write_web_config(tmp_path)),
-        output_dir=tmp_path / "run",
         provider_factory=lambda _name, _config: _FakeBusinessProvider(),
         query_planner=lambda **_: [],
     )
@@ -678,9 +710,9 @@ async def test_web_evidence_executes_fixed_queries(tmp_path: Path) -> None:
     assert result.evidence[key][0]["source_type"] == "web"
     assert "海外代工新闻" in result.evidence[key][0]["evidence"]
     assert any(item.get("auto") is True and item.get("status") == "skipped" for item in result.trace)
-    assert (tmp_path / "run" / "web_queries.jsonl").exists()
-    assert (tmp_path / "run" / "web_results.jsonl").exists()
-    assert (tmp_path / "run" / "web_trace.json").exists()
+    assert (tmp_path / "out" / "web_queries.jsonl").exists()
+    assert (tmp_path / "out" / "web_results.jsonl").exists()
+    assert (tmp_path / "out" / "web_trace.json").exists()
 
 
 async def test_web_evidence_runs_llm_fixed_queries(tmp_path: Path) -> None:
@@ -715,12 +747,10 @@ async def test_web_evidence_runs_llm_fixed_queries(tmp_path: Path) -> None:
         }
     )
 
-    result = await run_web_evidence(
+    result = await _resolve_all_web(
         config=config,
-        company_name="测试公司",
+        tmp_path=tmp_path,
         profile={"company_name": "测试公司"},
-        web_config_path=str(_write_web_config(tmp_path)),
-        output_dir=tmp_path / "out",
         provider_factory=lambda _name, _config: _QueryEchoBusinessProvider(),
         refresh=True,
     )
@@ -780,12 +810,10 @@ async def test_web_evidence_reuses_duplicate_query_per_indicator(tmp_path: Path)
             calls += 1
             return await super().search(query, dimension_id=dimension_id)
 
-    result = await run_web_evidence(
+    result = await _resolve_all_web(
         config=config,
-        company_name="测试公司",
+        tmp_path=tmp_path,
         profile={"company_name": "测试公司"},
-        web_config_path=str(_write_web_config(tmp_path)),
-        output_dir=tmp_path / "out",
         provider_factory=lambda _name, _config: DuplicateQueryProvider(),
         refresh=True,
     )
@@ -835,12 +863,10 @@ async def test_web_evidence_runs_auto_queries_after_fixed_queries(tmp_path: Path
     async def fake_query_planner(**kwargs: object) -> list[str]:
         return ["测试公司 个税 管理 招聘"]
 
-    result = await run_web_evidence(
+    result = await _resolve_all_web(
         config=config,
-        company_name="测试公司",
+        tmp_path=tmp_path,
         profile={"company_name": "测试公司"},
-        web_config_path=str(_write_web_config(tmp_path)),
-        output_dir=tmp_path / "out",
         provider_factory=lambda _name, _config: _FakeBusinessProvider(),
         query_planner=fake_query_planner,
         refresh=True,
@@ -851,7 +877,7 @@ async def test_web_evidence_runs_auto_queries_after_fixed_queries(tmp_path: Path
 
 
 async def test_plan_auto_queries_with_llm_returns_bounded_queries(monkeypatch: pytest.MonkeyPatch) -> None:
-    from xft.pipeline.recommender.web_evidence import _plan_auto_queries_with_llm
+    from xft.pipeline.recommender.web_resolver import _plan_auto_queries_with_llm
 
     class FakeMessage:
         content = '{"queries": ["测试公司 差旅 招聘", "测试公司 费控 系统", "多余 查询"]}'
@@ -872,8 +898,8 @@ async def test_plan_auto_queries_with_llm_returns_bounded_queries(monkeypatch: p
     def fake_client() -> FakeClient:
         return FakeClient()
 
-    monkeypatch.setattr("xft.pipeline.recommender.web_evidence.get_ai_client", fake_client)
-    monkeypatch.setattr("xft.pipeline.recommender.web_evidence.settings.llm_api_key", "test")
+    monkeypatch.setattr("xft.pipeline.recommender.web_resolver.get_ai_client", fake_client)
+    monkeypatch.setattr("xft.pipeline.recommender.web_resolver.settings.llm_api_key", "test")
 
     indicator = (
         RecommendationConfig.model_validate(
@@ -927,7 +953,7 @@ async def test_plan_auto_queries_with_llm_returns_bounded_queries(monkeypatch: p
 async def test_plan_auto_queries_coerces_single_string_and_includes_indicator_terms(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from xft.pipeline.recommender.web_evidence import _plan_auto_queries_with_llm
+    from xft.pipeline.recommender.web_resolver import _plan_auto_queries_with_llm
 
     seen_kwargs: dict[str, object] = {}
 
@@ -948,8 +974,8 @@ async def test_plan_auto_queries_coerces_single_string_and_includes_indicator_te
     class FakeClient:
         chat = FakeChat()
 
-    monkeypatch.setattr("xft.pipeline.recommender.web_evidence.get_ai_client", FakeClient)
-    monkeypatch.setattr("xft.pipeline.recommender.web_evidence.settings.llm_api_key", "test")
+    monkeypatch.setattr("xft.pipeline.recommender.web_resolver.get_ai_client", FakeClient)
+    monkeypatch.setattr("xft.pipeline.recommender.web_resolver.settings.llm_api_key", "test")
 
     indicator = (
         RecommendationConfig.model_validate(
@@ -1029,12 +1055,10 @@ async def test_web_evidence_filters_results_for_other_companies(tmp_path: Path) 
         }
     )
 
-    result = await run_web_evidence(
+    result = await _resolve_all_web(
         config=config,
-        company_name="测试公司",
+        tmp_path=tmp_path,
         profile={"company_name": "测试公司", "credit_code": "91440000MA5UW5Y08T"},
-        web_config_path=str(_write_web_config(tmp_path)),
-        output_dir=tmp_path / "out",
         provider_factory=lambda _name, _config: _NoisyBusinessProvider(),
         refresh=True,
     )
@@ -1075,12 +1099,10 @@ async def test_web_evidence_filters_company_only_indicator_noise(tmp_path: Path)
         }
     )
 
-    result = await run_web_evidence(
+    result = await _resolve_all_web(
         config=config,
-        company_name="测试公司",
+        tmp_path=tmp_path,
         profile={"company_name": "测试公司", "credit_code": "91440000MA5UW5Y08T"},
-        web_config_path=str(_write_web_config(tmp_path)),
-        output_dir=tmp_path / "run",
         provider_factory=lambda _name, _config: _CompanyOnlyBusinessProvider(),
         query_planner=lambda **_: [],
     )
@@ -1307,6 +1329,127 @@ async def test_rule_web_evidence_can_only_raise_to_possible() -> None:
     assert indicator.result == "possible"
     assert indicator.confidence == "中"
     assert "测试公司官网显示全国多地分支机构和差旅安排。" in indicator.evidence
+
+
+async def test_rule_web_search_is_lazy_after_local_match(tmp_path: Path) -> None:
+    config = RecommendationConfig.model_validate(
+        {
+            "acceptance_policy": {"levels": [{"result": "低", "min_matched_labels": 0, "conclusion": "低"}]},
+            "modules": [
+                {
+                    "module_id": "travel",
+                    "module_name": "差旅报销",
+                    "labels": [
+                        {
+                            "label_id": "travel_need",
+                            "label_name": "存在差旅需求",
+                            "indicators": [
+                                {
+                                    "indicator_id": "industry",
+                                    "indicator_name": "行业",
+                                    "evaluator": "rule",
+                                    "standard": "行业命中",
+                                    "rule": {"source_field": "basic.industry", "op": "contains", "value": "制造"},
+                                    "web_search": {
+                                        "when": "rule_not_matched",
+                                        "effect": "possible_on_evidence",
+                                        "fixed_queries": ["{company_name} 差旅"],
+                                    },
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+    calls = 0
+
+    class CountingProvider(_QueryEchoBusinessProvider):
+        async def search(self, query: str, *, dimension_id: str) -> ProviderSearchResponse:
+            nonlocal calls
+            calls += 1
+            return await super().search(query, dimension_id=dimension_id)
+
+    resolver = WebResolver(
+        company_name="测试公司",
+        profile={"company_name": "测试公司", "basic": {"industry": "制造业"}},
+        web_config_path=str(_write_web_config(tmp_path)),
+        output_dir=tmp_path / "out",
+        provider_factory=lambda _name, _config: CountingProvider(),
+    )
+
+    result = await evaluate_recommendation(
+        config=config,
+        company_name="测试公司",
+        profile={"company_name": "测试公司", "basic": {"industry": "制造业"}},
+        use_llm=False,
+        web_resolver=resolver,
+    )
+    web_result = resolver.write_outputs()
+
+    assert result is not None
+    assert result.indicator_results[0].result == "matched"
+    assert calls == 0
+    assert web_result.queries == 0
+    assert web_result.trace[0]["status"] == "skipped"
+    assert web_result.trace[0]["trigger_reason"] == "rule_already_matched"
+
+
+async def test_rule_web_search_runs_after_local_miss(tmp_path: Path) -> None:
+    config = RecommendationConfig.model_validate(
+        {
+            "acceptance_policy": {"levels": [{"result": "低", "min_matched_labels": 0, "conclusion": "低"}]},
+            "modules": [
+                {
+                    "module_id": "travel",
+                    "module_name": "差旅报销",
+                    "labels": [
+                        {
+                            "label_id": "travel_need",
+                            "label_name": "存在差旅需求",
+                            "indicators": [
+                                {
+                                    "indicator_id": "industry",
+                                    "indicator_name": "差旅需求",
+                                    "evaluator": "rule",
+                                    "standard": "行业或公开信息显示存在差旅需求",
+                                    "rule": {"source_field": "basic.industry", "op": "contains", "value": "制造"},
+                                    "web_search": {
+                                        "when": "rule_not_matched",
+                                        "effect": "possible_on_evidence",
+                                        "fixed_queries": ["{company_name} 差旅"],
+                                    },
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+    resolver = WebResolver(
+        company_name="测试公司",
+        profile={"company_name": "测试公司", "basic": {"industry": "软件服务"}},
+        web_config_path=str(_write_web_config(tmp_path)),
+        output_dir=tmp_path / "out",
+        provider_factory=lambda _name, _config: _QueryEchoBusinessProvider(),
+    )
+
+    result = await evaluate_recommendation(
+        config=config,
+        company_name="测试公司",
+        profile={"company_name": "测试公司", "basic": {"industry": "软件服务"}},
+        use_llm=False,
+        web_resolver=resolver,
+    )
+    web_result = resolver.write_outputs()
+
+    assert result is not None
+    assert result.indicator_results[0].result == "possible"
+    assert web_result.queries == 1
+    assert web_result.trace[0]["trigger_reason"] == "rule_not_matched"
 
 
 async def test_llm_validation_error_falls_back_to_unknown_not_matched(monkeypatch: pytest.MonkeyPatch) -> None:

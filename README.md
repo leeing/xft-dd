@@ -14,8 +14,9 @@ XFT 根据本地企业画像、业务规则、LLM 和可选的公开 Web 证据�
 flowchart LR
     data["data/ 企业 JSON"] --> warehouse["DuckDB 企业画像库"]
     warehouse --> gather["读取企业画像和本地证据"]
-    gather --> web["可选 Web 补证"]
-    web --> recommend["指标判断 rule / llm / hybrid / llm_web"]
+    gather --> recommend["指标判断 rule / llm / hybrid / llm_web"]
+    recommend --> web["需要时按指标 Web 补证"]
+    web --> recommend
     recommend --> output["result.json + report.md"]
 ```
 
@@ -28,8 +29,10 @@ config/recommender/xft
 当前推荐主链路：
 
 ```text
-data_gather -> web_evidence -> recommend -> save
+data_gather -> recommend -> save
 ```
+
+`--with-web` 开启后，Web 不再先把所有指标搜一遍，而是在每个指标计算到证据不足、规则未命中或 `llm_web` 必须取公开证据时才搜索。
 
 ## 快速开始
 
@@ -365,6 +368,12 @@ web_search:
 
 查询词要带指标词，不要只写 `{company_name} 官网` 或 `{company_name} 新闻`。
 
+执行时机是 lazy 的：系统先使用本地画像和 DuckDB 证据判断当前指标；只有该指标的 `when` 条件满足时才搜索。常见选择：
+
+- `llm_web` 默认 `when: always`，因为它本来就依赖公开网页。
+- `llm` / `hybrid` 常用 `when: insufficient`，本地证据足够时不搜索。
+- `rule` 常用 `when: rule_not_matched` + `effect: possible_on_evidence`，规则已命中时不搜索，规则未命中时 Web 线索最多提升为 `possible`。
+
 ### `web_search.yaml`
 
 配置 Web provider 和查询上限：
@@ -436,6 +445,7 @@ python -m xft.keys encode <plaintext_key>
 ### Web 证据噪声大
 
 - 固定查询词必须包含指标词。
+- Web 是按指标缺口触发的；如果查询过多，优先检查哪些指标配置了 `when: always` 或泛化查询词。
 - `llm_web` 没有实际 Web 证据时会输出 `unknown`，不会空证据调用 LLM。
 - `rule` 配 `effect: possible_on_evidence` 时，Web 证据最多提升为 `possible`，不会直接变成 `matched`。
 - 抽查 `web_trace.json`，确认过滤后的结果既属于目标公司，也与指标相关。

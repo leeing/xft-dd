@@ -230,7 +230,7 @@ web_search:
 
 ## Web Policy
 
-`web_search` 是指标级补证策略。只有命令带 `--with-web` 时才执行。
+`web_search` 是指标级补证策略。只有命令带 `--with-web` 时才执行，并且是 lazy 的：系统不会预先搜索所有指标，而是在当前指标本地证据不足、规则未命中或 `llm_web` 必须取公开证据时才搜索。
 
 常用字段：
 
@@ -252,6 +252,8 @@ web_search:
 | `llm` | 可用 `insufficient` + `llm_evidence` 增加 LLM 证据 |
 | `hybrid` | 可用 `insufficient` + `llm_evidence` 补充模糊判断 |
 | `llm_web` | 使用 `always` + `llm_evidence` |
+
+`rule_not_matched` 只有在规则已经实际跑出 `not_matched` 或 `unknown` 后才会触发；规则已命中或规则尚未执行时不会搜索。
 
 Web 结果进入证据前会检查：
 
