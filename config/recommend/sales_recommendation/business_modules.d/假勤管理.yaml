@@ -21,26 +21,28 @@ labels:
   indicators:
   - indicator_id: 研发人员占比
     indicator_name: 研发人员占比
-    evaluator: llm_web
-    standard: ≥20%（研发岗员工数 / 总员工数）
+    evaluator: rule
+    standard: 有明确研发岗位招聘或本地画像中的研发岗位线索；不再按无法核实的研发人员占比直接命中
+    rule:
+      source_field: recent_recruitment_titles
+      op: contains_any
+      value:
+      - 研发
+      - 技术研发
+      - 产品开发
+      - 研发工程师
+      - 工艺工程师
     data_sources: []
-    prompt: 请判断企业是否满足指标：研发人员占比。只能基于证据判断，不得编造。
+    prompt: 请判断企业是否存在明确研发岗位线索。只能基于证据判断，不得编造。
     evidence_hints:
     - 研发人员占比
     - '20'
     - 研发岗员工数
     - 总员工数
-    web_search:
-      when: always
-      effect: llm_evidence
-      fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
-      auto: false
   - indicator_id: 研发费用占比
     indicator_name: 研发费用占比
     evaluator: llm_web
-    standard: 营收＜5000 万→≥5%；5000 万 - 2 亿→≥4%；营收＞2 亿→按数字化转型型标准（≥3%）
+    standard: 公开年报、招股书或官方新闻明确披露研发投入、研发费用或研发项目；不再依据泛网页推断比例
     data_sources: []
     prompt: 请判断企业是否满足指标：研发费用占比。只能基于证据判断，不得编造。
     evidence_hints:
@@ -50,8 +52,9 @@ labels:
     - 按数字化转型型标准
     web_search:
       fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
+      - '{company_name} 研发投入 研发费用'
+      - '{company_name} 年报 研发费用'
+      - '{company_name} 招股书 研发费用'
       auto: false
   - indicator_id: 细分行业
     indicator_name: 细分行业
@@ -127,8 +130,12 @@ labels:
   indicators:
   - indicator_id: 行业
     indicator_name: 行业
-    evaluator: llm
+    evaluator: rule
     standard: 制造业
+    rule:
+      source_field: industry
+      op: contains
+      value: 制造
     data_sources: []
     prompt: 请判断企业是否满足指标：行业。只能基于证据判断，不得编造。
     evidence_hints:
@@ -143,7 +150,13 @@ labels:
       table: recruitments
       field: title
       op: text_contains
-      keywords: []
+      keywords:
+      - 考勤
+      - 工时
+      - 人事
+      - 行政
+      - 薪酬
+      - 生产跟单
     prompt: 请判断企业是否满足指标：考勤管理需求。只能基于证据判断，不得编造。
     evidence_hints:
     - 考勤管理需求
@@ -176,7 +189,17 @@ labels:
       table: recruitments
       field: title
       op: text_contains
-      keywords: []
+      keywords:
+      - 生产
+      - 技术
+      - 研发
+      - 质量
+      - 检验
+      - 仓库
+      - 物流
+      - 销售
+      - 售后
+      min_matches: 2
     prompt: 请判断企业是否满足指标：多类型工种。只能基于证据判断，不得编造。
     evidence_hints:
     - 多类型工种
@@ -194,24 +217,19 @@ labels:
   indicators:
   - indicator_id: 分支机构数量
     indicator_name: 分支机构数量
-    evaluator: llm_web
+    evaluator: rule
     standard: ≥3 个（需有独立办公场所 / 工商注册的分公司 / 办事处）
-    data_sources:
-    - type: table
-      table: branches
-      field: branch_name
-      op: exists
+    rule:
+      source_field: branch_count
+      op: '>='
+      value: 3
+    data_sources: []
     prompt: 请判断企业是否满足指标：分支机构数量。只能基于证据判断，不得编造。
     evidence_hints:
     - 分支机构数量
     - 需有独立办公场所
     - 工商注册的分公司
     - 办事处
-    web_search:
-      fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
-      auto: false
   - indicator_id: 多厂区布局
     indicator_name: 多厂区布局
     evaluator: llm_web
@@ -230,18 +248,20 @@ labels:
     - 租赁备案
     web_search:
       fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
+      - '{company_name} 生产基地 工厂'
+      - '{company_name} 多厂区 生产基地'
+      - '{company_name} 联系我们 工厂 地址'
       auto: false
   - indicator_id: 跨区域经营
     indicator_name: 跨区域经营
-    evaluator: llm_web
+    evaluator: hybrid
     standard: 分支机构≥3 个（分公司 / 办事处，含生产 / 经营职能）
-    data_sources:
-    - type: table
-      table: branches
-      field: branch_name
-      op: exists
+    rule:
+      source_field: branch_count
+      op: '>='
+      value: 3
+    merge_policy: rule_first
+    data_sources: []
     prompt: 请判断企业是否满足指标：跨区域经营。只能基于证据判断，不得编造。
     evidence_hints:
     - 跨区域经营
@@ -252,8 +272,8 @@ labels:
     - 经营职能
     web_search:
       fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
+      - '{company_name} 分公司 办事处'
+      - '{company_name} 销售网点 生产基地'
       auto: false
 - label_id: 倒班排班
   label_name: 倒班排班
@@ -262,14 +282,20 @@ labels:
   indicators:
   - indicator_id: 倒班制用工
     indicator_name: 倒班制用工
-    evaluator: llm_web
+    evaluator: rule
     standard: 招聘 JD 中倒班、排班、日班、晚班、夜班关键词出现频次≥1 次
-    data_sources:
-    - type: table
-      table: recruitments
-      field: title
-      op: text_contains
-      keywords: []
+    rule:
+      source_field: recent_recruitment_titles
+      op: contains_any
+      value:
+      - 倒班
+      - 排班
+      - 夜班
+      - 晚班
+      - 日班
+      - 两班
+      - 三班
+    data_sources: []
     prompt: 请判断企业是否满足指标：倒班制用工。只能基于证据判断，不得编造。
     evidence_hints:
     - 倒班制用工
@@ -280,11 +306,6 @@ labels:
     - 日班
     - 晚班
     - 夜班关键词出现频次
-    web_search:
-      fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
-      auto: false
 - label_id: 出口海外
   label_name: 出口海外
   description: ''
@@ -307,8 +328,9 @@ labels:
     - 如沃尔玛
     web_search:
       fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
+      - '{company_name} 海外客户 代工'
+      - '{company_name} OEM ODM 出口'
+      - '{company_name} 沃尔玛 ZARA 亚马逊 供应商'
       auto: false
   - indicator_id: 海外营收
     indicator_name: 海外营收
@@ -327,19 +349,27 @@ labels:
     - 玩具
     web_search:
       fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
+      - '{company_name} 出口营收 海外收入'
+      - '{company_name} 海关 出口'
+      - '{company_name} 年报 海外收入'
       auto: false
   - indicator_id: 境外设厂
     indicator_name: 境外设厂
-    evaluator: llm_web
+    evaluator: hybrid
     standard: 在新闻招聘信息中体现海外有设立生产基地或者办公地点，或招聘 JD 提及境外国家、地区
-    data_sources:
-    - type: table
-      table: recruitments
-      field: title
-      op: text_contains
-      keywords: []
+    rule:
+      source_field: recent_recruitment_titles
+      op: contains_any
+      value:
+      - 海外
+      - 境外
+      - 驻外
+      - 越南
+      - 泰国
+      - 印尼
+      - 马来西亚
+    merge_policy: rule_first
+    data_sources: []
     prompt: 请判断企业是否满足指标：境外设厂。只能基于证据判断，不得编造。
     evidence_hints:
     - 境外设厂
@@ -350,18 +380,25 @@ labels:
     - 地区
     web_search:
       fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
+      - '{company_name} 海外工厂 生产基地'
+      - '{company_name} 境外 办事处'
+      - '{company_name} 越南 泰国 工厂'
       auto: false
   - indicator_id: 验厂相关资质_记录
     indicator_name: 验厂相关资质 / 记录
-    evaluator: llm_web
+    evaluator: hybrid
     standard: 1. 已通过 BSCI/Sedex/SA8000 任一认证（有效期内）； 近 2 年验厂次数≥1 次（含客户验厂 / 第三方审核）
-    data_sources:
-    - type: table
-      table: qualifications
-      field: qualification_name
-      op: exists
+    rule:
+      source_field: labels
+      op: contains_any
+      value:
+      - BSCI
+      - Sedex
+      - SA8000
+      - 验厂
+      - 社会责任
+    merge_policy: rule_first
+    data_sources: []
     prompt: 请判断企业是否满足指标：验厂相关资质 / 记录。只能基于证据判断，不得编造。
     evidence_hints:
     - 验厂相关资质
@@ -374,19 +411,23 @@ labels:
     - 有效期内
     web_search:
       fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
+      - '{company_name} BSCI Sedex SA8000'
+      - '{company_name} 验厂 认证'
       auto: false
   - indicator_id: 考勤岗位设置
     indicator_name: 考勤岗位设置
-    evaluator: llm_web
+    evaluator: rule
     standard: 招聘 JD 提及 “合规专员”、“验厂专员” 关键词≥1 次
-    data_sources:
-    - type: table
-      table: recruitments
-      field: title
-      op: text_contains
-      keywords: []
+    rule:
+      source_field: recent_recruitment_titles
+      op: contains_any
+      value:
+      - 合规专员
+      - 验厂专员
+      - 考勤
+      - 薪酬
+      - 人事专员
+    data_sources: []
     prompt: 请判断企业是否满足指标：考勤岗位设置。只能基于证据判断，不得编造。
     evidence_hints:
     - 考勤岗位设置
@@ -396,21 +437,21 @@ labels:
     - 合规专员
     - 验厂专员
     - 关键词
-    web_search:
-      fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
-      auto: false
   - indicator_id: 外贸岗位设置
     indicator_name: 外贸岗位设置
-    evaluator: llm_web
+    evaluator: rule
     standard: 招聘 JD 提及 “派驻海外”、“外贸“、”外语“ 关键词≥1 次
-    data_sources:
-    - type: table
-      table: recruitments
-      field: title
-      op: text_contains
-      keywords: []
+    rule:
+      source_field: recent_recruitment_titles
+      op: contains_any
+      value:
+      - 外贸
+      - 外语
+      - 英语
+      - 海外销售
+      - 国际业务
+      - 出口业务
+    data_sources: []
     prompt: 请判断企业是否满足指标：外贸岗位设置。只能基于证据判断，不得编造。
     evidence_hints:
     - 外贸岗位设置
@@ -421,29 +462,31 @@ labels:
     - 外贸
     - 外语
     - 关键词
-    web_search:
-      fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
-      auto: false
   - indicator_id: 境外工作地点
     indicator_name: 境外工作地点
-    evaluator: llm_web
+    evaluator: hybrid
     standard: 招聘信息中体现有海外地址
-    data_sources:
-    - type: table
-      table: recruitments
-      field: title
-      op: text_contains
-      keywords: []
+    rule:
+      source_field: recent_recruitment_titles
+      op: contains_any
+      value:
+      - 海外
+      - 境外
+      - 驻外
+      - 越南
+      - 泰国
+      - 印尼
+      - 马来西亚
+    merge_policy: rule_first
+    data_sources: []
     prompt: 请判断企业是否满足指标：境外工作地点。只能基于证据判断，不得编造。
     evidence_hints:
     - 境外工作地点
     - 招聘信息中体现有海外地址
     web_search:
       fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
+      - '{company_name} 海外招聘 驻外'
+      - '{company_name} 境外 工作地点'
       auto: false
   - indicator_id: 商品服务有出口特征
     indicator_name: 商品服务有出口特征
@@ -456,8 +499,9 @@ labels:
     - 出口导向型业务
     web_search:
       fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
+      - '{company_name} 出口 外贸 产品'
+      - '{company_name} 海外市场 产品'
+      - '{company_name} 海关 出口 产品'
       auto: false
 marketing_points:
   科技属性:

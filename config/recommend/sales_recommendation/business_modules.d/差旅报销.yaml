@@ -21,15 +21,36 @@ labels:
   indicators:
   - indicator_id: 售后派驻属性
     indicator_name: 售后派驻属性
-    evaluator: llm_web
+    evaluator: hybrid
     standard: 1.招聘 JD 含 “售后派驻”“驻点维护”“外勤售后”“区域售后”“异地支援” 关键词≥2 次；2. 或 “派驻”“驻点”“外勤” 单独出现≥3
       次；3. 跨区域售后岗位≥3 个（不同省份 / 城市）
+    rule:
+      source_field: recent_recruitment_titles
+      op: contains_any
+      value:
+      - 售后派驻
+      - 驻点维护
+      - 外勤售后
+      - 区域售后
+      - 异地支援
+      - 派驻
+      - 驻点
+      - 外勤
+    merge_policy: rule_first
     data_sources:
     - type: table
       table: recruitments
       field: title
       op: text_contains
-      keywords: []
+      keywords:
+      - 售后派驻
+      - 驻点维护
+      - 外勤售后
+      - 区域售后
+      - 异地支援
+      - 派驻
+      - 驻点
+      - 外勤
     prompt: 请判断企业是否满足指标：售后派驻属性。只能基于证据判断，不得编造。
     evidence_hints:
     - 售后派驻属性
@@ -41,20 +62,35 @@ labels:
     - 区域售后
     - 异地支援
     web_search:
+      when: insufficient
+      effect: llm_evidence
       fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
+      - '{company_name} 售后 派驻 驻点 外勤'
+      - '{company_name} 售后工程师 区域售后'
       auto: false
   - indicator_id: 售后人员占比
     indicator_name: 售后人员占比
-    evaluator: llm_web
+    evaluator: hybrid
     standard: 售后人员占企业人数的10%-30%，可按照招聘人员比例分析
+    rule:
+      source_field: recent_recruitment_titles
+      op: contains_any
+      value:
+      - 售后
+      - 客服
+      - 技术支持
+      - 售后工程师
+    merge_policy: rule_first
     data_sources:
     - type: table
       table: recruitments
       field: title
       op: text_contains
-      keywords: []
+      keywords:
+      - 售后
+      - 客服
+      - 技术支持
+      - 售后工程师
     prompt: 请判断企业是否满足指标：售后人员占比。只能基于证据判断，不得编造。
     evidence_hints:
     - 售后人员占比
@@ -62,9 +98,11 @@ labels:
     - '30'
     - 可按照招聘人员比例分析
     web_search:
+      when: insufficient
+      effect: llm_evidence
       fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
+      - '{company_name} 售后 招聘 售后工程师'
+      - '{company_name} 技术支持 招聘'
       auto: false
   - indicator_id: 售后的_b_端商品的细分行业
     indicator_name: 售后的 B 端商品的细分行业
@@ -82,14 +120,19 @@ labels:
     - 通信基建
     web_search:
       fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
+      - '{company_name} 工业设备 商用装备 工业自动化'
+      - '{company_name} 专用机械 通信基建 产品'
       auto: false
   - indicator_id: 技术含量
     indicator_name: 技术含量
-    evaluator: llm_web
+    evaluator: hybrid
     standard: 1. 发明专利≥3 项（核心技术专利，非外观 / 实用新型）；2. 持有设备类专项认证（工业产品生产许可证、设备安全认证）；3. 产品描述含
       “定制化”“系统集成” 关键词≥2 次
+    rule:
+      source_field: ip_counts.patent
+      op: '>'
+      value: 0
+    merge_policy: rule_first
     data_sources:
     - type: table
       table: qualifications
@@ -110,9 +153,11 @@ labels:
     - 工业产品生产许可证
     - 设备安全认证
     web_search:
+      when: insufficient
+      effect: llm_evidence
       fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
+      - '{company_name} 发明专利 核心技术'
+      - '{company_name} 工业产品生产许可证 设备认证'
       auto: false
   - indicator_id: 服务支持
     indicator_name: 服务支持
@@ -132,8 +177,8 @@ labels:
     - 设备售后工程师
     web_search:
       fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
+      - '{company_name} 售后服务 安装调试 质保'
+      - '{company_name} 驻场服务 技术支持'
       auto: false
 - label_id: 产销一体属性
   label_name: 产销一体属性
@@ -142,15 +187,36 @@ labels:
   indicators:
   - indicator_id: 经销商维护型业务员属性
     indicator_name: 经销商维护型业务员属性
-    evaluator: llm_web
+    evaluator: hybrid
     standard: 1. 招聘 JD 含 “经销商开发”“渠道维护”“区域销售”“代理商维护”“空白区域开拓” 关键词≥2 次；2. 或 “渠道”“经销商”“代理商”
       单独出现≥3 次； 跨区域销售岗位≥3 个（不同省份 / 城市）
+    rule:
+      source_field: recent_recruitment_titles
+      op: contains_any
+      value:
+      - 经销商开发
+      - 渠道维护
+      - 区域销售
+      - 代理商维护
+      - 空白区域开拓
+      - 渠道
+      - 经销商
+      - 代理商
+    merge_policy: rule_first
     data_sources:
     - type: table
       table: recruitments
       field: title
       op: text_contains
-      keywords: []
+      keywords:
+      - 经销商开发
+      - 渠道维护
+      - 区域销售
+      - 代理商维护
+      - 空白区域开拓
+      - 渠道
+      - 经销商
+      - 代理商
     prompt: 请判断企业是否满足指标：经销商维护型业务员属性。只能基于证据判断，不得编造。
     evidence_hints:
     - 经销商维护型业务员属性
@@ -162,20 +228,37 @@ labels:
     - 代理商维护
     - 空白区域开拓
     web_search:
+      when: insufficient
+      effect: llm_evidence
       fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
+      - '{company_name} 经销商 渠道维护 区域销售'
+      - '{company_name} 代理商 渠道 招聘'
       auto: false
   - indicator_id: 销售人员占比
     indicator_name: 销售人员占比
-    evaluator: llm_web
+    evaluator: hybrid
     standard: 销售人员占企业人数的10%-30%，可按照招聘人员比例分析
+    rule:
+      source_field: recent_recruitment_titles
+      op: contains_any
+      value:
+      - 销售
+      - 渠道
+      - 业务员
+      - 客户经理
+      - 区域经理
+    merge_policy: rule_first
     data_sources:
     - type: table
       table: recruitments
       field: title
       op: text_contains
-      keywords: []
+      keywords:
+      - 销售
+      - 渠道
+      - 业务员
+      - 客户经理
+      - 区域经理
     prompt: 请判断企业是否满足指标：销售人员占比。只能基于证据判断，不得编造。
     evidence_hints:
     - 销售人员占比
@@ -183,9 +266,11 @@ labels:
     - '30'
     - 可按照招聘人员比例分析
     web_search:
+      when: insufficient
+      effect: llm_evidence
       fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
+      - '{company_name} 销售 招聘 区域经理'
+      - '{company_name} 渠道 销售 团队'
       auto: false
   - indicator_id: 销售的_c_端商品的细分行业
     indicator_name: 销售的 C 端商品的细分行业
@@ -203,20 +288,37 @@ labels:
     - 县域零售连锁
     web_search:
       fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
+      - '{company_name} 家电 小家电 快消 产品'
+      - '{company_name} 农资 县域零售 连锁'
       auto: false
   - indicator_id: 销售模式
     indicator_name: 销售模式
-    evaluator: llm_web
+    evaluator: hybrid
     standard: 1. 企业官网 “销售网络” 提及 “千县千店”“县域经销商”“乡镇门店”；. 招聘 JD 含 “下沉市场销售”“县域经销商维护”“乡镇渠道拓展”
       关键词≥2 次； 线下门店覆盖≥5 个县域
+    rule:
+      source_field: recent_recruitment_titles
+      op: contains_any
+      value:
+      - 下沉市场销售
+      - 县域经销商
+      - 乡镇渠道
+      - 销售网络
+      - 经销商
+      - 渠道拓展
+    merge_policy: rule_first
     data_sources:
     - type: table
       table: recruitments
       field: title
       op: text_contains
-      keywords: []
+      keywords:
+      - 下沉市场销售
+      - 县域经销商
+      - 乡镇渠道
+      - 销售网络
+      - 经销商
+      - 渠道拓展
     prompt: 请判断企业是否满足指标：销售模式。只能基于证据判断，不得编造。
     evidence_hints:
     - 销售模式
@@ -228,9 +330,11 @@ labels:
     - 乡镇门店
     - 招聘
     web_search:
+      when: insufficient
+      effect: llm_evidence
       fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
+      - '{company_name} 销售网络 经销商 县域'
+      - '{company_name} 乡镇渠道 门店'
       auto: false
 - label_id: 出口海外报销
   label_name: 出口海外报销
@@ -239,15 +343,30 @@ labels:
   indicators:
   - indicator_id: 海外拓展模式
     indicator_name: 海外拓展模式
-    evaluator: llm_web
+    evaluator: hybrid
     standard: 1. 招聘 JD 含 “海外市场拓展”“境外客户开发”“海外渠道建设” 关键词≥1 次；2. 企业官网提及 “自主拓展海外市场”“海外线下渠道”“全球展会参展”；
       排除 “纯亚马逊 FBA 代运营”“无境外出差” 描述
+    rule:
+      source_field: recent_recruitment_titles
+      op: contains_any
+      value:
+      - 海外市场拓展
+      - 境外客户开发
+      - 海外渠道建设
+      - 外贸
+      - 海外销售
+    merge_policy: rule_first
     data_sources:
     - type: table
       table: recruitments
       field: title
       op: text_contains
-      keywords: []
+      keywords:
+      - 海外市场拓展
+      - 境外客户开发
+      - 海外渠道建设
+      - 外贸
+      - 海外销售
     prompt: 请判断企业是否满足指标：海外拓展模式。只能基于证据判断，不得编造。
     evidence_hints:
     - 海外拓展模式
@@ -259,21 +378,38 @@ labels:
     - 关键词
     - 企业官网提及
     web_search:
+      when: insufficient
+      effect: llm_evidence
       fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
+      - '{company_name} 海外市场 拓展 海外渠道'
+      - '{company_name} 全球展会 海外客户'
       auto: false
   - indicator_id: 境外差旅频次
     indicator_name: 境外差旅频次
-    evaluator: llm_web
+    evaluator: hybrid
     standard: 1. 招聘 JD 含 “境外出差”“海外驻点”“全球出差” 关键词≥1 次；2. 年参与海外展会≥1 场（如广交会、德国科隆展、美国 CES
       展）；3. 海外客户案例≥3 个（需线下对接）
+    rule:
+      source_field: recent_recruitment_titles
+      op: contains_any
+      value:
+      - 境外出差
+      - 海外驻点
+      - 全球出差
+      - 海外出差
+      - 海外展会
+    merge_policy: rule_first
     data_sources:
     - type: table
       table: recruitments
       field: title
       op: text_contains
-      keywords: []
+      keywords:
+      - 境外出差
+      - 海外驻点
+      - 全球出差
+      - 海外出差
+      - 海外展会
     prompt: 请判断企业是否满足指标：境外差旅频次。只能基于证据判断，不得编造。
     evidence_hints:
     - 境外差旅频次
@@ -285,21 +421,38 @@ labels:
     - 关键词
     - 年参与海外展会
     web_search:
+      when: insufficient
+      effect: llm_evidence
       fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
+      - '{company_name} 境外出差 海外驻点'
+      - '{company_name} 海外展会 广交会 CES'
       auto: false
   - indicator_id: 海外团队配置
     indicator_name: 海外团队配置
-    evaluator: llm_web
+    evaluator: hybrid
     standard: 1. 招聘 JD 含 “海外销售代表”“境外区域经理”“派驻海外” 关键词≥1 次；2. 企查查显示海外分支机构 / 办事处（非纯仓储）；>3.
       官网提及 “海外本地团队”“全球分公司”
+    rule:
+      source_field: recent_recruitment_titles
+      op: contains_any
+      value:
+      - 海外销售代表
+      - 境外区域经理
+      - 派驻海外
+      - 海外团队
+      - 外贸经理
+    merge_policy: rule_first
     data_sources:
     - type: table
       table: recruitments
       field: title
       op: text_contains
-      keywords: []
+      keywords:
+      - 海外销售代表
+      - 境外区域经理
+      - 派驻海外
+      - 海外团队
+      - 外贸经理
     prompt: 请判断企业是否满足指标：海外团队配置。只能基于证据判断，不得编造。
     evidence_hints:
     - 海外团队配置
@@ -311,21 +464,38 @@ labels:
     - 关键词
     - 企查查显示海外分支机构
     web_search:
+      when: insufficient
+      effect: llm_evidence
       fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
+      - '{company_name} 海外团队 全球分公司'
+      - '{company_name} 海外销售代表 外贸经理'
       auto: false
   - indicator_id: 销售渠道特征
     indicator_name: 销售渠道特征
-    evaluator: llm_web
+    evaluator: hybrid
     standard: 1. 销售模式含 “海外经销商开发”“线下门店合作”“政企采购（海外）”；2. 招聘 JD 含 “海外经销商维护”“海外代理商拓展” 关键词≥1
       次；3. 电商平台销售占比＜90%（按公开营收描述推导）
+    rule:
+      source_field: recent_recruitment_titles
+      op: contains_any
+      value:
+      - 海外经销商
+      - 海外代理商
+      - 海外渠道
+      - 线下门店
+      - 政企采购
+    merge_policy: rule_first
     data_sources:
     - type: table
       table: recruitments
       field: title
       op: text_contains
-      keywords: []
+      keywords:
+      - 海外经销商
+      - 海外代理商
+      - 海外渠道
+      - 线下门店
+      - 政企采购
     prompt: 请判断企业是否满足指标：销售渠道特征。只能基于证据判断，不得编造。
     evidence_hints:
     - 销售渠道特征
@@ -337,9 +507,11 @@ labels:
     - 招聘
     - JD
     web_search:
+      when: insufficient
+      effect: llm_evidence
       fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
+      - '{company_name} 海外经销商 海外代理商'
+      - '{company_name} 海外渠道 线下门店'
       auto: false
 marketing_points:
   售后属性:
