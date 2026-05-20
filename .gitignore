@@ -25,5 +25,5 @@ company.txt
 enquery.xlsx
 
 /data/
-/cache/
+/cache/*.db
 recommendation_runs/
