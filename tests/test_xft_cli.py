@@ -32,7 +32,7 @@ def test_xft_scenario_validate(capsys: pytest.CaptureFixture[str]) -> None:
     payload = json.loads(captured.out)
     assert payload["scenario_id"] == "sales_recommendation"
     assert payload["business_modules"] == 7
-    assert payload["dimensions"] > 0
+    assert "dimensions" not in payload
 
 
 def test_xft_scenario_inspect_writes_output(tmp_path: Path) -> None:
@@ -89,6 +89,10 @@ def test_recommend_smoke_command_uses_offline_no_llm(monkeypatch: pytest.MonkeyP
                 "--llm-debug",
                 "--llm-concurrency",
                 "2",
+                "--with-business-web",
+                "--business-web-refresh",
+                "--business-web-provider",
+                "fake_search",
                 "烟测公司",
             ]
         )
@@ -96,10 +100,11 @@ def test_recommend_smoke_command_uses_offline_no_llm(monkeypatch: pytest.MonkeyP
     )
     assert captured["company_name"] == "烟测公司"
     assert captured["use_llm"] is False
-    assert captured["with_web"] is False
-    assert captured["use_web_evidence"] is False
     assert captured["llm_debug"] is True
     assert captured["llm_concurrency"] == 2
+    assert captured["with_business_web"] is True
+    assert captured["refresh_business_web"] is True
+    assert captured["business_web_providers"] == ["fake_search"]
 
 
 def test_diligence_smoke_command_dry_run_no_external_calls(

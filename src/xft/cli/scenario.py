@@ -7,11 +7,9 @@ import json
 import sys
 from pathlib import Path
 
-from xft.core.config_loader import load_dimensions_config
 from xft.core.scenario import load_scenario
-from xft.evidence.policy import load_evidence_policy
 from xft.pipeline.recommender.business_config_loader import load_business_recommendation_config
-from xft.web.config_loader import load_web_extract_llm_config, load_web_search_config
+from xft.web.config_loader import load_web_search_config
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -48,10 +46,7 @@ def _validate(args: argparse.Namespace) -> int:
         if scenario is None:
             sys.stderr.write(f"error: scenario not found: {args.scenario}\n")
             return 2
-        dimensions = load_dimensions_config(args.scenario)
         web_search = load_web_search_config(args.scenario)
-        web_extract = load_web_extract_llm_config(args.scenario)
-        evidence = load_evidence_policy(args.scenario)
         business = load_business_recommendation_config(args.scenario)
     except (OSError, TypeError, ValueError) as exc:
         sys.stderr.write(f"invalid scenario: {exc}\n")
@@ -60,10 +55,7 @@ def _validate(args: argparse.Namespace) -> int:
         "scenario_id": scenario.config.id,
         "scenario_name": scenario.config.name,
         "root": str(Path(args.scenario)),
-        "dimensions": len(dimensions.dimensions),
         "web_enabled": web_search.enabled,
-        "web_extract_enabled": web_extract.enabled,
-        "evidence_policy_version": evidence.version,
         "business_modules": len(business.modules) if business else 0,
     }
     sys.stdout.write(json.dumps(payload, ensure_ascii=False, indent=2))

@@ -9,7 +9,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from xft.evidence.local_builder import make_evidence_id
 from xft.warehouse import adapters
 from xft.warehouse.duckdb_client import connect
 from xft.warehouse.models import CompanyPackage, ImportSummary
@@ -20,6 +19,12 @@ CREDIT_CODE_LENGTH = 18
 
 def _now() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
+
+
+def make_evidence_id(*parts: object) -> str:
+    """Return a stable id for local warehouse evidence rows."""
+    raw = "|".join(str(part) for part in parts if part not in (None, ""))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
 
 
 def _is_company_dir(path: Path) -> bool:

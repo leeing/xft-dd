@@ -1,35 +1,10 @@
-"""Pydantic models for the configurable recommender."""
+"""Pydantic models for the business-first recommender."""
 
 from __future__ import annotations
 
 from typing import Literal
 
 from pydantic import BaseModel
-
-from xft.core.models import (
-    AnalysisDimension,
-    AnalysisDimensionsConfig,
-    Confidence,
-    DimensionAnalysis,
-    DimensionStatus,
-    EvidenceFact,
-    EvidenceTemplate,
-    ScenarioConfig,
-    SupportRule,
-)
-
-__all__ = [
-    "AnalysisDimension",
-    "AnalysisDimensionsConfig",
-    "Confidence",
-    "DimensionAnalysis",
-    "DimensionStatus",
-    "EvidenceFact",
-    "EvidenceTemplate",
-    "ScenarioConfig",
-    "SupportRule",
-    "RecommendationRunResult",
-]
 
 
 class RecommendationRunResult(BaseModel):

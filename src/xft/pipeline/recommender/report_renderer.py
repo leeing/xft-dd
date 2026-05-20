@@ -12,10 +12,9 @@ def render_report(state: RecommenderState) -> str:
     return "\n".join(
         [
             *_render_profile_summary(state),
-            *_render_evidence_summary(state),
-            *_render_dimension_summary(state),
             *_render_business_result(state),
             *_render_business_modules(state),
+            *_render_indicator_evidence_summary(state),
             *_render_next_steps(state),
         ]
     )
@@ -37,58 +36,38 @@ def _render_profile_summary(state: RecommenderState) -> list[str]:
     ]
 
 
-def _render_evidence_summary(state: RecommenderState) -> list[str]:
-    """Render evidence quality, conflicts, and gaps summary."""
-    analyses = state["dimension_analysis"]
-    lines = ["## 证据摘要", ""]
-
-    total_primary = sum(len(a.local_evidence) for a in analyses)
-    total_web = sum(len(a.web_evidence) for a in analyses)
-    total_conflicts = sum(len(a.conflicts) for a in analyses)
-    total_inferences = sum(len(a.inference_evidence) for a in analyses)
-    total_missing = sum(len(a.missing_evidence) for a in analyses)
-
-    lines.append(f"- 本地事实证据：{total_primary} 条")
-    lines.append(f"- Web 补证/佐证：{total_web} 条")
-    lines.append(f"- 规则推断：{total_inferences} 条")
-    lines.append(f"- 数据冲突：{total_conflicts} 处")
-    lines.append(f"- 待补充证据：{total_missing} 项")
-    lines.append("")
-
-    # Conflicts detail
-    conflict_lines = [
-        f"  - {analysis.title}：{conflict.claim}" for analysis in analyses for conflict in analysis.conflicts[:2]
+def _render_indicator_evidence_summary(state: RecommenderState) -> list[str]:
+    business = state.get("business_recommendation")
+    if business is None:
+        return []
+    indicators = [
+        item
+        for module in business.modules
+        for label in module.label_results
+        for item in label.indicator_results
+        if item.result in ("matched", "possible") and (item.evidence or item.evidence_details or item.web_search_trace)
     ]
-    if conflict_lines:
-        lines.append("### 冲突提示")
-        lines.append("Web 信息与本地画像存在以下冲突，推荐结论已优先采用本地证据：")
-        lines.extend(conflict_lines)
-        lines.append("")
-
-    # Missing evidence detail
-    missing_dims = [(a.title, a.missing_evidence[:3]) for a in analyses if a.missing_evidence]
-    if missing_dims:
-        lines.append("### 数据缺口")
-        lines.append("以下证据项仍缺失，建议通过访谈或专项调研补充：")
-        lines.extend(f"  - {title}：{gap}" for title, gaps in missing_dims[:5] for gap in gaps)
-        lines.append("")
-
-    return lines
-
-
-def _render_dimension_summary(state: RecommenderState) -> list[str]:
-    lines = ["## 维度分析摘要", ""]
-    for analysis in state["dimension_analysis"]:
-        facts = "；".join(fact.claim for fact in analysis.facts[:3]) or "本地数据不足"
-        tags: list[str] = []
-        if analysis.local_evidence:
-            tags.append(f"本地{len(analysis.local_evidence)}条")
-        if analysis.web_evidence:
-            tags.append(f"Web{len(analysis.web_evidence)}条")
-        if analysis.conflicts:
-            tags.append(f"冲突{len(analysis.conflicts)}处")
-        tag_str = f"（{'，'.join(tags)}）" if tags else ""
-        lines.append(f"- {analysis.title}：{analysis.status}，{analysis.confidence}。{facts}{tag_str}")
+    if not indicators:
+        return []
+    lines = ["## 指标证据", ""]
+    for indicator in indicators[:20]:
+        lines.append(f"- {indicator.module_name} / {indicator.label_name} / {indicator.indicator_name}")
+        local = [
+            item for item in indicator.evidence_details if item.get("source_type") != "web" and item.get("evidence")
+        ]
+        web = [item for item in indicator.evidence_details if item.get("source_type") == "web"]
+        if local:
+            lines.append("  - 本地证据：" + "；".join(str(item.get("evidence")) for item in local[:2]))
+        if web:
+            lines.append("  - Web 证据：" + "；".join(str(item.get("evidence")) for item in web[:2]))
+            urls = [str(item.get("url")) for item in web if item.get("url")]
+            if urls:
+                lines.append("  - Web 来源：" + "；".join(urls[:2]))
+        if not local and not web:
+            lines.append(f"  - 当前判断：{indicator.current_status}")
+        web_queries = [str(item.get("query")) for item in indicator.web_search_trace if item.get("query")]
+        if web_queries:
+            lines.append(f"  - Web 查询：{'；'.join(web_queries[:2])}")
     lines.append("")
     return lines
 
@@ -178,7 +157,29 @@ def _indicator_text(indicator: BusinessIndicatorResult) -> str:
 def _render_next_steps(state: RecommenderState) -> list[str]:
     business = state.get("business_recommendation")
     lines = ["## 下一步核实清单", ""]
-    gaps = sorted({gap for analysis in state["dimension_analysis"] for gap in analysis.missing_evidence})
+    gaps: list[str] = []
+    if business:
+        gaps = sorted(
+            {
+                str(detail.get("source"))
+                for indicator in business.indicator_results
+                for detail in indicator.evidence_details
+                if not detail.get("matched") and detail.get("source")
+            }
+        )
+    if business:
+        no_result_queries = [
+            str(trace.get("query"))
+            for indicator in business.indicator_results
+            for trace in indicator.web_search_trace
+            if trace.get("query") and trace.get("result_count") == 0
+        ]
+        unknown_indicators = [
+            f"{indicator.label_name}/{indicator.indicator_name}"
+            for indicator in business.indicator_results
+            if indicator.result == "unknown"
+        ]
+        gaps = [*unknown_indicators[:3], *gaps, *no_result_queries[:3]]
     if business and business.selected_module:
         selected = business.selected_module
         lines.append(f"1. 围绕「{selected.module_name}」确认预算、现有系统、审批链路和落地时间。")

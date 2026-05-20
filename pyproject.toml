@@ -17,6 +17,7 @@ dependencies = [
     "sqlalchemy>=2.0",
     "aiosqlite>=0.20",
     "asyncpg>=0.30",
+    "openpyxl>=3.1",
 ]
 
 [project.scripts]

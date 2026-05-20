@@ -26,23 +26,4 @@ providers:
     timeout_seconds: 30
 
 execution:
-  query_concurrency: 3
-  provider_concurrency: 2
-  max_queries_per_dimension: 3
   max_results_per_query: 5
-  dedupe_by_url: true
-  fetch_pages: true
-  refresh: false
-  cache_policy_version: v1-202605
-
-fetch:
-  enabled: true
-  timeout_seconds: 25
-  concurrency: 20
-  max_full_text_chars: 12000
-  blocked_domains:
-    - qixin.com
-    - qcc.com
-    - gsxt.gov.cn
-    - aiqicha.baidu.com
-    - innocom.gov.cn

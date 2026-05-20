@@ -19,18 +19,8 @@ async def _fake_runner(**kwargs: Any) -> RecommendationRunResult:
         json.dumps({"profile_completeness": 0.8}, ensure_ascii=False),
         encoding="utf-8",
     )
-    (output_dir / "dimension_analysis.json").write_text(
-        json.dumps(
-            [
-                {
-                    "local_evidence": [{"claim": "本地证据"}],
-                    "web_evidence": [{"claim": "Web证据"}],
-                    "conflicts": [],
-                    "missing_evidence": ["待核实"],
-                }
-            ],
-            ensure_ascii=False,
-        ),
+    (output_dir / "business_indicator_evidence.json").write_text(
+        json.dumps({"module.label.indicator": [{"source_type": "web", "evidence": "Web证据"}]}, ensure_ascii=False),
         encoding="utf-8",
     )
     (output_dir / "business_label_result.json").write_text(

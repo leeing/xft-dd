@@ -11,10 +11,6 @@ import yaml
 
 from xft.core.models import ScenarioConfig
 
-DEFAULT_PROMPTS: dict[str, str] = {
-    "web_extract_system": "config/recommend/sales_recommendation/prompts/extract_evidence_system.md",
-}
-
 
 @dataclass(frozen=True)
 class ScenarioBundle:
@@ -24,20 +20,8 @@ class ScenarioBundle:
     config: ScenarioConfig
 
     @property
-    def dimensions_path(self) -> str:
-        return str(_resolve_path(self.root, self.config.dimensions_config))
-
-    @property
     def web_search_path(self) -> str:
         return str(_resolve_path(self.root, self.config.web_search_config))
-
-    @property
-    def web_extract_llm_path(self) -> str:
-        return str(_resolve_path(self.root, self.config.web_extract_llm_config))
-
-    @property
-    def evidence_policy_path(self) -> str:
-        return str(_resolve_path(self.root, self.config.evidence_policy_config))
 
     @property
     def business_modules_path(self) -> str | None:
@@ -55,7 +39,7 @@ class ScenarioBundle:
 
     @property
     def prompt_paths(self) -> dict[str, str]:
-        paths = DEFAULT_PROMPTS.copy()
+        paths: dict[str, str] = {}
         for key, value in self.config.prompts.items():
             paths[key] = str(_resolve_path(self.root, value))
         return paths
@@ -64,10 +48,7 @@ class ScenarioBundle:
         """Return the fully resolved scenario config for audit/debugging."""
         payload = self.config.model_dump(mode="json", exclude_none=True)
         payload["root"] = str(self.root)
-        payload["dimensions_path"] = self.dimensions_path
         payload["web_search_path"] = self.web_search_path
-        payload["web_extract_llm_path"] = self.web_extract_llm_path
-        payload["evidence_policy_path"] = self.evidence_policy_path
         payload["business_modules_path"] = self.business_modules_path
         payload["prompt_paths"] = self.prompt_paths
         return payload
@@ -157,10 +138,7 @@ def _load_scenario_data(scenario_file: Path, *, stack: list[Path]) -> dict[str, 
 def _resolve_config_paths(root: Path, data: dict[str, Any]) -> dict[str, Any]:
     resolved = dict(data)
     for field in (
-        "dimensions_config",
         "web_search_config",
-        "web_extract_llm_config",
-        "evidence_policy_config",
         "business_modules_config",
     ):
         value = resolved.get(field)

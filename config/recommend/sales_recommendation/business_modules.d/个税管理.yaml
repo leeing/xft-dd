@@ -1,0 +1,273 @@
+module_id: 个税管理
+module_name: 个税管理
+priority: 50
+base_score: 0
+acceptance_policy:
+  levels:
+  - result: 高
+    min_matched_labels: 3
+    conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为高。
+  - result: 中高
+    min_matched_labels: 2
+    conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为中高。
+  - result: 低
+    min_matched_labels: 0
+    conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为低。
+labels:
+- label_id: 多分支机构_集团化制造企业
+  label_name: 多分支机构/集团化制造企业
+  description: ''
+  min_matched_indicators: 1
+  indicators:
+  - indicator_id: 分支机构
+    indicator_name: 分支机构：
+    evaluator: llm_web
+    standard: 在工商信息中登记有多个位于不同城市的“分公司”（非法人实体）。
+    data_sources:
+    - type: table
+      table: branches
+      field: branch_name
+      op: exists
+    prompt: 请判断企业是否满足指标：分支机构：。只能基于证据判断，不得编造。
+    evidence_hints:
+    - 分支机构
+    - 在工商信息中登记有多个位于不同城市的
+    - 分公司
+    - 非法人实体
+    web_search:
+      fixed_queries:
+      - '{company_name} 官网'
+      - '{company_name} 新闻'
+      auto: false
+  - indicator_id: 官网信息
+    indicator_name: 官网信息
+    evaluator: llm_web
+    standard: 官网“联系我们”或“业务布局”中展示全国/全球的生产基地、工厂、销售网点。
+    data_sources:
+    - type: field
+      path: ip_counts.patent
+      op: '>'
+      value: 0
+    prompt: 请判断企业是否满足指标：官网信息。只能基于证据判断，不得编造。
+    evidence_hints:
+    - 官网信息
+    - 官网
+    - 联系我们
+    - 业务布局
+    - 中展示全国
+    - 全球的生产基地
+    - 工厂
+    - 销售网点
+    web_search:
+      fixed_queries:
+      - '{company_name} 官网'
+      - '{company_name} 新闻'
+      auto: false
+  - indicator_id: 招聘信息
+    indicator_name: 招聘信息
+    evaluator: llm_web
+    standard: 3. ：长期在多个城市招聘相同生产、技术、销售类岗位。
+    data_sources:
+    - type: table
+      table: recruitments
+      field: title
+      op: text_contains
+      keywords: []
+    prompt: 请判断企业是否满足指标：招聘信息。只能基于证据判断，不得编造。
+    evidence_hints:
+    - 招聘信息
+    - 长期在多个城市招聘相同生产
+    - 技术
+    - 销售类岗位
+    web_search:
+      fixed_queries:
+      - '{company_name} 官网'
+      - '{company_name} 新闻'
+      auto: false
+  - indicator_id: 名称与股权
+    indicator_name: 名称与股权
+    evaluator: rule
+    standard: 公司名称常含“集团”、“控股”字样；工商信息显示对外投资了多家子公司（持股≥50%或拥有控制权-3-5）。
+    data_sources:
+    - type: table
+      table: branches
+      field: branch_name
+      op: exists
+    prompt: 请判断企业是否满足指标：名称与股权。只能基于证据判断，不得编造。
+    evidence_hints:
+    - 名称与股权
+    - 公司名称常含
+    - 集团
+    - 控股
+    - 字样
+    - 工商信息显示对外投资了多家子公司
+    - 持股
+    - '50'
+- label_id: 多法人主体的企业集团
+  label_name: 多法人主体的企业集团
+  description: ''
+  min_matched_indicators: 1
+  indicators:
+  - indicator_id: 名称与股权
+    indicator_name: 名称与股权
+    evaluator: rule
+    standard: 公司名称常含“集团”、“控股”字样；工商信息显示对外投资了多家子公司（持股≥50%或拥有控制权-3-5）。
+    data_sources:
+    - type: table
+      table: branches
+      field: branch_name
+      op: exists
+    prompt: 请判断企业是否满足指标：名称与股权。只能基于证据判断，不得编造。
+    evidence_hints:
+    - 名称与股权
+    - 公司名称常含
+    - 集团
+    - 控股
+    - 字样
+    - 工商信息显示对外投资了多家子公司
+    - 持股
+    - '50'
+  - indicator_id: 企业图谱
+    indicator_name: 企业图谱
+    evaluator: llm
+    standard: 在商业查询平台中，“企业图谱”或“对外投资”栏显示复杂的控股结构。
+    data_sources: []
+    prompt: 请判断企业是否满足指标：企业图谱。只能基于证据判断，不得编造。
+    evidence_hints:
+    - 企业图谱
+    - 在商业查询平台中
+    - 对外投资
+    - 栏显示复杂的控股结构
+  - indicator_id: 财报合并范围
+    indicator_name: 财报合并范围
+    evaluator: llm_web
+    standard: 上市公司年报的 “合并财务报表范围” 会详尽列出所有重要子公司名录，是金标准-3-4。
+    data_sources: []
+    prompt: 请判断企业是否满足指标：财报合并范围。只能基于证据判断，不得编造。
+    evidence_hints:
+    - 财报合并范围
+    - 上市公司年报的
+    - 合并财务报表范围
+    - 会详尽列出所有重要子公司名录
+    - 是金标准
+    web_search:
+      fixed_queries:
+      - '{company_name} 官网'
+      - '{company_name} 新闻'
+      auto: false
+- label_id: 国有企业
+  label_name: 国有企业
+  description: ''
+  min_matched_indicators: 1
+  indicators:
+  - indicator_id: 国有企业
+    indicator_name: 国有企业
+    evaluator: llm
+    standard: 1、工商登记类型标注为 "国有独资"" 国有控股 "或" 国有企业 "（含央企、地方国企）；2、国有股东持股比例≥50%（绝对控股）或≥20%（相对控股且为第一大股东）
+    data_sources: []
+    prompt: 请判断企业是否满足指标：国有企业。只能基于证据判断，不得编造。
+    evidence_hints:
+    - 国有企业
+    - 工商登记类型标注为
+    - 国有独资
+    - 国有控股
+    - 含央企
+    - 地方国企
+    - 国有股东持股比例
+    - '50'
+- label_id: 外资背景
+  label_name: 外资背景
+  description: ''
+  min_matched_indicators: 1
+  indicators:
+  - indicator_id: 外资背景
+    indicator_name: 外资背景
+    evaluator: llm
+    standard: 1. 工商登记类型标注：国家企业信用信息公示系统显示 “外商独资”“中外合资”“中外合作” 或 “港澳台投资”；2. 股权结构：企查查
+      / 天眼查公开外资股东持股比例≥25%（法定外资企业认定阈值）；3. 股东类型：工商公示股东含 “外国（地区）企业”“境外自然人”；4. 注册资本为外币
+    data_sources: []
+    prompt: 请判断企业是否满足指标：外资背景。只能基于证据判断，不得编造。
+    evidence_hints:
+    - 外资背景
+    - 工商登记类型标注
+    - 国家企业信用信息公示系统显示
+    - 外商独资
+    - 中外合资
+    - 中外合作
+    - 港澳台投资
+    - 股权结构
+- label_id: 上市公司或拟上市公司
+  label_name: 上市公司或拟上市公司
+  description: ''
+  min_matched_indicators: 1
+  indicators:
+  - indicator_id: 股票代码
+    indicator_name: 股票代码
+    evaluator: llm
+    standard: 拥有并在公开市场交易的6位股票代码。
+    data_sources: []
+    prompt: 请判断企业是否满足指标：股票代码。只能基于证据判断，不得编造。
+    evidence_hints:
+    - 股票代码
+    - 拥有并在公开市场交易的6位股票代码
+  - indicator_id: 法定信披
+    indicator_name: 法定信披
+    evaluator: llm
+    standard: 在 “巨潮资讯网” 等指定网站可查到其法定公告、定期报告（年报、季报等）-2-6-9。
+    data_sources: []
+    prompt: 请判断企业是否满足指标：法定信披。只能基于证据判断，不得编造。
+    evidence_hints:
+    - 法定信披
+    - 巨潮资讯网
+    - 等指定网站可查到其法定公告
+    - 定期报告
+    - 年报
+    - 季报等
+  - indicator_id: po动态
+    indicator_name: PO动态
+    evaluator: llm_web
+    standard: .有明确的 “招股说明书” 披露，或财经新闻中有其进入“上市辅导”、“提交申报”、“问询反馈”等进程的报道-10。
+    data_sources: []
+    prompt: 请判断企业是否满足指标：PO动态。只能基于证据判断，不得编造。
+    evidence_hints:
+    - PO动态
+    - 有明确的
+    - 招股说明书
+    - 披露
+    - 或财经新闻中有其进入
+    - 上市辅导
+    - 提交申报
+    - 问询反馈
+    web_search:
+      fixed_queries:
+      - '{company_name} 官网'
+      - '{company_name} 新闻'
+      auto: false
+marketing_points:
+  多分支机构_集团化制造企业:
+    recommendation: ''
+    sale_rule: ''
+    kyc_questions:
+    - 了解公司是否在全国各地都有工厂、分子公司，需要在当地报税，目前是集团统一报税还是每个分区报自己的？“各个分区报送自己个税”可以进一步咨询是否计划统一上收。如果“集团统一报税”，但是切换账号登录国税扣缴端缴税，操作复杂，是高潜力客户。
+  多法人主体的企业集团:
+    recommendation: ''
+    sale_rule: ''
+    kyc_questions:
+    - 集团下是否有多个独立法人子公司，每个子公司是集团统一报税还是每个子公司报自己的？“分公司送自己个税”可以进一步咨询是否计划统一上收。如果“集团统一报税”，但是切换账号登录国税扣缴端缴税，操作复杂，是高潜力客户。
+  国有企业:
+    recommendation: 国企管理比较正规，员工工资都进行个税核算和缴纳，因此必须会使用个税功能。国企一般会有分公司管理模式，需要给不同分公司员工核算和缴纳个税。
+    sale_rule: 国企管理正规，分公司模式，需核算和缴纳个税。
+    kyc_questions:
+    - 了解目前应发工资核算后，怎样核算和缴纳个税？是不是人事和财务分开管理。
+    - 了解企业是否要给分子公司员工统一核算个税。
+    - 是否存在同一个部门员工归属不通分公司的情况（借调、兼任等）
+  外资背景:
+    recommendation: 外资企业管理比较正规，员工工资都进行个税核算和缴纳，因此必须会使用个税功能。
+    sale_rule: 外资企业管理正规，需核算员工工资个税。
+    kyc_questions:
+    - 了解目前应发工资核算后，怎样核算和缴纳个税？是不是人事和财务分开管理。
+  上市公司或拟上市公司:
+    recommendation: ''
+    sale_rule: ''
+    kyc_questions:
+    - 在冲刺IPO阶段，财务合规与数据安全是审核重点。了解当前的个税申报在效率、准确性及审计追溯方面，是否已满足上市公司的规范性要求？
