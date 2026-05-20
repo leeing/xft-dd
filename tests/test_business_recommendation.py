@@ -50,6 +50,52 @@ class _FakeBusinessProvider:
         )
 
 
+class _NoisyBusinessProvider:
+    name = "fake_search"
+
+    async def search(self, query: str, *, dimension_id: str) -> ProviderSearchResponse:
+        items = [
+            SearchItem(
+                id=make_item_id(
+                    url="https://example.com/other",
+                    title="其他公司研发中心",
+                    snippet="其他公司拥有研发中心。",
+                ),
+                title="其他公司研发中心",
+                url="https://example.com/other",
+                snippet="其他公司拥有研发中心。",
+                query=query,
+                dimension_id=dimension_id,
+                source="minimax",
+                rank=0,
+                fetched_at=datetime.now(UTC),
+            ),
+            SearchItem(
+                id=make_item_id(
+                    url="https://example.com/acme",
+                    title="测试公司研发中心",
+                    snippet="测试公司设有研发中心。",
+                ),
+                title="测试公司研发中心",
+                url="https://example.com/acme",
+                snippet="测试公司设有研发中心。",
+                query=query,
+                dimension_id=dimension_id,
+                source="minimax",
+                rank=1,
+                fetched_at=datetime.now(UTC),
+            ),
+        ]
+        return ProviderSearchResponse(
+            provider=self.name,
+            provider_type="minimax",
+            query=query,
+            dimension_id=dimension_id,
+            status="success",
+            items=[item.model_dump() for item in items],
+        )
+
+
 def _write_business_web_config(tmp_path: Path) -> Path:
     path = tmp_path / "web_search.yaml"
     path.write_text(
@@ -742,6 +788,128 @@ async def test_plan_auto_queries_with_llm_returns_bounded_queries(monkeypatch: p
     assert queries == ["测试公司 差旅 招聘", "测试公司 费控 系统"]
 
 
+async def test_plan_auto_queries_coerces_single_string_and_includes_indicator_terms(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from xft.pipeline.recommender.business_web_evidence import _plan_auto_queries_with_llm
+
+    seen_kwargs: dict[str, object] = {}
+
+    class FakeMessage:
+        content = '{"queries": "测试公司"}'
+
+    class FakeChoice:
+        message = FakeMessage()
+
+    class FakeCompletions:
+        async def create(self, **kwargs: object) -> object:
+            seen_kwargs.update(kwargs)
+            return type("Resp", (), {"choices": [FakeChoice()]})()
+
+    class FakeChat:
+        completions = FakeCompletions()
+
+    class FakeClient:
+        chat = FakeChat()
+
+    monkeypatch.setattr("xft.pipeline.recommender.business_web_evidence.get_ai_client", FakeClient)
+    monkeypatch.setattr("xft.pipeline.recommender.business_web_evidence.settings.llm_api_key", "test")
+
+    indicator = (
+        BusinessRecommendationConfig.model_validate(
+            {
+                "acceptance_policy": {"levels": [{"result": "低", "min_matched_labels": 0, "conclusion": "低"}]},
+                "modules": [
+                    {
+                        "module_id": "m",
+                        "module_name": "模块",
+                        "labels": [
+                            {
+                                "label_id": "l",
+                                "label_name": "标签",
+                                "indicators": [
+                                    {
+                                        "indicator_id": "rd",
+                                        "indicator_name": "研发中心",
+                                        "evaluator": "llm",
+                                        "standard": "公开信息显示有研发中心",
+                                        "web_search": {
+                                            "auto": {"enabled": True, "max_queries": 1, "intent": "查研发中心"}
+                                        },
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+        .modules[0]
+        .labels[0]
+        .indicators[0]
+    )
+
+    queries = await _plan_auto_queries_with_llm(
+        company_name="测试公司",
+        profile={"company_name": "测试公司"},
+        module_id="m",
+        module_name="模块",
+        label_id="l",
+        label_name="标签",
+        indicator=indicator,
+        max_queries=1,
+        intent="查研发中心",
+    )
+
+    assert queries == ["测试公司 研发中心"]
+    assert seen_kwargs["response_format"] == {"type": "json_object"}
+
+
+async def test_business_web_evidence_filters_results_for_other_companies(tmp_path: Path) -> None:
+    config = BusinessRecommendationConfig.model_validate(
+        {
+            "acceptance_policy": {"levels": [{"result": "低", "min_matched_labels": 0, "conclusion": "低"}]},
+            "modules": [
+                {
+                    "module_id": "m",
+                    "module_name": "模块",
+                    "labels": [
+                        {
+                            "label_id": "l",
+                            "label_name": "标签",
+                            "indicators": [
+                                {
+                                    "indicator_id": "rd",
+                                    "indicator_name": "研发中心",
+                                    "evaluator": "llm_web",
+                                    "standard": "公开信息显示有研发中心",
+                                    "web_search": {"fixed_queries": ["{company_name} 官网"]},
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+    result = await run_business_web_evidence(
+        config=config,
+        company_name="测试公司",
+        profile={"company_name": "测试公司", "credit_code": "91440000MA5UW5Y08T"},
+        web_config_path=str(_write_business_web_config(tmp_path)),
+        output_dir=tmp_path / "out",
+        provider_factory=lambda _name, _config: _NoisyBusinessProvider(),
+        refresh=True,
+    )
+
+    key = "m.l.rd"
+    assert result.results == 1
+    assert len(result.evidence[key]) == 1
+    assert result.evidence[key][0]["title"] == "测试公司研发中心"
+    assert result.trace[0]["filtered_result_count"] == 1
+
+
 async def test_business_web_evidence_feeds_indicator_result() -> None:
     config = BusinessRecommendationConfig.model_validate(
         {
@@ -856,6 +1024,149 @@ async def test_rule_web_evidence_can_only_raise_to_possible() -> None:
     assert indicator.result == "possible"
     assert indicator.confidence == "中"
     assert "测试公司官网显示全国多地分支机构和差旅安排。" in indicator.evidence
+
+
+async def test_llm_validation_error_falls_back_to_unknown_not_matched(monkeypatch: pytest.MonkeyPatch) -> None:
+    config = BusinessRecommendationConfig.model_validate(
+        {
+            "acceptance_policy": {
+                "levels": [
+                    {"result": "高", "min_matched_labels": 1, "conclusion": "高"},
+                    {"result": "低", "min_matched_labels": 0, "conclusion": "低"},
+                ]
+            },
+            "modules": [
+                {
+                    "module_id": "attendance",
+                    "module_name": "假勤管理",
+                    "labels": [
+                        {
+                            "label_id": "branches",
+                            "label_name": "多分支机构",
+                            "indicators": [
+                                {
+                                    "indicator_id": "branch",
+                                    "indicator_name": "分支机构",
+                                    "evaluator": "llm_web",
+                                    "standard": "工商信息显示有分支机构",
+                                    "prompt": "判断是否有分支机构。",
+                                    "evidence_hints": ["分支机构"],
+                                    "web_search": {"fixed_queries": ["{company_name} 分支机构"]},
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+    class FakeMessage:
+        content = (
+            '{"result": "yes", "confidence": "中", "current_status": "存在分支机构", "evidence": {"bad": "shape"}}'
+        )
+
+    class FakeChoice:
+        message = FakeMessage()
+
+    class FakeCompletions:
+        async def create(self, **_kwargs: object) -> object:
+            return type("Resp", (), {"choices": [FakeChoice()]})()
+
+    class FakeChat:
+        completions = FakeCompletions()
+
+    class FakeClient:
+        chat = FakeChat()
+
+    monkeypatch.setattr("xft.pipeline.recommender.business_evaluator.get_ai_client", FakeClient)
+    monkeypatch.setattr("xft.pipeline.recommender.business_evaluator.settings.llm_api_key", "test")
+
+    result = await evaluate_business_recommendation(
+        config=config,
+        company_name="测试公司",
+        profile={"company_name": "测试公司", "branch_count": 0, "notes": "分支机构字段仅为指标名"},
+        business_evidence={
+            "attendance.branches.branch": [
+                {"source_type": "web", "matched": True, "evidence": "其他公司存在分支机构。"}
+            ]
+        },
+        use_llm=True,
+    )
+
+    assert result is not None
+    indicator = result.indicator_results[0]
+    assert indicator.result == "unknown"
+    assert indicator.score == 0
+    assert result.selected_module is not None
+    assert result.selected_module.acceptance_result == "低"
+
+
+async def test_low_confidence_web_only_module_is_capped_below_high() -> None:
+    config = BusinessRecommendationConfig.model_validate(
+        {
+            "acceptance_policy": {
+                "levels": [
+                    {"result": "高", "min_matched_labels": 2, "conclusion": "高"},
+                    {"result": "中高", "min_matched_labels": 1, "conclusion": "中高"},
+                    {"result": "低", "min_matched_labels": 0, "conclusion": "低"},
+                ]
+            },
+            "modules": [
+                {
+                    "module_id": "travel",
+                    "module_name": "差旅报销",
+                    "labels": [
+                        {
+                            "label_id": "a",
+                            "label_name": "属性A",
+                            "indicators": [
+                                {
+                                    "indicator_id": "ia",
+                                    "indicator_name": "指标A",
+                                    "evaluator": "llm_web",
+                                    "standard": "公开信息命中",
+                                    "prompt": "判断。",
+                                    "web_search": {"fixed_queries": ["{company_name} A"]},
+                                }
+                            ],
+                        },
+                        {
+                            "label_id": "b",
+                            "label_name": "属性B",
+                            "indicators": [
+                                {
+                                    "indicator_id": "ib",
+                                    "indicator_name": "指标B",
+                                    "evaluator": "llm_web",
+                                    "standard": "公开信息命中",
+                                    "prompt": "判断。",
+                                    "web_search": {"fixed_queries": ["{company_name} B"]},
+                                }
+                            ],
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+    business_evidence = {
+        "travel.a.ia": [{"source_type": "web", "matched": True, "evidence": "测试公司疑似存在A。"}],
+        "travel.b.ib": [{"source_type": "web", "matched": True, "evidence": "测试公司疑似存在B。"}],
+    }
+
+    result = await evaluate_business_recommendation(
+        config=config,
+        company_name="测试公司",
+        profile={"company_name": "测试公司"},
+        business_evidence=business_evidence,
+        use_llm=False,
+    )
+
+    assert result is not None
+    assert result.selected_module is not None
+    assert result.selected_module.attributes_number == 2
+    assert result.selected_module.acceptance_result == "中高"
 
 
 async def test_run_recommendation_business_first_ignores_dimension_outputs(tmp_path: Path) -> None:
