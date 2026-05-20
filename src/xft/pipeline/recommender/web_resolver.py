@@ -1,4 +1,4 @@
-"""Indicator-level Web search for business recommendation indicators."""
+"""Lazy indicator-level Web evidence resolver."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from xft.pipeline.recommender.models import (
     IndicatorConfig,
     LabelConfig,
     ModuleConfig,
-    RecommendationConfig,
+    Result,
 )
 from xft.pipeline.recommender.web_policy import WebSearchDecision, should_search_indicator
 from xft.progress import display
@@ -65,7 +65,6 @@ class WebRunContext:
     provider_names: list[str]
     provider_factory: Any
     query_planner: Any
-    local_evidence_map: dict[str, list[dict[str, Any]]]
 
     @property
     def resolved_company_name(self) -> str:
@@ -117,76 +116,182 @@ class _AutoQueryPayload(BaseModel):
         return [str(value)]
 
 
-async def run_web_evidence(  # noqa: PLR0913
-    *,
-    config: RecommendationConfig | None,
-    company_name: str,
-    profile: dict[str, Any],
-    web_config_path: str,
-    output_dir: str | Path,
-    providers: list[str] | None = None,
-    refresh: bool = False,
-    provider_factory: Any = build_provider,
-    query_planner: Any | None = None,
-    evidence: dict[str, list[dict[str, Any]]] | None = None,
-) -> WebRunResult:
-    """Execute indicator-level Web queries and convert results into evidence."""
-    paths = _web_paths(output_dir)
-    if not refresh and (cached := _cached_web_result(paths)):
-        return cached
-    if config is None:
-        return _empty_web_result(paths)
-    web_config = load_web_search_config(web_config_path)
-    if not web_config.enabled:
-        return _empty_web_result(paths)
+class WebResolver:
+    """Resolve Web evidence only when the current indicator needs it."""
 
-    ctx = WebRunContext(
-        company_name=company_name,
-        profile=profile,
-        web_config=web_config,
-        provider_names=_enabled_provider_names(web_config, providers),
-        provider_factory=provider_factory,
-        query_planner=query_planner or _plan_auto_queries_with_llm,
-        local_evidence_map=evidence or {},
-    )
-    display.info("  规划业务 Web 查询...")
-    specs, planning_trace = await _plan_web_queries(config=config, ctx=ctx)
-    n_auto = sum(1 for s in specs if s.auto)
-    display.info(f"  共 {len(specs)} 个查询 (其中 {n_auto} 个自动生成), 开始执行...")
-    acc = await _execute_web_queries(ctx=ctx, specs=specs, initial_trace=planning_trace)
-
-    if web_config.fetch.enabled and acc.result_rows:
-        display.info("  crawl4ai 抓取页面内容...")
-        url_text_map = await _enrich_result_rows(
-            acc.result_rows,
-            company_name=ctx.company_name,
-            fetch_config=web_config.fetch,
+    def __init__(  # noqa: PLR0913
+        self,
+        *,
+        company_name: str,
+        profile: dict[str, Any],
+        web_config_path: str,
+        output_dir: str | Path,
+        providers: list[str] | None = None,
+        refresh: bool = False,
+        provider_factory: Any = build_provider,
+        query_planner: Any | None = None,
+    ) -> None:
+        self.paths = _web_paths(output_dir)
+        self.web_config = load_web_search_config(web_config_path)
+        self.ctx = WebRunContext(
+            company_name=company_name,
+            profile=profile,
+            web_config=self.web_config,
+            provider_names=_enabled_provider_names(self.web_config, providers),
+            provider_factory=provider_factory,
+            query_planner=query_planner or _plan_auto_queries_with_llm,
         )
-        for row in acc.result_rows:
+        self.cached = False
+        self.acc = WebAccumulator.create()
+        if not refresh and (cached := _cached_accumulator(self.paths)):
+            self.acc = cached
+            self.cached = True
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.web_config.enabled and self.ctx.provider_names)
+
+    async def resolve(
+        self,
+        *,
+        module: ModuleConfig,
+        label: LabelConfig,
+        indicator: IndicatorConfig,
+        local_evidence: list[dict[str, Any]],
+        rule_result: Result | None,
+    ) -> list[dict[str, Any]]:
+        """Resolve Web evidence for one indicator if its policy says it is needed."""
+        key = indicator_key(module, label.label_id, indicator)
+        if self.cached:
+            return self.acc.evidence.get(key, [])
+        if not self.enabled:
+            return []
+        decision = should_search_indicator(
+            indicator=indicator,
+            local_evidence=local_evidence,
+            rule_result=rule_result,
+        )
+        if not decision.enabled:
+            self.acc.trace.append(_skip_trace(module, label, indicator, key, decision))
+            return []
+        specs = await self._query_specs(
+            module=module,
+            label=label,
+            indicator=indicator,
+            indicator_key=key,
+            decision=decision,
+        )
+        resolved: list[dict[str, Any]] = []
+        for spec in specs:
+            query_row, rows = await self._execute_spec(spec)
+            if self.web_config.fetch.enabled and rows:
+                await self._enrich_rows(rows)
+            self._append_rows(key=key, query_row=query_row, rows=rows)
+            resolved.extend(_result_evidence(query_row, rows))
+        return resolved
+
+    def trace_for_indicator(self, key: str) -> list[dict[str, Any]]:
+        return [row for row in self.acc.trace if row.get("indicator_key") == key]
+
+    def write_outputs(self) -> WebRunResult:
+        write_jsonl(self.paths.queries_path, self.acc.query_rows)
+        write_jsonl(self.paths.results_path, self.acc.result_rows)
+        write_json(self.paths.trace_path, {"queries": self.acc.query_rows, "trace": self.acc.trace})
+        write_json(self.paths.evidence_path, self.acc.evidence)
+        return WebRunResult(
+            evidence=self.acc.evidence,
+            trace=self.acc.trace,
+            queries=len(self.acc.query_rows),
+            results=len(self.acc.result_rows),
+            output_dir=str(self.paths.out_dir),
+        )
+
+    async def _query_specs(
+        self,
+        *,
+        module: ModuleConfig,
+        label: LabelConfig,
+        indicator: IndicatorConfig,
+        indicator_key: str,
+        decision: WebSearchDecision,
+    ) -> list[WebQuerySpec]:
+        fixed_queries = _render_queries(company_name=self.ctx.company_name, indicator=indicator)
+        auto_queries = await _auto_queries(
+            query_planner=self.ctx.query_planner,
+            company_name=self.ctx.company_name,
+            profile=self.ctx.profile,
+            module=module,
+            label=label,
+            indicator=indicator,
+        )
+        if indicator.web_search and indicator.web_search.auto.enabled and not auto_queries:
+            self.acc.trace.append(_auto_trace(module, label, indicator, indicator_key))
+        query_specs = [(query, False) for query in fixed_queries] + [(query, True) for query in auto_queries]
+        return [
+            WebQuerySpec(
+                module=module,
+                label=label,
+                indicator=indicator,
+                indicator_key=indicator_key,
+                decision=decision,
+                query=query,
+                auto=is_auto,
+                provider_name=provider_name,
+            )
+            for query, is_auto in query_specs
+            for provider_name in self.ctx.provider_names
+        ]
+
+    async def _execute_spec(self, spec: WebQuerySpec) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        provider_cfg = self.ctx.web_config.providers[spec.provider_name]
+        cache_key = f"{spec.query}:{spec.provider_name}"
+        if cache_key in self.acc.query_cache:
+            cached_query_row, cached_rows = self.acc.query_cache[cache_key]
+            query_row = _query_row_for_spec(cached_query_row, spec)
+            rows = _rows_for_spec(cached_rows, query_row, spec)
+            display.info(f"  Web 复用查询: {spec.query[:50]}")
+            return query_row, rows
+        display.info(f"  Web 搜索: {spec.query[:50]}")
+        web_search = spec.indicator.web_search
+        if web_search is None:
+            return _query_row_for_spec({}, spec), []
+        query_id = self.acc.next_query_id()
+        query_row, rows = await _run_one_query(
+            provider_name=spec.provider_name,
+            provider_cfg=provider_cfg,
+            provider_factory=self.ctx.provider_factory,
+            query=spec.query,
+            query_id=query_id,
+            indicator_key=spec.indicator_key,
+            module=spec.module,
+            label=spec.label,
+            indicator=spec.indicator,
+            company_name=self.ctx.company_name,
+            profile=self.ctx.profile,
+            max_results=min(web_search.max_results, self.ctx.web_config.execution.max_results_per_query),
+            auto=spec.auto,
+            decision=spec.decision,
+        )
+        self.acc.query_cache[cache_key] = (query_row, rows)
+        return query_row, rows
+
+    async def _enrich_rows(self, rows: list[dict[str, Any]]) -> None:
+        url_text_map = await _enrich_result_rows(
+            rows,
+            company_name=self.ctx.company_name,
+            fetch_config=self.web_config.fetch,
+        )
+        for row in rows:
             url = str(row.get("url") or "")
             if url in url_text_map:
                 row["full_text_preview"] = url_text_map[url][:500]
-        query_by_id = {str(q.get("query_id")): q for q in acc.query_rows}
-        acc.evidence = {}
-        by_indicator: dict[str, list[dict[str, Any]]] = {}
-        for row in acc.result_rows:
-            by_indicator.setdefault(str(row.get("indicator_key") or ""), []).append(row)
-        for key, rows in by_indicator.items():
-            query_row = query_by_id.get(str(rows[0].get("query_id") or ""), {})
-            acc.evidence[key] = _result_evidence(query_row, rows)
-        display.info(f"  抓取完成: {len(url_text_map)} 个页面")
 
-    write_jsonl(paths.queries_path, acc.query_rows)
-    write_jsonl(paths.results_path, acc.result_rows)
-    write_json(paths.trace_path, {"queries": acc.query_rows, "trace": acc.trace})
-    write_json(paths.evidence_path, acc.evidence)
-    return WebRunResult(
-        evidence=acc.evidence,
-        trace=acc.trace,
-        queries=len(acc.query_rows),
-        results=len(acc.result_rows),
-        output_dir=str(paths.out_dir),
-    )
+    def _append_rows(self, *, key: str, query_row: dict[str, Any], rows: list[dict[str, Any]]) -> None:
+        self.acc.query_rows.append(query_row)
+        self.acc.result_rows.extend(rows)
+        self.acc.trace.append(_trace_row(query_row, rows))
+        if result_evidence := _result_evidence(query_row, rows):
+            self.acc.evidence.setdefault(key, []).extend(result_evidence)
 
 
 def _web_paths(output_dir: str | Path) -> WebRunPaths:
@@ -201,23 +306,20 @@ def _web_paths(output_dir: str | Path) -> WebRunPaths:
     )
 
 
-def _cached_web_result(paths: WebRunPaths) -> WebRunResult | None:
+def _cached_accumulator(paths: WebRunPaths) -> WebAccumulator | None:
     if not paths.queries_path.exists() or not paths.results_path.exists():
         return None
-    cached_queries = read_jsonl(paths.queries_path)
-    cached_results = read_jsonl(paths.results_path)
-    cached_evidence, cached_trace = _evidence_from_rows(cached_queries, cached_results)
-    return WebRunResult(
-        evidence=cached_evidence,
-        trace=cached_trace,
-        queries=len(cached_queries),
-        results=len(cached_results),
-        output_dir=str(paths.out_dir),
+    query_rows = read_jsonl(paths.queries_path)
+    result_rows = read_jsonl(paths.results_path)
+    evidence, trace = _evidence_from_rows(query_rows, result_rows)
+    return WebAccumulator(
+        query_rows=query_rows,
+        result_rows=result_rows,
+        trace=trace,
+        evidence=evidence,
+        query_index=len(query_rows),
+        query_cache={},
     )
-
-
-def _empty_web_result(paths: WebRunPaths) -> WebRunResult:
-    return WebRunResult(evidence={}, trace=[], queries=0, results=0, output_dir=str(paths.out_dir))
 
 
 def _enabled_provider_names(web_config: Any, providers: list[str] | None) -> list[str]:
@@ -225,55 +327,6 @@ def _enabled_provider_names(web_config: Any, providers: list[str] | None) -> lis
     return [
         name for name in provider_names if web_config.providers.get(name, None) and web_config.providers[name].enabled
     ]
-
-
-async def _plan_web_queries(
-    *,
-    config: RecommendationConfig,
-    ctx: WebRunContext,
-) -> tuple[list[WebQuerySpec], list[dict[str, Any]]]:
-    specs: list[WebQuerySpec] = []
-    trace: list[dict[str, Any]] = []
-    for module in config.modules:
-        for label in module.labels:
-            for indicator in label.indicators:
-                if indicator.web_search is None:
-                    continue
-                key = indicator_key(module, label.label_id, indicator)
-                local_evidence = ctx.local_evidence_map.get(key, [])
-                decision = should_search_indicator(indicator=indicator, local_evidence=local_evidence, rule_result=None)
-                if not decision.enabled:
-                    trace.append(_skip_trace(module, label, indicator, key, decision))
-                    continue
-                fixed_queries = _render_queries(company_name=ctx.company_name, indicator=indicator)
-                auto_queries = await _auto_queries(
-                    query_planner=ctx.query_planner,
-                    company_name=ctx.company_name,
-                    profile=ctx.profile,
-                    module=module,
-                    label=label,
-                    indicator=indicator,
-                )
-                if indicator.web_search.auto.enabled and not auto_queries:
-                    trace.append(_auto_trace(module, label, indicator, key))
-                query_specs = [(query, False) for query in fixed_queries] + [(query, True) for query in auto_queries]
-                for query, is_auto in query_specs:
-                    specs.extend(
-                        [
-                            WebQuerySpec(
-                                module=module,
-                                label=label,
-                                indicator=indicator,
-                                indicator_key=key,
-                                decision=decision,
-                                query=query,
-                                auto=is_auto,
-                                provider_name=provider_name,
-                            )
-                            for provider_name in ctx.provider_names
-                        ]
-                    )
-    return specs, trace
 
 
 def _query_row_for_spec(
@@ -293,62 +346,23 @@ def _query_row_for_spec(
     }
 
 
-def _append_web_rows(
-    *,
-    acc: WebAccumulator,
-    key: str,
+def _rows_for_spec(
+    cached_rows: list[dict[str, Any]],
     query_row: dict[str, Any],
-    rows: list[dict[str, Any]],
-) -> None:
-    acc.query_rows.append(query_row)
-    acc.result_rows.extend(rows)
-    acc.trace.append(_trace_row(query_row, rows))
-    if result_evidence := _result_evidence(query_row, rows):
-        acc.evidence.setdefault(key, []).extend(result_evidence)
-
-
-async def _execute_web_queries(
-    *,
-    ctx: WebRunContext,
-    specs: list[WebQuerySpec],
-    initial_trace: list[dict[str, Any]],
-) -> WebAccumulator:
-    acc = WebAccumulator.create()
-    acc.trace.extend(initial_trace)
-    total = len(specs)
-    for i, spec in enumerate(specs, 1):
-        provider_cfg = ctx.web_config.providers[spec.provider_name]
-        cache_key = f"{spec.query}:{spec.provider_name}"
-        if cache_key in acc.query_cache:
-            cached_query_row, cached_rows = acc.query_cache[cache_key]
-            per_key_row = _query_row_for_spec(cached_query_row, spec)
-            _append_web_rows(acc=acc, key=spec.indicator_key, query_row=per_key_row, rows=cached_rows)
-            display.info(f"  [{i}/{total}] 复用缓存: {spec.query[:50]}")
-            continue
-        display.info(f"  [{i}/{total}] 搜索: {spec.query[:50]}")
-        web_search = spec.indicator.web_search
-        if web_search is None:
-            continue
-        query_id = acc.next_query_id()
-        query_row, rows = await _run_one_query(
-            provider_name=spec.provider_name,
-            provider_cfg=provider_cfg,
-            provider_factory=ctx.provider_factory,
-            query=spec.query,
-            query_id=query_id,
-            indicator_key=spec.indicator_key,
-            module=spec.module,
-            label=spec.label,
-            indicator=spec.indicator,
-            company_name=ctx.company_name,
-            profile=ctx.profile,
-            max_results=min(web_search.max_results, ctx.web_config.execution.max_results_per_query),
-            auto=spec.auto,
-            decision=spec.decision,
-        )
-        acc.query_cache[cache_key] = (query_row, rows)
-        _append_web_rows(acc=acc, key=spec.indicator_key, query_row=query_row, rows=rows)
-    return acc
+    spec: WebQuerySpec,
+) -> list[dict[str, Any]]:
+    return [
+        {
+            **row,
+            "result_id": _result_id(str(query_row.get("query_id") or ""), str(row.get("result_id") or row.get("url"))),
+            "query_id": query_row.get("query_id"),
+            "indicator_key": spec.indicator_key,
+            "module_id": spec.module.module_id,
+            "label_id": spec.label.label_id,
+            "indicator_id": spec.indicator.indicator_id,
+        }
+        for row in cached_rows
+    ]
 
 
 async def _run_one_query(  # noqa: PLR0913

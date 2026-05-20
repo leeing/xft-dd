@@ -4,160 +4,155 @@ priority: 50
 base_score: 0
 acceptance_policy:
   levels:
-  - result: 高
-    min_matched_labels: 3
-    conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为高。
-  - result: 中高
-    min_matched_labels: 2
-    conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为中高。
-  - result: 低
-    min_matched_labels: 0
-    conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为低。
+    - result: 高
+      min_matched_labels: 3
+      conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为高。
+    - result: 中高
+      min_matched_labels: 2
+      conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为中高。
+    - result: 低
+      min_matched_labels: 0
+      conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为低。
 labels:
-- label_id: 对公付款需求多
-  label_name: 对公付款需求多
-  description: ''
-  min_matched_indicators: 1
-  indicators:
-  - indicator_id: 细分行业
-    indicator_name: 细分行业
-    evaluator: llm
-    standard: 机械装备、金属加工、智能装备、化工涂料、机械装备集群、五金集群、电子元件、食品加工
-    data_sources: []
-    prompt: 请判断企业是否满足指标：细分行业。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 细分行业
-    - 机械装备
-    - 金属加工
-    - 智能装备
-    - 化工涂料
-    - 机械装备集群
-    - 五金集群
-    - 电子元件
-  - indicator_id: 行业特性推导
-    indicator_name: 行业特性推导
-    evaluator: llm_web
-    standard: 快周转行业、存在大量采购行业
-    data_sources: []
-    prompt: 请判断企业是否满足指标：行业特性推导。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 行业特性推导
-    - 快周转行业
-    - 存在大量采购行业
-    web_search:
-      fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
-      auto: false
-  - indicator_id: 产品类型标签
-    indicator_name: 产品类型标签
-    evaluator: llm
-    standard: 1、企业生产产品是多部件机械装备 、3C 电子元器件模组 、定制化金属结构件 、食品加工半成品
-    data_sources: []
-    prompt: 请判断企业是否满足指标：产品类型标签。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 产品类型标签
-    - 企业生产产品是多部件机械装备
-    - 3C
-    - 电子元器件模组
-    - 定制化金属结构件
-    - 食品加工半成品
-  - indicator_id: 产业链位置
-    indicator_name: 产业链位置
-    evaluator: llm_web
-    standard: 1、处于产业链中游；2、采购多品类原料 / 部件；3、供应商结构分散或多领域合作；4、企业地址为产业集群聚集
-    data_sources: []
-    prompt: 请判断企业是否满足指标：产业链位置。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 产业链位置
-    - 处于产业链中游
-    - 采购多品类原料
-    - 部件
-    - 供应商结构分散或多领域合作
-    - 企业地址为产业集群聚集
-    web_search:
-      fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
-      auto: false
-  - indicator_id: 供应商数量
-    indicator_name: 供应商数量
-    evaluator: llm_web
-    standard: 1. 备案供应商数量≥25 家（行业协会备案 / 官网公示可查）；2. 企业官网 “合作伙伴 / 供应商” 板块；3. 产业展会参展公示配套企业
-    data_sources: []
-    prompt: 请判断企业是否满足指标：供应商数量。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 供应商数量
-    - 备案供应商数量
-    - '25'
-    - 行业协会备案
-    - 官网公示可查
-    - 企业官网
-    - 合作伙伴
-    - 供应商
-    web_search:
-      fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
-      auto: false
-  - indicator_id: 跨区域_跨境采购
-    indicator_name: 跨区域 / 跨境采购
-    evaluator: llm_web
-    standard: 1. 招聘 “全国 / 跨境采购专员” 岗；2. 官网产品描述 “核心部件进口 / 全国配套”；3. 供应商地域分布
-    data_sources:
-    - type: table
-      table: recruitments
-      field: title
-      op: text_contains
-      keywords: []
-    prompt: 请判断企业是否满足指标：跨区域 / 跨境采购。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 跨区域
-    - 跨境采购
-    - 招聘
-    - 全国
-    - 跨境采购专员
-    - 官网产品描述
-    - 核心部件进口
-    - 全国配套
-    web_search:
-      fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
-      auto: false
-  - indicator_id: 招聘关键词
-    indicator_name: 招聘关键词
-    evaluator: llm_web
-    standard: 供应商管理、批量对账、多品类采购、BOM 管理、定制化生产客户定制、短账期30天付款、高频结算、月结、短账期；关键词≥1次
-    data_sources:
-    - type: table
-      table: recruitments
-      field: title
-      op: text_contains
-      keywords: []
-    prompt: 请判断企业是否满足指标：招聘关键词。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 招聘关键词
-    - 供应商管理
-    - 批量对账
-    - 多品类采购
-    - BOM
-    - 管理
-    - 定制化生产客户定制
-    - 短账期30天付款
-    web_search:
-      fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
-      auto: false
+  - label_id: 对公付款需求多
+    label_name: 对公付款需求多
+    description: ""
+    min_matched_indicators: 1
+    indicators:
+      - indicator_id: 细分行业
+        indicator_name: 细分行业
+        evaluator: llm
+        standard: 机械装备、金属加工、智能装备、化工涂料、机械装备集群、五金集群、电子元件、食品加工
+        data_sources: []
+        prompt: 请判断企业是否满足指标：细分行业。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 细分行业
+          - 机械装备
+          - 金属加工
+          - 智能装备
+          - 化工涂料
+          - 机械装备集群
+          - 五金集群
+          - 电子元件
+      - indicator_id: 行业特性推导
+        indicator_name: 行业特性推导
+        evaluator: llm_web
+        standard: 快周转行业、存在大量采购行业
+        data_sources: []
+        prompt: 请判断企业是否满足指标：行业特性推导。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 行业特性推导
+          - 快周转行业
+          - 存在大量采购行业
+        web_search:
+          fixed_queries:
+            - "{company_name} 行业"
+          auto: false
+      - indicator_id: 产品类型标签
+        indicator_name: 产品类型标签
+        evaluator: llm
+        standard: 1、企业生产产品是多部件机械装备 、3C 电子元器件模组 、定制化金属结构件 、食品加工半成品
+        data_sources: []
+        prompt: 请判断企业是否满足指标：产品类型标签。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 产品类型标签
+          - 企业生产产品是多部件机械装备
+          - 3C
+          - 电子元器件模组
+          - 定制化金属结构件
+          - 食品加工半成品
+      - indicator_id: 产业链位置
+        indicator_name: 产业链位置
+        evaluator: llm_web
+        standard: 1、处于产业链中游；2、采购多品类原料 / 部件；3、供应商结构分散或多领域合作；4、企业地址为产业集群聚集
+        data_sources: []
+        prompt: 请判断企业是否满足指标：产业链位置。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 产业链位置
+          - 处于产业链中游
+          - 采购多品类原料
+          - 部件
+          - 供应商结构分散或多领域合作
+          - 企业地址为产业集群聚集
+        web_search:
+          fixed_queries:
+            - "{company_name} 产业链"
+          auto: false
+      - indicator_id: 供应商数量
+        indicator_name: 供应商数量
+        evaluator: llm_web
+        standard: 1. 备案供应商数量≥25 家（行业协会备案 / 官网公示可查）；2. 企业官网 “合作伙伴 / 供应商” 板块；3. 产业展会参展公示配套企业
+        data_sources: []
+        prompt: 请判断企业是否满足指标：供应商数量。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 供应商数量
+          - 备案供应商数量
+          - "25"
+          - 行业协会备案
+          - 官网公示可查
+          - 企业官网
+          - 合作伙伴
+          - 供应商
+        web_search:
+          fixed_queries:
+            - "{company_name} 供应商"
+          auto: false
+      - indicator_id: 跨区域_跨境采购
+        indicator_name: 跨区域 / 跨境采购
+        evaluator: llm_web
+        standard: 1. 招聘 “全国 / 跨境采购专员” 岗；2. 官网产品描述 “核心部件进口 / 全国配套”；3. 供应商地域分布
+        data_sources:
+          - type: table
+            table: recruitments
+            field: title
+            op: text_contains
+            keywords: []
+        prompt: 请判断企业是否满足指标：跨区域 / 跨境采购。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 跨区域
+          - 跨境采购
+          - 招聘
+          - 全国
+          - 跨境采购专员
+          - 官网产品描述
+          - 核心部件进口
+          - 全国配套
+        web_search:
+          fixed_queries:
+            - "{company_name} 跨境采购"
+          auto: false
+      - indicator_id: 招聘关键词
+        indicator_name: 招聘关键词
+        evaluator: llm_web
+        standard: 供应商管理、批量对账、多品类采购、BOM 管理、定制化生产客户定制、短账期30天付款、高频结算、月结、短账期；关键词≥1次
+        data_sources:
+          - type: table
+            table: recruitments
+            field: title
+            op: text_contains
+            keywords: []
+        prompt: 请判断企业是否满足指标：招聘关键词。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 招聘关键词
+          - 供应商管理
+          - 批量对账
+          - 多品类采购
+          - BOM
+          - 管理
+          - 定制化生产客户定制
+          - 短账期30天付款
+        web_search:
+          fixed_queries:
+            - "{company_name} 招聘"
+          auto: false
 marketing_points:
   对公付款需求多:
-    recommendation: ''
-    sale_rule: ''
+    recommendation: ""
+    sale_rule: ""
     kyc_questions:
-    - 了解企业对公付款是否通过ERP来管理。
-    - 了解企业怎样管理供应商、合同和付款计划？是否需要做付款提醒？
-    - 了解企业是否存在预付和核销的情况？财务是否记录一个预付台账，及时提醒完成核销操作
-    - 了解企业付款申请怎样管理，是否有系统管理。是否出现付款不及时的情况
-    - 了解企业付款审批完后怎样支付费用？有没有存在付错款的情况（关注云直联需求）
-    - 了解企业采购员是否经常要问财务支付状态，并且要照财务要支付回单，发给供应商？
+      - 了解企业对公付款是否通过ERP来管理。
+      - 了解企业怎样管理供应商、合同和付款计划？是否需要做付款提醒？
+      - 了解企业是否存在预付和核销的情况？财务是否记录一个预付台账，及时提醒完成核销操作
+      - 了解企业付款申请怎样管理，是否有系统管理。是否出现付款不及时的情况
+      - 了解企业付款审批完后怎样支付费用？有没有存在付错款的情况（关注云直联需求）
+      - 了解企业采购员是否经常要问财务支付状态，并且要照财务要支付回单，发给供应商？

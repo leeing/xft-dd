@@ -13,8 +13,10 @@ config/recommender/xft
 推荐主链路：
 
 ```text
-data_gather -> web_evidence -> recommend -> save
+data_gather -> recommend -> save
 ```
+
+Web 补证已经内聚到 `recommend` 阶段：开启 `--with-web` 后，每个指标在计算时按 `web_search.when` 判断是否需要搜索。
 
 核心配置：
 
@@ -102,8 +104,8 @@ uv run xft calibrate \
 
 ```bash
 uv run xft scenario validate config/recommender/xft
-uv run xft recommend --no-llm --scenario config/recommender/xft "企业名称"
-uv run xft recommend --with-web --llm-debug --scenario config/recommender/xft "企业名称"
+uv run xft recommend --no-llm --module 日常报销 --scenario config/recommender/xft "企业名称"
+uv run xft recommend --with-web --llm-debug --module 日常报销 --scenario config/recommender/xft "企业名称"
 ```
 
 ### 3. 抽查 Web 证据质量

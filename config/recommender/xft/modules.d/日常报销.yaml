@@ -4,343 +4,342 @@ priority: 50
 base_score: 0
 acceptance_policy:
   levels:
-  - result: 高
-    min_matched_labels: 3
-    conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为高。
-  - result: 中高
-    min_matched_labels: 2
-    conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为中高。
-  - result: 低
-    min_matched_labels: 0
-    conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为低。
+    - result: 高
+      min_matched_labels: 3
+      conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为高。
+    - result: 中高
+      min_matched_labels: 2
+      conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为中高。
+    - result: 低
+      min_matched_labels: 0
+      conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为低。
 labels:
-- label_id: 产销一体属性
-  label_name: 产销一体属性
-  description: ''
-  min_matched_indicators: 1
-  indicators:
-  - indicator_id: 经销商维护型业务员属性
-    indicator_name: 经销商维护型业务员属性
-    evaluator: llm_web
-    standard: 1. 招聘 JD 含 “经销商开发”“渠道维护”“区域销售”“代理商维护”“空白区域开拓” 关键词≥2 次；2. 或 “渠道”“经销商”“代理商”
-      单独出现≥3 次； 跨区域销售岗位≥3 个（不同省份 / 城市）
-    data_sources:
-    - type: table
-      table: recruitments
-      field: title
-      op: text_contains
-      keywords: []
-    prompt: 请判断企业是否满足指标：经销商维护型业务员属性。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 经销商维护型业务员属性
-    - 招聘
-    - JD
-    - 经销商开发
-    - 渠道维护
-    - 区域销售
-    - 代理商维护
-    - 空白区域开拓
-    web_search:
-      fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
-      auto: false
-  - indicator_id: 销售人员占比
-    indicator_name: 销售人员占比
-    evaluator: llm_web
-    standard: 销售人员占企业人数的10%-30%，可按照招聘人员比例分析
-    data_sources:
-    - type: table
-      table: recruitments
-      field: title
-      op: text_contains
-      keywords: []
-    prompt: 请判断企业是否满足指标：销售人员占比。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 销售人员占比
-    - 销售人员占企业人数的10
-    - '30'
-    - 可按照招聘人员比例分析
-    web_search:
-      fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
-      auto: false
-  - indicator_id: 销售的_c_端商品的细分行业
-    indicator_name: 销售的 C 端商品的细分行业
-    evaluator: llm_web
-    standard: 大众家电、小家电、快消食品、农资产品、县域零售连锁
-    data_sources: []
-    prompt: 请判断企业是否满足指标：销售的 C 端商品的细分行业。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 销售的
-    - 端商品的细分行业
-    - 大众家电
-    - 小家电
-    - 快消食品
-    - 农资产品
-    - 县域零售连锁
-    web_search:
-      fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
-      auto: false
-  - indicator_id: 销售模式
-    indicator_name: 销售模式
-    evaluator: llm_web
-    standard: 1. 企业官网 “销售网络” 提及 “千县千店”“县域经销商”“乡镇门店”；. 招聘 JD 含 “下沉市场销售”“县域经销商维护”“乡镇渠道拓展”
-      关键词≥2 次； 线下门店覆盖≥5 个县域
-    data_sources:
-    - type: table
-      table: recruitments
-      field: title
-      op: text_contains
-      keywords: []
-    prompt: 请判断企业是否满足指标：销售模式。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 销售模式
-    - 企业官网
-    - 销售网络
-    - 提及
-    - 千县千店
-    - 县域经销商
-    - 乡镇门店
-    - 招聘
-    web_search:
-      fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
-      auto: false
-- label_id: 售后属性
-  label_name: 售后属性
-  description: ''
-  min_matched_indicators: 1
-  indicators:
-  - indicator_id: 售后派驻属性
-    indicator_name: 售后派驻属性
-    evaluator: llm_web
-    standard: 1.招聘 JD 含 “售后派驻”“驻点维护”“外勤售后”“区域售后”“异地支援” 关键词≥2 次；2. 或 “派驻”“驻点”“外勤” 单独出现≥3
-      次；3. 跨区域售后岗位≥3 个（不同省份 / 城市）
-    data_sources:
-    - type: table
-      table: recruitments
-      field: title
-      op: text_contains
-      keywords: []
-    prompt: 请判断企业是否满足指标：售后派驻属性。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 售后派驻属性
-    - 招聘
-    - JD
-    - 售后派驻
-    - 驻点维护
-    - 外勤售后
-    - 区域售后
-    - 异地支援
-    web_search:
-      fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
-      auto: false
-  - indicator_id: 售后人员占比
-    indicator_name: 售后人员占比
-    evaluator: llm_web
-    standard: 售后人员占企业人数的10%-30%，可按照招聘人员比例分析
-    data_sources:
-    - type: table
-      table: recruitments
-      field: title
-      op: text_contains
-      keywords: []
-    prompt: 请判断企业是否满足指标：售后人员占比。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 售后人员占比
-    - 售后人员占企业人数的10
-    - '30'
-    - 可按照招聘人员比例分析
-    web_search:
-      fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
-      auto: false
-  - indicator_id: 售后的_b_端商品的细分行业
-    indicator_name: 售后的 B 端商品的细分行业
-    evaluator: llm_web
-    standard: 工业设备制造、商用装备、工业自动化、专用机械、通信基建
-    data_sources: []
-    prompt: 请判断企业是否满足指标：售后的 B 端商品的细分行业。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 售后的
-    - 端商品的细分行业
-    - 工业设备制造
-    - 商用装备
-    - 工业自动化
-    - 专用机械
-    - 通信基建
-    web_search:
-      fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
-      auto: false
-  - indicator_id: 技术含量
-    indicator_name: 技术含量
-    evaluator: llm_web
-    standard: 1. 发明专利≥3 项（核心技术专利，非外观 / 实用新型）；2. 持有设备类专项认证（工业产品生产许可证、设备安全认证）；3. 产品描述含
-      “定制化”“系统集成” 关键词≥2 次
-    data_sources:
-    - type: table
-      table: qualifications
-      field: qualification_name
-      op: exists
-    - type: field
-      path: ip_counts.patent
-      op: '>'
-      value: 0
-    prompt: 请判断企业是否满足指标：技术含量。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 技术含量
-    - 发明专利
-    - 核心技术专利
-    - 非外观
-    - 实用新型
-    - 持有设备类专项认证
-    - 工业产品生产许可证
-    - 设备安全认证
-    web_search:
-      fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
-      auto: false
-  - indicator_id: 服务支持
-    indicator_name: 服务支持
-    evaluator: llm_web
-    standard: 1. 售后政策含 “安装调试”“质保≥1 年”“驻场服务” 关键词≥2 次；2. 招聘 “设备售后工程师”“技术支持专员” 岗位；3.
-      故障响应承诺≤2 小时（公开服务条款）
-    data_sources:
-    - type: table
-      table: recruitments
-      field: title
-      op: text_contains
-      keywords: []
-    prompt: 请判断企业是否满足指标：服务支持。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 服务支持
-    - 售后政策含
-    - 安装调试
-    - 质保
-    - 驻场服务
-    - 关键词
-    - 招聘
-    - 设备售后工程师
-    web_search:
-      fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
-      auto: false
-- label_id: 科技属性
-  label_name: 科技属性
-  description: ''
-  min_matched_indicators: 1
-  indicators:
-  - indicator_id: 研发人员占比
-    indicator_name: 研发人员占比
-    evaluator: llm_web
-    standard: ≥20%（研发岗员工数 / 总员工数）
-    data_sources: []
-    prompt: 请判断企业是否满足指标：研发人员占比。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 研发人员占比
-    - '20'
-    - 研发岗员工数
-    - 总员工数
-    web_search:
-      fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
-      auto: false
-  - indicator_id: 研发费用占比
-    indicator_name: 研发费用占比
-    evaluator: llm_web
-    standard: 营收＜5000 万→≥5%；5000 万 - 2 亿→≥4%；营收＞2 亿→按数字化转型型标准（≥3%）
-    data_sources: []
-    prompt: 请判断企业是否满足指标：研发费用占比。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 研发费用占比
-    - 营收
-    - '5000'
-    - 按数字化转型型标准
-    web_search:
-      fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
-      auto: false
-  - indicator_id: 细分行业
-    indicator_name: 细分行业
-    evaluator: llm
-    standard: 电子信息、生物医药、新材料制造、新能源装备、工业机器人、工业母机、汽车零部件、医疗设备、集成电路、半导体、电子元件、通讯设备、高端装备、航天航空设备制造、精密仪器、传感器、电池、精密制造等科技行业
-    data_sources: []
-    prompt: 请判断企业是否满足指标：细分行业。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 细分行业
-    - 电子信息
-    - 生物医药
-    - 新材料制造
-    - 新能源装备
-    - 工业机器人
-    - 工业母机
-    - 汽车零部件
-  - indicator_id: 科技企业_科技资质认证
-    indicator_name: 科技企业-科技资质认证
-    evaluator: rule
-    standard: 高新技术企业证书、双软认证、专精特新、小巨人、隐形冠军、单项冠军、科技型中小企业
-    data_sources:
-    - type: table
-      table: qualifications
-      field: qualification_name
-      op: exists
-    - type: field
-      path: labels
-      op: exists
-    prompt: 请判断企业是否满足指标：科技企业-科技资质认证。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 科技企业
-    - 科技资质认证
-    - 高新技术企业证书
-    - 双软认证
-    - 专精特新
-    - 小巨人
-    - 隐形冠军
-    - 单项冠军
-  - indicator_id: 知识产权数量多
-    indicator_name: 知识产权数量多
-    evaluator: rule
-    standard: 发明专利≥3 项 或 软件著作权≥5 项
-    data_sources:
-    - type: field
-      path: ip_counts.patent
-      op: '>'
-      value: 0
-    prompt: 请判断企业是否满足指标：知识产权数量多。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 知识产权数量多
-    - 发明专利
-    - 软件著作权
+  - label_id: 产销一体属性
+    label_name: 产销一体属性
+    description: ""
+    min_matched_indicators: 1
+    indicators:
+      - indicator_id: 经销商维护型业务员属性
+        indicator_name: 经销商维护型业务员属性
+        evaluator: llm_web
+        standard:
+          1. 招聘 JD 含 “经销商开发”“渠道维护”“区域销售”“代理商维护”“空白区域开拓” 关键词≥2 次；2. 或 “渠道”“经销商”“代理商”
+          单独出现≥3 次； 跨区域销售岗位≥3 个（不同省份 / 城市）
+        data_sources:
+          - type: table
+            table: recruitments
+            field: title
+            op: text_contains
+            keywords: []
+        prompt: 请判断企业是否满足指标：经销商维护型业务员属性。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 经销商维护型业务员属性
+          - 招聘
+          - JD
+          - 经销商开发
+          - 渠道维护
+          - 区域销售
+          - 代理商维护
+          - 空白区域开拓
+        web_search:
+          fixed_queries:
+            - "{company_name} 经销商"
+          auto: false
+      - indicator_id: 销售人员占比
+        indicator_name: 销售人员占比
+        evaluator: llm_web
+        standard: 销售人员占企业人数的10%-30%，可按照招聘人员比例分析
+        data_sources:
+          - type: table
+            table: recruitments
+            field: title
+            op: text_contains
+            keywords: []
+        prompt: 请判断企业是否满足指标：销售人员占比。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 销售人员占比
+          - 销售人员占企业人数的10
+          - "30"
+          - 可按照招聘人员比例分析
+        web_search:
+          fixed_queries:
+            - "{company_name} 销售人员"
+          auto: false
+      - indicator_id: 销售的_c_端商品的细分行业
+        indicator_name: 销售的 C 端商品的细分行业
+        evaluator: llm_web
+        standard: 大众家电、小家电、快消食品、农资产品、县域零售连锁
+        data_sources: []
+        prompt: 请判断企业是否满足指标：销售的 C 端商品的细分行业。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 销售的
+          - 端商品的细分行业
+          - 大众家电
+          - 小家电
+          - 快消食品
+          - 农资产品
+          - 县域零售连锁
+        web_search:
+          fixed_queries:
+            - "{company_name} 销售"
+          auto: false
+      - indicator_id: 销售模式
+        indicator_name: 销售模式
+        evaluator: llm_web
+        standard:
+          1. 企业官网 “销售网络” 提及 “千县千店”“县域经销商”“乡镇门店”；. 招聘 JD 含 “下沉市场销售”“县域经销商维护”“乡镇渠道拓展”
+          关键词≥2 次； 线下门店覆盖≥5 个县域
+        data_sources:
+          - type: table
+            table: recruitments
+            field: title
+            op: text_contains
+            keywords: []
+        prompt: 请判断企业是否满足指标：销售模式。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 销售模式
+          - 企业官网
+          - 销售网络
+          - 提及
+          - 千县千店
+          - 县域经销商
+          - 乡镇门店
+          - 招聘
+        web_search:
+          fixed_queries:
+            - "{company_name} 销售"
+          auto: false
+  - label_id: 售后属性
+    label_name: 售后属性
+    description: ""
+    min_matched_indicators: 1
+    indicators:
+      - indicator_id: 售后派驻属性
+        indicator_name: 售后派驻属性
+        evaluator: llm_web
+        standard:
+          1.招聘 JD 含 “售后派驻”“驻点维护”“外勤售后”“区域售后”“异地支援” 关键词≥2 次；2. 或 “派驻”“驻点”“外勤” 单独出现≥3
+          次；3. 跨区域售后岗位≥3 个（不同省份 / 城市）
+        data_sources:
+          - type: table
+            table: recruitments
+            field: title
+            op: text_contains
+            keywords: []
+        prompt: 请判断企业是否满足指标：售后派驻属性。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 售后派驻属性
+          - 招聘
+          - JD
+          - 售后派驻
+          - 驻点维护
+          - 外勤售后
+          - 区域售后
+          - 异地支援
+        web_search:
+          fixed_queries:
+            - "{company_name} 售后"
+          auto: false
+      - indicator_id: 售后人员占比
+        indicator_name: 售后人员占比
+        evaluator: llm_web
+        standard: 售后人员占企业人数的10%-30%，可按照招聘人员比例分析
+        data_sources:
+          - type: table
+            table: recruitments
+            field: title
+            op: text_contains
+            keywords: []
+        prompt: 请判断企业是否满足指标：售后人员占比。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 售后人员占比
+          - 售后人员占企业人数的10
+          - "30"
+          - 可按照招聘人员比例分析
+        web_search:
+          fixed_queries:
+            - "{company_name} 售后人员"
+          auto: false
+      - indicator_id: 售后的_b_端商品的细分行业
+        indicator_name: 售后的 B 端商品的细分行业
+        evaluator: llm_web
+        standard: 工业设备制造、商用装备、工业自动化、专用机械、通信基建
+        data_sources: []
+        prompt: 请判断企业是否满足指标：售后的 B 端商品的细分行业。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 售后的
+          - 端商品的细分行业
+          - 工业设备制造
+          - 商用装备
+          - 工业自动化
+          - 专用机械
+          - 通信基建
+        web_search:
+          fixed_queries:
+            - "{company_name} 官网"
+            - "{company_name} 新闻"
+          auto: false
+      - indicator_id: 技术含量
+        indicator_name: 技术含量
+        evaluator: llm_web
+        standard:
+          1. 发明专利≥3 项（核心技术专利，非外观 / 实用新型）；2. 持有设备类专项认证（工业产品生产许可证、设备安全认证）；3. 产品描述含
+          “定制化”“系统集成” 关键词≥2 次
+        data_sources:
+          - type: table
+            table: qualifications
+            field: qualification_name
+            op: exists
+          - type: field
+            path: ip_counts.patent
+            op: ">"
+            value: 0
+        prompt: 请判断企业是否满足指标：技术含量。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 技术含量
+          - 发明专利
+          - 核心技术专利
+          - 非外观
+          - 实用新型
+          - 持有设备类专项认证
+          - 工业产品生产许可证
+          - 设备安全认证
+        web_search:
+          fixed_queries:
+            - "{company_name} 官网"
+            - "{company_name} 新闻"
+          auto: false
+      - indicator_id: 服务支持
+        indicator_name: 服务支持
+        evaluator: llm_web
+        standard:
+          1. 售后政策含 “安装调试”“质保≥1 年”“驻场服务” 关键词≥2 次；2. 招聘 “设备售后工程师”“技术支持专员” 岗位；3.
+          故障响应承诺≤2 小时（公开服务条款）
+        data_sources:
+          - type: table
+            table: recruitments
+            field: title
+            op: text_contains
+            keywords: []
+        prompt: 请判断企业是否满足指标：服务支持。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 服务支持
+          - 售后政策含
+          - 安装调试
+          - 质保
+          - 驻场服务
+          - 关键词
+          - 招聘
+          - 设备售后工程师
+        web_search:
+          fixed_queries:
+            - "{company_name} 官网"
+            - "{company_name} 新闻"
+          auto: false
+  - label_id: 科技属性
+    label_name: 科技属性
+    description: ""
+    min_matched_indicators: 1
+    indicators:
+      - indicator_id: 研发人员占比
+        indicator_name: 研发人员占比
+        evaluator: llm_web
+        standard: ≥20%（研发岗员工数 / 总员工数）
+        data_sources: []
+        prompt: 请判断企业是否满足指标：研发人员占比。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 研发人员占比
+          - "20"
+          - 研发岗员工数
+          - 总员工数
+        web_search:
+          fixed_queries:
+            - "{company_name} 官网"
+            - "{company_name} 新闻"
+          auto: false
+      - indicator_id: 研发费用占比
+        indicator_name: 研发费用占比
+        evaluator: llm_web
+        standard: 营收＜5000 万→≥5%；5000 万 - 2 亿→≥4%；营收＞2 亿→按数字化转型型标准（≥3%）
+        data_sources: []
+        prompt: 请判断企业是否满足指标：研发费用占比。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 研发费用占比
+          - 营收
+          - "5000"
+          - 按数字化转型型标准
+        web_search:
+          fixed_queries:
+            - "{company_name} 官网"
+            - "{company_name} 新闻"
+          auto: false
+      - indicator_id: 细分行业
+        indicator_name: 细分行业
+        evaluator: llm
+        standard: 电子信息、生物医药、新材料制造、新能源装备、工业机器人、工业母机、汽车零部件、医疗设备、集成电路、半导体、电子元件、通讯设备、高端装备、航天航空设备制造、精密仪器、传感器、电池、精密制造等科技行业
+        data_sources: []
+        prompt: 请判断企业是否满足指标：细分行业。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 细分行业
+          - 电子信息
+          - 生物医药
+          - 新材料制造
+          - 新能源装备
+          - 工业机器人
+          - 工业母机
+          - 汽车零部件
+      - indicator_id: 科技企业_科技资质认证
+        indicator_name: 科技企业-科技资质认证
+        evaluator: rule
+        standard: 高新技术企业证书、双软认证、专精特新、小巨人、隐形冠军、单项冠军、科技型中小企业
+        data_sources:
+          - type: table
+            table: qualifications
+            field: qualification_name
+            op: exists
+          - type: field
+            path: labels
+            op: exists
+        prompt: 请判断企业是否满足指标：科技企业-科技资质认证。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 科技企业
+          - 科技资质认证
+          - 高新技术企业证书
+          - 双软认证
+          - 专精特新
+          - 小巨人
+          - 隐形冠军
+          - 单项冠军
+      - indicator_id: 知识产权数量多
+        indicator_name: 知识产权数量多
+        evaluator: rule
+        standard: 发明专利≥3 项 或 软件著作权≥5 项
+        data_sources:
+          - type: field
+            path: ip_counts.patent
+            op: ">"
+            value: 0
+        prompt: 请判断企业是否满足指标：知识产权数量多。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 知识产权数量多
+          - 发明专利
+          - 软件著作权
 marketing_points:
   产销一体属性:
-    recommendation: ''
-    sale_rule: ''
+    recommendation: ""
+    sale_rule: ""
     kyc_questions:
-    - 了解企业是否需要维护重点客户，衍生出一些招待费，或者寄送节日礼品、或者团队搞建设活动的费用，这些费用怎么管理的？
-    - 了解企业是否要开展会，宣传等活动，衍生出的广告费、展会费、宣传费等等，这些费用是怎么管理的？
-    - 了解销售人员目前是否有交通补贴、通讯补贴，目前是怎么管理的，是否需要票据报销。
+      - 了解企业是否需要维护重点客户，衍生出一些招待费，或者寄送节日礼品、或者团队搞建设活动的费用，这些费用怎么管理的？
+      - 了解企业是否要开展会，宣传等活动，衍生出的广告费、展会费、宣传费等等，这些费用是怎么管理的？
+      - 了解销售人员目前是否有交通补贴、通讯补贴，目前是怎么管理的，是否需要票据报销。
   售后属性:
-    recommendation: ''
-    sale_rule: ''
+    recommendation: ""
+    sale_rule: ""
     kyc_questions:
-    - 了解企业是否需要售后处理，售后工程师交通补贴是否要凭票报销，是否要和行程关联？
-    - 了解是否存在工程师维修时，垫钱购买设备，事后报销的场景？
+      - 了解企业是否需要售后处理，售后工程师交通补贴是否要凭票报销，是否要和行程关联？
+      - 了解是否存在工程师维修时，垫钱购买设备，事后报销的场景？
   科技属性:
-    recommendation: ''
-    sale_rule: ''
+    recommendation: ""
+    sale_rule: ""
     kyc_questions:
-    - 了解是否存在工程师在做原型验证或应急调试时，为了抢时间，自己先网购一些小芯片、试剂，事后报销的场景。
+      - 了解是否存在工程师在做原型验证或应急调试时，为了抢时间，自己先网购一些小芯片、试剂，事后报销的场景。

@@ -4,211 +4,208 @@ priority: 50
 base_score: 0
 acceptance_policy:
   levels:
-  - result: 高
-    min_matched_labels: 3
-    conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为高。
-  - result: 中高
-    min_matched_labels: 2
-    conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为中高。
-  - result: 低
-    min_matched_labels: 0
-    conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为低。
+    - result: 高
+      min_matched_labels: 3
+      conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为高。
+    - result: 中高
+      min_matched_labels: 2
+      conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为中高。
+    - result: 低
+      min_matched_labels: 0
+      conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为低。
 labels:
-- label_id: 供应链复杂或供应商众多
-  label_name: 供应链复杂或供应商众多
-  description: ''
-  min_matched_indicators: 1
-  indicators:
-  - indicator_id: 供应商集中度
-    indicator_name: 供应商集中度
-    evaluator: llm_web
-    standard: 查看企业年报或招股书中“前五大供应商采购占比”。比例要<30%
-    data_sources: []
-    prompt: 请判断企业是否满足指标：供应商集中度。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 供应商集中度
-    - 查看企业年报或招股书中
-    - 前五大供应商采购占比
-    - 比例要
-    - '30'
-    web_search:
-      fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
-      auto: false
-  - indicator_id: 主营业务成本与原材料构成
-    indicator_name: 主营业务成本与原材料构成
-    evaluator: llm_web
-    standard: 上市公司年报中分析其营业成本中直接材料占比60%以上。占比越高，对上游供应链的依赖和管理难度越大。报告中对原材料种类描述繁多（如“主要涉及金属、塑料、电子元器件、包装材料等”），也暗示供应链复杂。
-    data_sources: []
-    prompt: 请判断企业是否满足指标：主营业务成本与原材料构成。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 主营业务成本与原材料构成
-    - 上市公司年报中分析其营业成本中直接材料占比60
-    - 以上
-    - 占比越高
-    - 对上游供应链的依赖和管理难度越大
-    - 报告中对原材料种类描述繁多
-    - 主要涉及金属
-    - 塑料
-    web_search:
-      fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
-      auto: false
-  - indicator_id: 业务与产品
-    indicator_name: 业务与产品
-    evaluator: llm_web
-    standard: '从官网和年报描述中含有以下关键词：
+  - label_id: 供应链复杂或供应商众多
+    label_name: 供应链复杂或供应商众多
+    description: ""
+    min_matched_indicators: 1
+    indicators:
+      - indicator_id: 供应商集中度
+        indicator_name: 供应商集中度
+        evaluator: llm_web
+        standard: 查看企业年报或招股书中“前五大供应商采购占比”。比例要<30%
+        data_sources: []
+        prompt: 请判断企业是否满足指标：供应商集中度。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 供应商集中度
+          - 查看企业年报或招股书中
+          - 前五大供应商采购占比
+          - 比例要
+          - "30"
+        web_search:
+          fixed_queries:
+            - "{company_name} 供应商"
+          auto: false
+      - indicator_id: 主营业务成本与原材料构成
+        indicator_name: 主营业务成本与原材料构成
+        evaluator: llm_web
+        standard: 上市公司年报中分析其营业成本中直接材料占比60%以上。占比越高，对上游供应链的依赖和管理难度越大。报告中对原材料种类描述繁多（如“主要涉及金属、塑料、电子元器件、包装材料等”），也暗示供应链复杂。
+        data_sources: []
+        prompt: 请判断企业是否满足指标：主营业务成本与原材料构成。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 主营业务成本与原材料构成
+          - 上市公司年报中分析其营业成本中直接材料占比60
+          - 以上
+          - 占比越高
+          - 对上游供应链的依赖和管理难度越大
+          - 报告中对原材料种类描述繁多
+          - 主要涉及金属
+          - 塑料
+        web_search:
+          fixed_queries:
+            - "{company_name} 主营业务"
+            - "{company_name} 原材料"
+          auto: false
+      - indicator_id: 业务与产品
+        indicator_name: 业务与产品
+        evaluator: llm_web
+        standard: "从官网和年报描述中含有以下关键词：
 
-      产品特性：“定制化”、“多品种、小批量”、“SKU众多”
+          产品特性：“定制化”、“多品种、小批量”、“SKU众多”
 
-      业务模式：“供应链整合”、“协同采购”、“全球采购”。
+          业务模式：“供应链整合”、“协同采购”、“全球采购”。
 
-      行业地位：自称“平台型”或“集成商”的制造企业。'
-    data_sources: []
-    prompt: 请判断企业是否满足指标：业务与产品。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 业务与产品
-    - 从官网和年报描述中含有以下关键词
-    - 产品特性
-    - 定制化
-    - 多品种
-    - 小批量
-    - SKU众多
-    - 业务模式
-    web_search:
-      fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
-      auto: false
-  - indicator_id: 所属行业
-    indicator_name: 所属行业
-    evaluator: llm
-    standard: 处于产业链中游的装配型、集成型行业，包括但是不限于：汽车整车及零部件、电子设备制造（手机、电脑）、电气机械、通用/专用设备制造。
-    data_sources: []
-    prompt: 请判断企业是否满足指标：所属行业。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 所属行业
-    - 处于产业链中游的装配型
-    - 集成型行业
-    - 包括但是不限于
-    - 汽车整车及零部件
-    - 电子设备制造
-    - 手机
-    - 电脑
-- label_id: 多法人主体的企业集团
-  label_name: 多法人主体的企业集团
-  description: ''
-  min_matched_indicators: 1
-  indicators:
-  - indicator_id: 名称与股权
-    indicator_name: 名称与股权
-    evaluator: rule
-    standard: 公司名称常含“集团”、“控股”字样；工商信息显示对外投资了多家子公司（持股≥50%或拥有控制权-3-5）。
-    data_sources:
-    - type: table
-      table: branches
-      field: branch_name
-      op: exists
-    prompt: 请判断企业是否满足指标：名称与股权。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 名称与股权
-    - 公司名称常含
-    - 集团
-    - 控股
-    - 字样
-    - 工商信息显示对外投资了多家子公司
-    - 持股
-    - '50'
-  - indicator_id: 企业图谱
-    indicator_name: 企业图谱
-    evaluator: llm
-    standard: 在商业查询平台中，“企业图谱”或“对外投资”栏显示复杂的控股结构。
-    data_sources: []
-    prompt: 请判断企业是否满足指标：企业图谱。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 企业图谱
-    - 在商业查询平台中
-    - 对外投资
-    - 栏显示复杂的控股结构
-  - indicator_id: 财报合并范围
-    indicator_name: 财报合并范围
-    evaluator: llm_web
-    standard: 上市公司年报的 “合并财务报表范围” 会详尽列出所有重要子公司名录，是金标准-3-4。
-    data_sources: []
-    prompt: 请判断企业是否满足指标：财报合并范围。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 财报合并范围
-    - 上市公司年报的
-    - 合并财务报表范围
-    - 会详尽列出所有重要子公司名录
-    - 是金标准
-    web_search:
-      fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
-      auto: false
-- label_id: 上市公司或拟上市公司
-  label_name: 上市公司或拟上市公司
-  description: ''
-  min_matched_indicators: 1
-  indicators:
-  - indicator_id: 股票代码
-    indicator_name: 股票代码
-    evaluator: llm
-    standard: 拥有并在公开市场交易的6位股票代码。
-    data_sources: []
-    prompt: 请判断企业是否满足指标：股票代码。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 股票代码
-    - 拥有并在公开市场交易的6位股票代码
-  - indicator_id: 法定信披
-    indicator_name: 法定信披
-    evaluator: llm
-    standard: 在 “巨潮资讯网” 等指定网站可查到其法定公告、定期报告（年报、季报等）-2-6-9。
-    data_sources: []
-    prompt: 请判断企业是否满足指标：法定信披。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 法定信披
-    - 巨潮资讯网
-    - 等指定网站可查到其法定公告
-    - 定期报告
-    - 年报
-    - 季报等
-  - indicator_id: po动态
-    indicator_name: PO动态
-    evaluator: llm_web
-    standard: .有明确的 “招股说明书” 披露，或财经新闻中有其进入“上市辅导”、“提交申报”、“问询反馈”等进程的报道-10。
-    data_sources: []
-    prompt: 请判断企业是否满足指标：PO动态。只能基于证据判断，不得编造。
-    evidence_hints:
-    - PO动态
-    - 有明确的
-    - 招股说明书
-    - 披露
-    - 或财经新闻中有其进入
-    - 上市辅导
-    - 提交申报
-    - 问询反馈
-    web_search:
-      fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
-      auto: false
+          行业地位：自称“平台型”或“集成商”的制造企业。"
+        data_sources: []
+        prompt: 请判断企业是否满足指标：业务与产品。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 业务与产品
+          - 从官网和年报描述中含有以下关键词
+          - 产品特性
+          - 定制化
+          - 多品种
+          - 小批量
+          - SKU众多
+          - 业务模式
+        web_search:
+          fixed_queries:
+            - "{company_name} 官网"
+            - "{company_name} 新闻"
+          auto: false
+      - indicator_id: 所属行业
+        indicator_name: 所属行业
+        evaluator: llm
+        standard: 处于产业链中游的装配型、集成型行业，包括但是不限于：汽车整车及零部件、电子设备制造（手机、电脑）、电气机械、通用/专用设备制造。
+        data_sources: []
+        prompt: 请判断企业是否满足指标：所属行业。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 所属行业
+          - 处于产业链中游的装配型
+          - 集成型行业
+          - 包括但是不限于
+          - 汽车整车及零部件
+          - 电子设备制造
+          - 手机
+          - 电脑
+  - label_id: 多法人主体的企业集团
+    label_name: 多法人主体的企业集团
+    description: ""
+    min_matched_indicators: 1
+    indicators:
+      - indicator_id: 名称与股权
+        indicator_name: 名称与股权
+        evaluator: rule
+        standard: 公司名称常含“集团”、“控股”字样；工商信息显示对外投资了多家子公司（持股≥50%或拥有控制权-3-5）。
+        data_sources:
+          - type: table
+            table: branches
+            field: branch_name
+            op: exists
+        prompt: 请判断企业是否满足指标：名称与股权。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 名称与股权
+          - 公司名称常含
+          - 集团
+          - 控股
+          - 字样
+          - 工商信息显示对外投资了多家子公司
+          - 持股
+          - "50"
+      - indicator_id: 企业图谱
+        indicator_name: 企业图谱
+        evaluator: llm
+        standard: 在商业查询平台中，“企业图谱”或“对外投资”栏显示复杂的控股结构。
+        data_sources: []
+        prompt: 请判断企业是否满足指标：企业图谱。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 企业图谱
+          - 在商业查询平台中
+          - 对外投资
+          - 栏显示复杂的控股结构
+      - indicator_id: 财报合并范围
+        indicator_name: 财报合并范围
+        evaluator: llm_web
+        standard: 上市公司年报的 “合并财务报表范围” 会详尽列出所有重要子公司名录，是金标准-3-4。
+        data_sources: []
+        prompt: 请判断企业是否满足指标：财报合并范围。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 财报合并范围
+          - 上市公司年报的
+          - 合并财务报表范围
+          - 会详尽列出所有重要子公司名录
+          - 是金标准
+        web_search:
+          fixed_queries:
+            - "{company_name} 上市"
+          auto: false
+  - label_id: 上市公司或拟上市公司
+    label_name: 上市公司或拟上市公司
+    description: ""
+    min_matched_indicators: 1
+    indicators:
+      - indicator_id: 股票代码
+        indicator_name: 股票代码
+        evaluator: llm
+        standard: 拥有并在公开市场交易的6位股票代码。
+        data_sources: []
+        prompt: 请判断企业是否满足指标：股票代码。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 股票代码
+          - 拥有并在公开市场交易的6位股票代码
+      - indicator_id: 法定信披
+        indicator_name: 法定信披
+        evaluator: llm
+        standard: 在 “巨潮资讯网” 等指定网站可查到其法定公告、定期报告（年报、季报等）-2-6-9。
+        data_sources: []
+        prompt: 请判断企业是否满足指标：法定信披。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 法定信披
+          - 巨潮资讯网
+          - 等指定网站可查到其法定公告
+          - 定期报告
+          - 年报
+          - 季报等
+      - indicator_id: po动态
+        indicator_name: PO动态
+        evaluator: llm_web
+        standard: .有明确的 “招股说明书” 披露，或财经新闻中有其进入“上市辅导”、“提交申报”、“问询反馈”等进程的报道-10。
+        data_sources: []
+        prompt: 请判断企业是否满足指标：PO动态。只能基于证据判断，不得编造。
+        evidence_hints:
+          - PO动态
+          - 有明确的
+          - 招股说明书
+          - 披露
+          - 或财经新闻中有其进入
+          - 上市辅导
+          - 提交申报
+          - 问询反馈
+        web_search:
+          fixed_queries:
+            - "{company_name} 上市"
+          auto: false
 marketing_points:
   供应链复杂或供应商众多:
-    recommendation: ''
-    sale_rule: ''
+    recommendation: ""
+    sale_rule: ""
     kyc_questions:
-    - 了解企业对接的上游供应商是否非常多，是否需要维护Excel台账管理发票。理论上供应商越多，财务部门在发票采集、验真、勾选抵扣上的工作量是指数级增长的，而且容易遗漏造成税款损失。
+      - 了解企业对接的上游供应商是否非常多，是否需要维护Excel台账管理发票。理论上供应商越多，财务部门在发票采集、验真、勾选抵扣上的工作量是指数级增长的，而且容易遗漏造成税款损失。
   多法人主体的企业集团:
-    recommendation: ''
-    sale_rule: ''
+    recommendation: ""
+    sale_rule: ""
     kyc_questions:
-    - 了解集团旗下各分子公司的进项发票，目前是各公司财务自己管理，还是由集团总部统一管理的。“分散管理”且存在数据汇总难、风险看不见等痛点，它就是高潜力客户。集中管理，但是切换账号登录电子税务局系统查看，操作复杂，它也是高潜力客户。
+      - 了解集团旗下各分子公司的进项发票，目前是各公司财务自己管理，还是由集团总部统一管理的。“分散管理”且存在数据汇总难、风险看不见等痛点，它就是高潜力客户。集中管理，但是切换账号登录电子税务局系统查看，操作复杂，它也是高潜力客户。
   上市公司或拟上市公司:
-    recommendation: ''
-    sale_rule: ''
+    recommendation: ""
+    sale_rule: ""
     kyc_questions:
-    - 了解作为上市公司，目前发票怎么管理的？是否存在应对审计时发票数据的取证繁琐等问题
+      - 了解作为上市公司，目前发票怎么管理的？是否存在应对审计时发票数据的取证繁琐等问题

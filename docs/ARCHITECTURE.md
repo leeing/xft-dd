@@ -28,16 +28,14 @@ LangGraph 图在 `src/xft/pipeline/recommender/graph.py` 中组装，当前节�
 
 ```mermaid
 flowchart LR
-    gather["data_gather"] --> web["web_evidence"]
-    web --> recommend["recommend"]
+    gather["data_gather"] --> recommend["recommend"]
     recommend --> save["save"]
 ```
 
 | 节点 | 文件 | 职责 |
 | --- | --- | --- |
 | `data_gather` | `nodes/data_gather_node.py` | 从 DuckDB 读取 `company_profile`，并根据指标 `data_sources` 加载本地证据 |
-| `web_evidence` | `nodes/web_evidence_node.py` | 仅在 `with_web=True` 时，按指标 `web_search` 执行查询并转成 Web 证据 |
-| `recommend` | `nodes/recommend_node.py` | 合并本地证据和 Web 证据，调用 evaluator 生成模块/标签/指标结果 |
+| `recommend` | `nodes/recommend_node.py` | 调用 evaluator 生成模块/标签/指标结果；开启 Web 时创建 lazy resolver，指标需要补证时才搜索 |
 | `save` | `nodes/save_node.py` | 写入 `result.json`、`label_result.json`、`indicator_evidence.json`、`report.md` 等产物 |
 
 公开入口：
@@ -52,6 +50,8 @@ CLI 入口：
 src/xft/cli/recommend.py
 ```
 
+`xft recommend --module <module_id>` 会在配置加载后、进入 graph 前过滤 `modules_config.modules`。这个参数可重复传入，用于调试单个或少量模块；过滤条件写入 `config_manifest.json` 的 `mode.module_ids`。
+
 ## 数据流
 
 ```mermaid
@@ -65,9 +65,10 @@ flowchart TB
     local --> recommend["evaluator"]
     cfg["modules.yaml + modules.d/*.yaml"] --> local
     cfg --> recommend
-    webcfg["web_search.yaml"] --> web["web_evidence"]
-    cfg --> web
-    web --> recommend
+    webcfg["web_search.yaml"] --> resolver["WebResolver"]
+    cfg --> resolver
+    recommend --> resolver
+    resolver --> recommend
     recommend --> out["outputs/recommender/xft/<run_id>"]
 ```
 
@@ -131,29 +132,39 @@ RecommendationResult
 | `rule` | `evaluator.py` | 用 `rule` 或 `data_sources` 做确定性判断 |
 | `llm` | `evaluator.py` | 用企业画像、本地证据和 prompt 交给 LLM 判断 |
 | `hybrid` | `evaluator.py` | 先 rule，再按 `merge_policy` 决定是否调用 LLM |
-| `llm_web` | `evaluator.py` + `web_evidence.py` | Web-first；没有实际 Web 证据时返回 `unknown`，不空证据调用 LLM |
+| `llm_web` | `evaluator.py` + `web_resolver.py` | Web-first；没有实际 Web 证据时返回 `unknown`，不空证据调用 LLM |
 
 `EvaluationContext` 收拢 evaluator 内部共享参数，避免在模块、标签、指标多层函数间重复传递配置、画像、证据、LLM 事件和并发控制。
 
-## Web 补证
+## Lazy Web 补证
 
-Web 补证只服务指标判断，不再承担独立抽取入库。
+Web 补证只服务指标判断，不再承担独立抽取入库，也不作为独立 LangGraph 节点预先遍历所有指标。`recommend_node` 在 `with_web=True` 时创建 `WebResolver`，evaluator 在计算每个指标时把当前本地证据和规则结果交给 resolver，由 resolver 判断是否搜索。
 
 入口：
 
 ```text
-src/xft/pipeline/recommender/web_evidence.py::run_web_evidence
+src/xft/pipeline/recommender/web_resolver.py::WebResolver
 ```
 
 执行过程：
 
 1. 读取场景 `web_search.yaml`。
 2. 过滤启用的 provider。
-3. 遍历配置了 `web_search` 的指标。
-4. 根据 `when` 和本地证据决定是否搜索。
-5. 执行固定查询和可选自动查询。
-6. 过滤非目标公司或非指标相关结果。
-7. 写入 Web 查询、结果、trace 和指标证据。
+3. 当前指标开始计算时，先取得本地证据；`rule` / `hybrid` 会先跑规则。
+4. 根据 `web_search.when`、本地证据和实际 `rule_result` 判断是否搜索。
+5. 只对需要补证的指标执行固定查询和可选自动查询。
+6. 复用同一轮运行内重复查询的 provider 结果，但按指标分别落 trace。
+7. 过滤非目标公司或非指标相关结果。
+8. 推荐完成后写入 Web 查询、结果、trace 和指标证据。
+
+默认触发策略：
+
+| evaluator | 默认 Web 时机 |
+| --- | --- |
+| `llm_web` | `always` |
+| `llm` | `insufficient` |
+| `hybrid` | `insufficient` |
+| `rule` | `rule_not_matched` |
 
 输出文件：
 

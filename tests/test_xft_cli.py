@@ -91,6 +91,10 @@ def test_recommend_smoke_command_uses_offline_no_llm(monkeypatch: pytest.MonkeyP
                 "--web-refresh",
                 "--web-provider",
                 "fake_search",
+                "--module",
+                "个税管理",
+                "--module",
+                "差旅报销",
                 "烟测公司",
             ]
         )
@@ -103,3 +107,4 @@ def test_recommend_smoke_command_uses_offline_no_llm(monkeypatch: pytest.MonkeyP
     assert captured["with_web"] is True
     assert captured["refresh_web"] is True
     assert captured["web_providers"] == ["fake_search"]
+    assert captured["module_ids"] == ["个税管理", "差旅报销"]

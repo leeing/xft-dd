@@ -59,6 +59,21 @@ MarketingPoint
 Conclusion
 ```
 
+只验收单个模块时加 `--module`：
+
+```bash
+uv run xft recommend --no-llm \
+  --scenario config/recommender/xft \
+  --module 个税管理 \
+  "企业名称"
+```
+
+预期：
+
+- 只评估指定 `module_id`。
+- `config_manifest.json` 的 `mode.module_ids` 记录本次过滤条件。
+- 指定不存在的模块时，命令返回失败并提示可用 `module_id`。
+
 ## 3. LLM 验收
 
 ```bash
@@ -100,9 +115,10 @@ indicator_evidence.json
 
 抽查重点：
 
-- `llm_web` 指标应先执行 Web 查询。
+- `llm_web` 指标计算时应先执行 Web 查询。
 - `llm_web` 无实际 Web 证据时应输出 `unknown`，不空证据调用 LLM。
-- `llm` / `hybrid` 只在指标 `web_search.when` 条件满足时补证。
+- `llm` / `hybrid` 只在当前指标 `web_search.when` 条件满足时补证。
+- `rule` 已命中时不应搜索；规则未命中且 `when: rule_not_matched` 时才搜索。
 - `rule` 配 `possible_on_evidence` 时，Web 证据最多提升到 `possible`。
 - 查询词应包含指标词，不应都是 `{company_name} 官网` 这类泛查询。
 

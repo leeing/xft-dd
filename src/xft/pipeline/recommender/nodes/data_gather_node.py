@@ -11,7 +11,7 @@ MIN_PROFILE_COMPLETENESS = 0.6
 
 
 async def data_gather_node(state: RecommenderState) -> dict[str, object]:
-    display.phase(1, 4, "加载企业画像")
+    display.phase(1, 3, "加载企业画像")
     repo = CompanyProfileRepository(state["warehouse_db"])
     profile = repo.get_by_company_name(state["company_name"])
     if profile is None:

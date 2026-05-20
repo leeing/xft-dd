@@ -23,6 +23,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--company-list", help="text file with one company name per line")
     parser.add_argument("--warehouse", default=DEFAULT_WAREHOUSE)
     parser.add_argument("--scenario", default=DEFAULT_SCENARIO, help="scenario bundle directory or scenario.yaml")
+    parser.add_argument(
+        "--module",
+        dest="module_ids",
+        action="append",
+        help="limit recommendation to one module_id; repeat to test multiple modules",
+    )
     parser.add_argument("--output-dir")
     parser.add_argument("--batch-id", help="batch id for --company-list runs")
     parser.add_argument("--batch-output", help="directory that contains batch folders")
@@ -103,6 +109,7 @@ async def _main_async(argv: list[str] | None = None) -> int:  # noqa: C901
                 with_web=args.with_web,
                 refresh_web=args.web_refresh,
                 web_providers=csv(args.web_provider),
+                module_ids=args.module_ids,
                 llm_debug=args.llm_debug,
                 llm_concurrency=args.llm_concurrency,
                 continue_on_error=args.continue_on_error,
@@ -134,6 +141,7 @@ async def _main_async(argv: list[str] | None = None) -> int:  # noqa: C901
             with_web=args.with_web,
             refresh_web=args.web_refresh,
             web_providers=csv(args.web_provider),
+            module_ids=args.module_ids,
             llm_debug=args.llm_debug,
             llm_concurrency=args.llm_concurrency,
         )

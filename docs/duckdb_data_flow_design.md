@@ -4,7 +4,7 @@ Date: 2026-05-16
 
 ## Goal
 
-Build a local DuckDB warehouse from Prophet enterprise JSON packages in `data/`, then expose a compact `company_profile` Gold layer for product recommendation scenarios.
+Build a local DuckDB warehouse from Prophet enterprise JSON packages in `data/`, then expose a compact `company_profile` Gold layer for recommendation scenarios.
 
 The design is based on reading the current JSON contents directly. Files are incomplete by design: a rich enterprise package currently has up to 42 JSON files, while the expected upper bound is about 45. Missing JSON files must not fail the import.
 
@@ -117,7 +117,7 @@ shareholder.json
 
 ## Silver Layer V1
 
-Silver V1 focuses on product recommendation needs. It does not try to model all 47 file types immediately.
+Silver V1 focuses on recommendation needs. It does not try to model all 47 file types immediately.
 
 ### companies
 
@@ -602,7 +602,7 @@ Each adapter receives all available raw files for one company and returns zero o
 
 ## V1 Versus Later
 
-V1 should prioritize the tables needed to support product recommendation. These are:
+V1 should prioritize the tables needed to support recommendation. These are:
 
 ```text
 raw_company_json

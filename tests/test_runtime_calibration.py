@@ -285,7 +285,7 @@ def test_write_web_review_samples_reads_web_evidence_trace(tmp_path: Path) -> No
     assert "https://example.com" in text
 
 
-async def test_run_recommendation_calibration_passes_business_web_options(
+async def test_run_recommendation_calibration_passes_web_options(
     monkeypatch: MonkeyPatch,
     tmp_path: Path,
 ) -> None:

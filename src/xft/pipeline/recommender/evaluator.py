@@ -6,7 +6,7 @@ import asyncio
 import json
 from dataclasses import dataclass
 from time import perf_counter
-from typing import Any
+from typing import Any, cast
 
 from openai import OpenAIError
 from pydantic import BaseModel, Field, ValidationError, field_validator
@@ -72,6 +72,7 @@ class EvaluationContext:
     llm_debug: bool
     llm_events: list[dict[str, Any]]
     semaphore: asyncio.Semaphore
+    web_resolver: Any | None = None
 
     @property
     def llm_available(self) -> bool:
@@ -103,6 +104,7 @@ async def evaluate_recommendation(  # noqa: PLR0913
     llm_debug: bool = False,
     llm_concurrency: int = 4,
     llm_events: list[dict[str, Any]] | None = None,
+    web_resolver: Any | None = None,
 ) -> RecommendationResult | None:
     """Evaluate the optional business recommendation layer."""
     if config is None:
@@ -128,6 +130,7 @@ async def evaluate_recommendation(  # noqa: PLR0913
         llm_debug=llm_debug,
         llm_events=llm_events,
         semaphore=semaphore,
+        web_resolver=web_resolver,
     )
     module_results = await asyncio.gather(*[_evaluate_module(ctx=ctx, module=module) for module in config.modules])
     for module_result, module_warnings in module_results:
@@ -331,6 +334,36 @@ async def _evaluate_indicator(
     indicator: IndicatorConfig,
 ) -> IndicatorResult:
     indicator_evidence = _indicator_evidence(ctx.evidence, module, label, indicator)
+    if indicator.evaluator == "rule":
+        rule_result = _evaluate_rule_indicator(ctx.config, module, label, indicator, ctx.profile, indicator_evidence)
+        web_evidence = await _resolve_web_evidence(
+            ctx=ctx,
+            module=module,
+            label=label,
+            indicator=indicator,
+            local_evidence=indicator_evidence,
+            rule_result=rule_result.result,
+        )
+        if web_evidence:
+            return _evaluate_rule_indicator(
+                ctx.config,
+                module,
+                label,
+                indicator,
+                ctx.profile,
+                [*indicator_evidence, *web_evidence],
+            )
+        return rule_result
+    if indicator.evaluator in ("llm", "llm_web"):
+        web_evidence = await _resolve_web_evidence(
+            ctx=ctx,
+            module=module,
+            label=label,
+            indicator=indicator,
+            local_evidence=indicator_evidence,
+            rule_result=None,
+        )
+        indicator_evidence = [*indicator_evidence, *web_evidence]
     if indicator.evaluator == "llm_web" and not _has_matched_web_evidence(indicator_evidence):
         return _llm_web_missing_evidence_indicator_result(
             config=ctx.config,
@@ -340,8 +373,6 @@ async def _evaluate_indicator(
             company_name=ctx.company_name,
             indicator_evidence=indicator_evidence,
         )
-    if indicator.evaluator == "rule":
-        return _evaluate_rule_indicator(ctx.config, module, label, indicator, ctx.profile, indicator_evidence)
     if indicator.evaluator == "hybrid":
         return await _evaluate_hybrid_indicator(
             ctx=ctx,
@@ -397,6 +428,15 @@ async def _evaluate_hybrid_indicator(
     if indicator.merge_policy == "require_both" and rule_result.result != "matched":
         trace["final_decision"] = "rule did not match, require_both failed without llm"
         return rule_result.model_copy(update={"evaluator": "hybrid", "hybrid_trace": trace})
+    web_evidence = await _resolve_web_evidence(
+        ctx=ctx,
+        module=module,
+        label=label,
+        indicator=indicator,
+        local_evidence=indicator_evidence,
+        rule_result=rule_result.result,
+    )
+    indicator_evidence = [*indicator_evidence, *web_evidence]
     if not ctx.llm_available:
         fallback = _fallback_indicator_result(
             config=ctx.config,
@@ -704,6 +744,29 @@ def _indicator_evidence(
 
 def _has_matched_web_evidence(items: list[dict[str, Any]]) -> bool:
     return any(item.get("source_type") == "web" and item.get("matched") and item.get("evidence") for item in items)
+
+
+async def _resolve_web_evidence(  # noqa: PLR0913
+    *,
+    ctx: EvaluationContext,
+    module: ModuleConfig,
+    label: LabelConfig,
+    indicator: IndicatorConfig,
+    local_evidence: list[dict[str, Any]],
+    rule_result: Result | None,
+) -> list[dict[str, Any]]:
+    if ctx.web_resolver is None:
+        return []
+    evidence = await ctx.web_resolver.resolve(
+        module=module,
+        label=label,
+        indicator=indicator,
+        local_evidence=local_evidence,
+        rule_result=rule_result,
+    )
+    key = _indicator_key(module, label, indicator)
+    ctx.web_trace_by_indicator[key] = ctx.web_resolver.trace_for_indicator(key)
+    return cast(list[dict[str, Any]], evidence)
 
 
 def _web_trace_by_indicator(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:

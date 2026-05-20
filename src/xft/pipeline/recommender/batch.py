@@ -90,6 +90,7 @@ class BatchOptions:
     with_web: bool = False
     refresh_web: bool = False
     web_providers: list[str] | None = None
+    module_ids: list[str] | None = None
     llm_debug: bool = False
     llm_concurrency: int = 4
     continue_on_error: bool = True
@@ -188,6 +189,7 @@ async def run_recommendation_batch(  # noqa: PLR0913
                 with_web=options.with_web,
                 refresh_web=options.refresh_web,
                 web_providers=options.web_providers,
+                module_ids=options.module_ids,
                 llm_debug=options.llm_debug,
                 llm_concurrency=options.llm_concurrency,
             )
@@ -426,6 +428,7 @@ def _options_payload(options: BatchOptions, *, limit: int | None, skip_existing:
         "with_web": options.with_web,
         "refresh_web": options.refresh_web,
         "web_providers": options.web_providers,
+        "module_ids": options.module_ids,
         "llm_debug": options.llm_debug,
         "llm_concurrency": options.llm_concurrency,
         "continue_on_error": options.continue_on_error,

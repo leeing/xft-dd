@@ -13,11 +13,10 @@ from langgraph.graph import END, START, StateGraph
 from xft.constants import DEFAULT_SCENARIO, DEFAULT_WAREHOUSE
 from xft.core.scenario import load_scenario
 from xft.pipeline.recommender.config_loader import load_recommendation_config
-from xft.pipeline.recommender.models import RecommendationRunResult
+from xft.pipeline.recommender.models import RecommendationConfig, RecommendationRunResult
 from xft.pipeline.recommender.nodes.data_gather_node import data_gather_node
 from xft.pipeline.recommender.nodes.recommend_node import recommend_node
 from xft.pipeline.recommender.nodes.save_node import save_node
-from xft.pipeline.recommender.nodes.web_evidence_node import web_evidence_node
 from xft.pipeline.recommender.state import RecommenderState
 from xft.progress import display
 from xft.runtime.config_manifest import ConfigManifest, file_ref, model_hash, write_config_manifest
@@ -31,12 +30,10 @@ def _get_graph() -> Any:
     if "graph" not in _cache:
         graph = StateGraph(RecommenderState)
         graph.add_node("data_gather", data_gather_node)
-        graph.add_node("web_evidence", web_evidence_node)
         graph.add_node("recommend", recommend_node)
         graph.add_node("save", save_node)
         graph.add_edge(START, "data_gather")
-        graph.add_edge("data_gather", "web_evidence")
-        graph.add_edge("web_evidence", "recommend")
+        graph.add_edge("data_gather", "recommend")
         graph.add_edge("recommend", "save")
         graph.add_edge("save", END)
         _cache["graph"] = graph.compile()
@@ -63,6 +60,7 @@ async def run_recommendation(  # noqa: PLR0913
     with_web: bool = False,
     refresh_web: bool = False,
     web_providers: list[str] | None = None,
+    module_ids: list[str] | None = None,
     llm_debug: bool = False,
     llm_concurrency: int = 4,
 ) -> RecommendationRunResult:
@@ -77,6 +75,16 @@ async def run_recommendation(  # noqa: PLR0913
     modules_config = load_recommendation_config(modules_path)
     root = output_dir or scenario.output_dir or "outputs/recommender/xft"
     rid = run_id or make_recommendation_run_id(company_name)
+    try:
+        modules_config = _filter_modules_config(modules_config, module_ids)
+    except ValueError as exc:
+        return RecommendationRunResult(
+            company_name=company_name,
+            status="failed",
+            run_id=rid,
+            output_dir=str(Path(root) / rid),
+            error=str(exc),
+        )
     out_dir = Path(root) / rid
     scenario_out = out_dir / "scenario_resolved.json"
     scenario_out.parent.mkdir(parents=True, exist_ok=True)
@@ -95,6 +103,7 @@ async def run_recommendation(  # noqa: PLR0913
         use_llm=use_llm,
         with_web=with_web,
         refresh_web=refresh_web,
+        module_ids=module_ids,
         llm_debug=llm_debug,
         llm_concurrency=llm_concurrency,
     )
@@ -166,6 +175,7 @@ def _write_config_manifest(  # noqa: PLR0913
     use_llm: bool,
     with_web: bool,
     refresh_web: bool,
+    module_ids: list[str] | None,
     llm_debug: bool,
     llm_concurrency: int,
 ) -> Path:
@@ -191,6 +201,7 @@ def _write_config_manifest(  # noqa: PLR0913
             "use_llm": use_llm,
             "with_web": with_web,
             "refresh_web": refresh_web,
+            "module_ids": module_ids or [],
             "llm_debug": llm_debug,
             "llm_concurrency": llm_concurrency,
         },
@@ -200,6 +211,27 @@ def _write_config_manifest(  # noqa: PLR0913
         },
     )
     return write_config_manifest(out_dir / "config_manifest.json", manifest)
+
+
+def _filter_modules_config(
+    config: RecommendationConfig | None,
+    module_ids: list[str] | None,
+) -> RecommendationConfig | None:
+    if config is None or not module_ids:
+        return config
+    requested = [module_id.strip() for module_id in module_ids if module_id.strip()]
+    if not requested:
+        return config
+    available = {module.module_id: module for module in config.modules}
+    missing = [module_id for module_id in requested if module_id not in available]
+    if missing:
+        msg = (
+            f"unknown module_id: {', '.join(missing)}; "
+            f"available module_ids: {', '.join(sorted(available))}"
+        )
+        raise ValueError(msg)
+    selected = [available[module_id] for module_id in requested]
+    return config.model_copy(update={"modules": selected})
 
 
 def _module_files(modules_path: str, modules_config: Any) -> dict[str, Any]:

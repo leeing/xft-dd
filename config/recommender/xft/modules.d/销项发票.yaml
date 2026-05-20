@@ -4,258 +4,252 @@ priority: 50
 base_score: 0
 acceptance_policy:
   levels:
-  - result: 高
-    min_matched_labels: 3
-    conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为高。
-  - result: 中高
-    min_matched_labels: 2
-    conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为中高。
-  - result: 低
-    min_matched_labels: 0
-    conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为低。
+    - result: 高
+      min_matched_labels: 3
+      conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为高。
+    - result: 中高
+      min_matched_labels: 2
+      conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为中高。
+    - result: 低
+      min_matched_labels: 0
+      conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为低。
 labels:
-- label_id: 高频开票
-  label_name: 高频开票
-  description: ''
-  min_matched_indicators: 1
-  indicators:
-  - indicator_id: 行业与产品特性
-    indicator_name: 行业与产品特性
-    evaluator: llm_web
-    standard: 产品终端化与SKU数量：直接面向终端消费者、产品型号/款式多（如家电、家具、服装）的企业，订单更零散，开票频次高。行业开票数据：参考地区税务部门发布的行业平均开票数据。
-    data_sources: []
-    prompt: 请判断企业是否满足指标：行业与产品特性。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 行业与产品特性
-    - 产品终端化与SKU数量
-    - 直接面向终端消费者
-    - 产品型号
-    - 款式多
-    - 如家电
-    - 家具
-    - 服装
-    web_search:
-      fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
-      auto: false
-  - indicator_id: 销售渠道与客户结构
-    indicator_name: 销售渠道与客户结构
-    evaluator: llm_web
-    standard: 渠道模式：官网、新闻稿中明确有“电商直销”、“线上零售”、“全国经销商网络”等描述。下游客户分散：产品或服务直接面向大量中小企业或个人客户。
-    data_sources: []
-    prompt: 请判断企业是否满足指标：销售渠道与客户结构。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 销售渠道与客户结构
-    - 渠道模式
-    - 官网
-    - 新闻稿中明确有
-    - 电商直销
-    - 线上零售
-    - 全国经销商网络
-    - 等描述
-    web_search:
-      fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
-      auto: false
-  - indicator_id: 供应链与结算模式
-    indicator_name: 供应链与结算模式
-    evaluator: llm_web
-    standard: 下游客户强势：主要客户为大型集团或国企，通常要求“先票后款”或“货票同行”，这会倒逼企业开票必须高效及时。结算周期短：业务具有快消性质，回款周期短，开票是回款前提。
-    data_sources: []
-    prompt: 请判断企业是否满足指标：供应链与结算模式。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 供应链与结算模式
-    - 下游客户强势
-    - 主要客户为大型集团或国企
-    - 通常要求
-    - 先票后款
-    - 货票同行
-    - 这会倒逼企业开票必须高效及时
-    - 结算周期短
-    web_search:
-      fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
-      auto: false
-  - indicator_id: 政策与试点身份
-    indicator_name: 政策与试点身份
-    evaluator: llm_web
-    standard: “全电发票”试点企业：已纳入试点的企业，其所有交易都需通过数字化发票进行，开票行为完全线上化、频率可视化。数据要素相关试点：被列为数据资源入表或数据资产化试点，其发票数据是核心财税数据源。
-    data_sources: []
-    prompt: 请判断企业是否满足指标：政策与试点身份。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 政策与试点身份
-    - 全电发票
-    - 试点企业
-    - 已纳入试点的企业
-    - 其所有交易都需通过数字化发票进行
-    - 开票行为完全线上化
-    - 频率可视化
-    - 数据要素相关试点
-    web_search:
-      fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
-      auto: false
-  - indicator_id: 招聘与团队配置
-    indicator_name: 招聘与团队配置
-    evaluator: llm_web
-    standard: 持续招聘开票、结算等基础财务岗：频繁发布“开票专员”、“税务会计”、“销售会计”等岗位，且招聘人数多或长期在招。
-    data_sources:
-    - type: table
-      table: recruitments
-      field: title
-      op: text_contains
-      keywords: []
-    prompt: 请判断企业是否满足指标：招聘与团队配置。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 招聘与团队配置
-    - 持续招聘开票
-    - 结算等基础财务岗
-    - 频繁发布
-    - 开票专员
-    - 税务会计
-    - 销售会计
-    - 等岗位
-    web_search:
-      fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
-      auto: false
-- label_id: 数字化投入与阶段
-  label_name: 数字化投入与阶段
-  description: ''
-  min_matched_indicators: 1
-  indicators:
-  - indicator_id: 已启动业财一体化项目
-    indicator_name: 已启动业财一体化项目
-    evaluator: llm_web
-    standard: 公司官网、新闻稿中出现 “业财一体化”、“财务共享中心”、“税务数字化” 等具体项目报道。
-    data_sources: []
-    prompt: 请判断企业是否满足指标：已启动业财一体化项目。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 已启动业财一体化项目
-    - 公司官网
-    - 新闻稿中出现
-    - 业财一体化
-    - 财务共享中心
-    - 税务数字化
-    - 等具体项目报道
-    web_search:
-      fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
-      auto: false
-  - indicator_id: 核心erp升级_替换中
-    indicator_name: 核心ERP升级/替换中
-    evaluator: llm_web
-    standard: 公司发布与用友、金蝶、SAP等主流厂商的合作新闻，或招聘特定ERP系统（如U9 cloud） 的实施、运维人员-9-10。
-    data_sources: []
-    prompt: 请判断企业是否满足指标：核心ERP升级/替换中。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 核心ERP升级
-    - 替换中
-    - 公司发布与用友
-    - 金蝶
-    - SAP等主流厂商的合作新闻
-    - 或招聘特定ERP系统
-    - 如U9
-    - cloud
-    web_search:
-      fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
-      auto: false
-  - indicator_id: 招聘与团队配置
-    indicator_name: 招聘与团队配置
-    evaluator: llm_web
-    standard: 财务信息化岗位：招聘“财务系统运维”、“ERP财务模块顾问”等，表明财务流程正在数字化改造中。
-    data_sources:
-    - type: table
-      table: recruitments
-      field: title
-      op: text_contains
-      keywords: []
-    prompt: 请判断企业是否满足指标：招聘与团队配置。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 招聘与团队配置
-    - 财务信息化岗位
-    - 招聘
-    - 财务系统运维
-    - ERP财务模块顾问
-    - 表明财务流程正在数字化改造中
-    web_search:
-      fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
-      auto: false
-- label_id: 多法人主体的企业集团
-  label_name: 多法人主体的企业集团
-  description: ''
-  min_matched_indicators: 1
-  indicators:
-  - indicator_id: 名称与股权
-    indicator_name: 名称与股权
-    evaluator: rule
-    standard: 公司名称常含“集团”、“控股”字样；工商信息显示对外投资了多家子公司（持股≥50%或拥有控制权-3-5）。
-    data_sources:
-    - type: table
-      table: branches
-      field: branch_name
-      op: exists
-    prompt: 请判断企业是否满足指标：名称与股权。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 名称与股权
-    - 公司名称常含
-    - 集团
-    - 控股
-    - 字样
-    - 工商信息显示对外投资了多家子公司
-    - 持股
-    - '50'
-  - indicator_id: 企业图谱
-    indicator_name: 企业图谱
-    evaluator: llm
-    standard: 在商业查询平台中，“企业图谱”或“对外投资”栏显示复杂的控股结构。
-    data_sources: []
-    prompt: 请判断企业是否满足指标：企业图谱。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 企业图谱
-    - 在商业查询平台中
-    - 对外投资
-    - 栏显示复杂的控股结构
-  - indicator_id: 财报合并范围
-    indicator_name: 财报合并范围
-    evaluator: llm_web
-    standard: 上市公司年报的 “合并财务报表范围” 会详尽列出所有重要子公司名录，是金标准-3-4。
-    data_sources: []
-    prompt: 请判断企业是否满足指标：财报合并范围。只能基于证据判断，不得编造。
-    evidence_hints:
-    - 财报合并范围
-    - 上市公司年报的
-    - 合并财务报表范围
-    - 会详尽列出所有重要子公司名录
-    - 是金标准
-    web_search:
-      fixed_queries:
-      - '{company_name} 官网'
-      - '{company_name} 新闻'
-      auto: false
+  - label_id: 高频开票
+    label_name: 高频开票
+    description: ""
+    min_matched_indicators: 1
+    indicators:
+      - indicator_id: 行业与产品特性
+        indicator_name: 行业与产品特性
+        evaluator: llm_web
+        standard: 产品终端化与SKU数量：直接面向终端消费者、产品型号/款式多（如家电、家具、服装）的企业，订单更零散，开票频次高。行业开票数据：参考地区税务部门发布的行业平均开票数据。
+        data_sources: []
+        prompt: 请判断企业是否满足指标：行业与产品特性。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 行业与产品特性
+          - 产品终端化与SKU数量
+          - 直接面向终端消费者
+          - 产品型号
+          - 款式多
+          - 如家电
+          - 家具
+          - 服装
+        web_search:
+          fixed_queries:
+            - "{company_name} 产品"
+          auto: false
+      - indicator_id: 销售渠道与客户结构
+        indicator_name: 销售渠道与客户结构
+        evaluator: llm_web
+        standard: 渠道模式：官网、新闻稿中明确有“电商直销”、“线上零售”、“全国经销商网络”等描述。下游客户分散：产品或服务直接面向大量中小企业或个人客户。
+        data_sources: []
+        prompt: 请判断企业是否满足指标：销售渠道与客户结构。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 销售渠道与客户结构
+          - 渠道模式
+          - 官网
+          - 新闻稿中明确有
+          - 电商直销
+          - 线上零售
+          - 全国经销商网络
+          - 等描述
+        web_search:
+          fixed_queries:
+            - "{company_name} 销售"
+            - "{company_name} 客户"
+          auto: false
+      - indicator_id: 供应链与结算模式
+        indicator_name: 供应链与结算模式
+        evaluator: llm_web
+        standard: 下游客户强势：主要客户为大型集团或国企，通常要求“先票后款”或“货票同行”，这会倒逼企业开票必须高效及时。结算周期短：业务具有快消性质，回款周期短，开票是回款前提。
+        data_sources: []
+        prompt: 请判断企业是否满足指标：供应链与结算模式。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 供应链与结算模式
+          - 下游客户强势
+          - 主要客户为大型集团或国企
+          - 通常要求
+          - 先票后款
+          - 货票同行
+          - 这会倒逼企业开票必须高效及时
+          - 结算周期短
+        web_search:
+          fixed_queries:
+            - "{company_name} 供应链"
+            - "{company_name} 结算"
+          auto: false
+      - indicator_id: 政策与试点身份
+        indicator_name: 政策与试点身份
+        evaluator: llm_web
+        standard: “全电发票”试点企业：已纳入试点的企业，其所有交易都需通过数字化发票进行，开票行为完全线上化、频率可视化。数据要素相关试点：被列为数据资源入表或数据资产化试点，其发票数据是核心财税数据源。
+        data_sources: []
+        prompt: 请判断企业是否满足指标：政策与试点身份。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 政策与试点身份
+          - 全电发票
+          - 试点企业
+          - 已纳入试点的企业
+          - 其所有交易都需通过数字化发票进行
+          - 开票行为完全线上化
+          - 频率可视化
+          - 数据要素相关试点
+        web_search:
+          fixed_queries:
+            - "{company_name} 政策"
+            - "{company_name} 试点"
+          auto: false
+      - indicator_id: 招聘与团队配置
+        indicator_name: 招聘与团队配置
+        evaluator: llm_web
+        standard: 持续招聘开票、结算等基础财务岗：频繁发布“开票专员”、“税务会计”、“销售会计”等岗位，且招聘人数多或长期在招。
+        data_sources:
+          - type: table
+            table: recruitments
+            field: title
+            op: text_contains
+            keywords: []
+        prompt: 请判断企业是否满足指标：招聘与团队配置。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 招聘与团队配置
+          - 持续招聘开票
+          - 结算等基础财务岗
+          - 频繁发布
+          - 开票专员
+          - 税务会计
+          - 销售会计
+          - 等岗位
+        web_search:
+          fixed_queries:
+            - "{company_name} 招聘"
+          auto: false
+  - label_id: 数字化投入与阶段
+    label_name: 数字化投入与阶段
+    description: ""
+    min_matched_indicators: 1
+    indicators:
+      - indicator_id: 已启动业财一体化项目
+        indicator_name: 已启动业财一体化项目
+        evaluator: llm_web
+        standard: 公司官网、新闻稿中出现 “业财一体化”、“财务共享中心”、“税务数字化” 等具体项目报道。
+        data_sources: []
+        prompt: 请判断企业是否满足指标：已启动业财一体化项目。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 已启动业财一体化项目
+          - 公司官网
+          - 新闻稿中出现
+          - 业财一体化
+          - 财务共享中心
+          - 税务数字化
+          - 等具体项目报道
+        web_search:
+          fixed_queries:
+            - "{company_name} 业财一体化"
+          auto: false
+      - indicator_id: 核心erp升级_替换中
+        indicator_name: 核心ERP升级/替换中
+        evaluator: llm_web
+        standard: 公司发布与用友、金蝶、SAP等主流厂商的合作新闻，或招聘特定ERP系统（如U9 cloud） 的实施、运维人员-9-10。
+        data_sources: []
+        prompt: 请判断企业是否满足指标：核心ERP升级/替换中。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 核心ERP升级
+          - 替换中
+          - 公司发布与用友
+          - 金蝶
+          - SAP等主流厂商的合作新闻
+          - 或招聘特定ERP系统
+          - 如U9
+          - cloud
+        web_search:
+          fixed_queries:
+            - "{company_name} ERP"
+          auto: false
+      - indicator_id: 招聘与团队配置
+        indicator_name: 招聘与团队配置
+        evaluator: llm_web
+        standard: 财务信息化岗位：招聘“财务系统运维”、“ERP财务模块顾问”等，表明财务流程正在数字化改造中。
+        data_sources:
+          - type: table
+            table: recruitments
+            field: title
+            op: text_contains
+            keywords: []
+        prompt: 请判断企业是否满足指标：招聘与团队配置。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 招聘与团队配置
+          - 财务信息化岗位
+          - 招聘
+          - 财务系统运维
+          - ERP财务模块顾问
+          - 表明财务流程正在数字化改造中
+        web_search:
+          fixed_queries:
+            - "{company_name} 招聘"
+          auto: false
+  - label_id: 多法人主体的企业集团
+    label_name: 多法人主体的企业集团
+    description: ""
+    min_matched_indicators: 1
+    indicators:
+      - indicator_id: 名称与股权
+        indicator_name: 名称与股权
+        evaluator: rule
+        standard: 公司名称常含“集团”、“控股”字样；工商信息显示对外投资了多家子公司（持股≥50%或拥有控制权-3-5）。
+        data_sources:
+          - type: table
+            table: branches
+            field: branch_name
+            op: exists
+        prompt: 请判断企业是否满足指标：名称与股权。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 名称与股权
+          - 公司名称常含
+          - 集团
+          - 控股
+          - 字样
+          - 工商信息显示对外投资了多家子公司
+          - 持股
+          - "50"
+      - indicator_id: 企业图谱
+        indicator_name: 企业图谱
+        evaluator: llm
+        standard: 在商业查询平台中，“企业图谱”或“对外投资”栏显示复杂的控股结构。
+        data_sources: []
+        prompt: 请判断企业是否满足指标：企业图谱。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 企业图谱
+          - 在商业查询平台中
+          - 对外投资
+          - 栏显示复杂的控股结构
+      - indicator_id: 财报合并范围
+        indicator_name: 财报合并范围
+        evaluator: llm_web
+        standard: 上市公司年报的 “合并财务报表范围” 会详尽列出所有重要子公司名录，是金标准-3-4。
+        data_sources: []
+        prompt: 请判断企业是否满足指标：财报合并范围。只能基于证据判断，不得编造。
+        evidence_hints:
+          - 财报合并范围
+          - 上市公司年报的
+          - 合并财务报表范围
+          - 会详尽列出所有重要子公司名录
+          - 是金标准
+        web_search:
+          fixed_queries:
+            - "{company_name} 财报"
+          auto: false
 marketing_points:
   高频开票:
-    recommendation: ''
-    sale_rule: ''
+    recommendation: ""
+    sale_rule: ""
     kyc_questions:
-    - 了解企业的下游客户是B端企业还是面向终端消费者，销售模式是经销商模式还是电商直销，平时是通过什么系统开票的，是否有什么痛点？如果是电商直销，一般电商平台配套销项发票，没有太多的营销机会。
+      - 了解企业的下游客户是B端企业还是面向终端消费者，销售模式是经销商模式还是电商直销，平时是通过什么系统开票的，是否有什么痛点？如果是电商直销，一般电商平台配套销项发票，没有太多的营销机会。
   数字化投入与阶段:
-    recommendation: ''
-    sale_rule: ''
+    recommendation: ""
+    sale_rule: ""
     kyc_questions:
-    - 了解企业的销售开票，是财务同事手动登录电子税务局操作，还是已经和业务系统（比如ERP）打通，能自动开票了？是否具备研发能力打通自动开票。
+      - 了解企业的销售开票，是财务同事手动登录电子税务局操作，还是已经和业务系统（比如ERP）打通，能自动开票了？是否具备研发能力打通自动开票。
   多法人主体的企业集团:
-    recommendation: ''
-    sale_rule: ''
+    recommendation: ""
+    sale_rule: ""
     kyc_questions:
-    - 了解集团旗下各分子公司的销项发票，目前是各公司财务自己管理，还是由集团总部统一管理的。“分散管理”且存在数据汇总难、风险看不见等痛点，它就是高潜力客户。集中管理，但是切换账号登录电子税务局系统查看，操作复杂，它也是高潜力客户。
+      - 了解集团旗下各分子公司的销项发票，目前是各公司财务自己管理，还是由集团总部统一管理的。“分散管理”且存在数据汇总难、风险看不见等痛点，它就是高潜力客户。集中管理，但是切换账号登录电子税务局系统查看，操作复杂，它也是高潜力客户。
