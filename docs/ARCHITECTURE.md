@@ -1,152 +1,161 @@
 # 架构说明
 
-本文档面向开发和维护人员，描述当前真实架构。推荐主线已经聚焦为业务指标推荐，不再包含旧维度分析、旧 Web enrichment、旧产品评分引擎。
+本文档面向开发和维护人员，描述当前代码仓库的推荐架构。
 
-## 总览
+当前仓库只保留了一条主线：本地 DuckDB 企业画像、模块配置、可选 Web 补证、规则/LLM 指标判断和运行产物审计。
 
-```mermaid
-flowchart TB
-    cli["uv run xft"] --> recommend["recommend 产品推荐"]
-    cli --> warehouse["warehouse build"]
-    cli --> scenario["scenario validate/inspect"]
-    cli --> calibrate["calibrate 推荐校准"]
-
-    recommend --> wh["DuckDB company_profile + 明细表"]
-    recommend --> bizroot["modules.yaml"]
-    recommend --> bizdir["modules.d/*.yaml"]
-    recommend --> webconf["web_search.yaml"]
-```
-
-顶层 CLI 当前包含：
+## 顶层能力
 
 ```text
-recommend
-calibrate
-warehouse
-scenario
-runs
-cache
+uv run xft recommend   推荐单家公司或批量企业
+uv run xft calibrate   用人工标注样本校准推荐效果
+uv run xft warehouse   从 data/ 企业 JSON 构建 DuckDB
+uv run xft scenario    校验或审计场景配置
+uv run xft runs        汇总推荐运行产物
+uv run xft cache       管理远端/本地搜索缓存
 ```
 
-已删除 `xft web`、`warehouse web-import` 和旧企业调研入口。
+默认路径：
+
+```text
+DEFAULT_SCENARIO  = config/recommender/xft
+DEFAULT_WAREHOUSE = cache/company_warehouse.duckdb
+```
 
 ## 推荐流水线
 
-当前推荐图是 4 个节点：
+LangGraph 图在 `src/xft/pipeline/recommender/graph.py` 中组装，当前节点固定为：
 
 ```mermaid
 flowchart LR
-    gather["data_gather 读取画像与本地证据"] --> web["web_evidence 可选业务 Web"]
-    web --> business["recommend rule / llm / hybrid / llm_web"]
-    business --> save["save 写结果"]
+    gather["data_gather"] --> web["web_evidence"]
+    web --> recommend["recommend"]
+    recommend --> save["save"]
 ```
 
-节点职责：
+| 节点 | 文件 | 职责 |
+| --- | --- | --- |
+| `data_gather` | `nodes/data_gather_node.py` | 从 DuckDB 读取 `company_profile`，并根据指标 `data_sources` 加载本地证据 |
+| `web_evidence` | `nodes/web_evidence_node.py` | 仅在 `with_web=True` 时，按指标 `web_search` 执行查询并转成 Web 证据 |
+| `recommend` | `nodes/recommend_node.py` | 合并本地证据和 Web 证据，调用 evaluator 生成模块/标签/指标结果 |
+| `save` | `nodes/save_node.py` | 写入 `result.json`、`label_result.json`、`indicator_evidence.json`、`report.md` 等产物 |
 
-| 节点 | 职责 |
-| --- | --- |
-| `data_gather` | 从 DuckDB 读取 `company_profile`，并按指标 `data_sources` 加载本地证据 |
-| `web_evidence` | 仅在 `--with-web` 时，按指标 `web_search` policy 执行固定查询和可选自动查询 |
-| `recommend` | 根据业务模块、标签、指标配置生成推荐结果 |
-| `save` | 写入 `result.json`、`label_result.json`、`report.md` 等产物 |
-
-不再存在：
+公开入口：
 
 ```text
-dimension_analyze
-web_evidence
-run_web_enrichment
-load_web_cache_to_duckdb
-EvidencePolicy
-analysis_dimensions.yaml
-web_extract_llm.yaml
-evidence_policy.yaml
+src/xft/pipeline/recommender/graph.py::run_recommendation
+```
+
+CLI 入口：
+
+```text
+src/xft/cli/recommend.py
 ```
 
 ## 数据流
 
 ```mermaid
 flowchart TB
-    raw["data/ Prophet JSON"] --> etl["warehouse build"]
-    etl --> duck["cache/company_warehouse.duckdb"]
+    raw["data/{credit_code}_{company}/ JSON"] --> warehouse["warehouse build"]
+    warehouse --> duck["cache/company_warehouse.duckdb"]
     duck --> profile["company_profile"]
-    duck --> details["recruitments / qualifications / branches 等明细表"]
+    duck --> detail["recruitments / branches / qualifications / investments / personnel"]
     profile --> local["evidence_loader"]
-    details --> local
-    local --> biz["recommend"]
+    detail --> local
+    local --> recommend["evaluator"]
+    cfg["modules.yaml + modules.d/*.yaml"] --> local
+    cfg --> recommend
     webcfg["web_search.yaml"] --> web["web_evidence"]
-    modcfg["modules.d/*.yaml"] --> web
-    web --> biz
-    biz --> result["result.json"]
-    biz --> detail["label_result.json"]
-    biz --> trace["decision_trace.json"]
+    cfg --> web
+    web --> recommend
+    recommend --> out["outputs/recommender/xft/<run_id>"]
 ```
 
-## 推荐配置体系
+DuckDB 的 Gold 层是 `company_profile`。推荐主线也会读取若干明细表作为指标本地证据：
 
-推荐主场景：
+```text
+recruitments
+branches
+qualifications
+outbound_investments
+key_personnel
+```
+
+## 配置体系
+
+默认场景目录：
 
 ```text
 config/recommender/xft/
   scenario.yaml
   modules.yaml
   modules.d/
-    个税管理.yaml
-    假勤管理.yaml
-    对公报账.yaml
-    差旅报销.yaml
-    日常报销.yaml
-    进项发票.yaml
-    销项发票.yaml
   web_search.yaml
 ```
 
-核心配置：
-
 | 文件 | 作用 |
 | --- | --- |
-| `scenario.yaml` | 场景入口，声明业务模块配置、Web provider 配置和输出目录 |
-| `modules.yaml` | 全局评分、全局接受策略、`modules_dir` |
-| `modules.d/*.yaml` | 一个文件一个业务模块，动态发现 |
-| `web_search.yaml` | 业务指标级 Web 搜索 provider 配置 |
+| `scenario.yaml` | 场景入口，声明模块配置、Web 配置、输出目录、Web 缓存目录 |
+| `modules.yaml` | 全局评分、全局接受策略、模块目录 |
+| `modules.d/*.yaml` | 一个文件一个推荐模块 |
+| `web_search.yaml` | Web provider、默认 provider、查询数量上限 |
 
-## 业务模块配置加载
+`src/xft/core/scenario.py` 负责解析场景路径。`ScenarioConfig.modules_config` 指向 `modules.yaml`，`ScenarioBundle.modules_path` 会解析成绝对路径。
 
-`modules.yaml` 可以继续兼容单文件 `modules`，但正式销售场景使用目录化模块：
+模块配置由 `src/xft/pipeline/recommender/config_loader.py` 加载：
 
-```yaml
-modules_dir: modules.d
+- 先读取 `modules.yaml`。
+- 如果存在内联 `modules`，先加载内联模块。
+- 如果配置 `modules_dir`，按文件名排序加载目录下所有 `*.yaml`。
+- `module_id` 全局唯一。
+- 同一模块下 `label_id` 唯一。
+- 同一标签下 `indicator_id` 唯一。
+
+## 核心模型与判断
+
+核心模型在 `src/xft/pipeline/recommender/models.py`。
+
+结果层级：
+
+```text
+RecommendationResult
+  -> ModuleResult
+    -> LabelResult
+      -> IndicatorResult
 ```
 
-加载规则：
+指标支持四类 evaluator：
 
-- loader 先读取 `modules.yaml` 的全局配置。
-- 如果存在 `modules`，会先加载内联模块。
-- 如果存在 `modules_dir`，会按文件名排序加载目录下所有 `*.yaml`。
-- 每个模块文件可以是单个模块映射，也可以包含 `modules: [...]`。
-- `module_id` 必须全局唯一；同一模块下 `label_id`、同一标签下 `indicator_id` 必须唯一。
-
-这意味着增减模块只需要增删 `modules.d/*.yaml` 文件。
-
-## 业务 Web
-
-业务 Web 与旧 Web enrichment 不同：
-
-| 项 | 旧 Web enrichment | 当前业务 Web |
+| evaluator | 实现位置 | 说明 |
 | --- | --- | --- |
-| 入口 | `xft web enrich` / `--with-web` | `xft recommend --with-web` |
-| 粒度 | 维度分析 | 业务指标 |
-| 查询来源 | `analysis_dimensions.yaml` | 指标 `web_search.fixed_queries`，必要时由 LLM 生成少量补充查询 |
-| 抽取方式 | 独立 Web 抽取 LLM | 作为指标证据交给业务 evaluator |
-| 入库 | `web_evidence` DuckDB 表 | 运行目录 JSON/JSONL |
+| `rule` | `evaluator.py` | 用 `rule` 或 `data_sources` 做确定性判断 |
+| `llm` | `evaluator.py` | 用企业画像、本地证据和 prompt 交给 LLM 判断 |
+| `hybrid` | `evaluator.py` | 先 rule，再按 `merge_policy` 决定是否调用 LLM |
+| `llm_web` | `evaluator.py` + `web_evidence.py` | Web-first；没有实际 Web 证据时返回 `unknown`，不空证据调用 LLM |
 
-`web_search.yaml` 只保留 provider 和每次查询结果数量等执行参数。是否搜索由指标自己的 `web_search.when/effect` 决定：
+`EvaluationContext` 收拢 evaluator 内部共享参数，避免在模块、标签、指标多层函数间重复传递配置、画像、证据、LLM 事件和并发控制。
 
-- `llm_web`: Web-first，默认 `when: always`
-- `llm/hybrid`: 通常本地证据不足时补证，`when: insufficient`
-- `rule`: 通常规则未命中时补线索，`when: rule_not_matched`
+## Web 补证
 
-业务 Web 输出：
+Web 补证只服务指标判断，不再承担独立抽取入库。
+
+入口：
+
+```text
+src/xft/pipeline/recommender/web_evidence.py::run_web_evidence
+```
+
+执行过程：
+
+1. 读取场景 `web_search.yaml`。
+2. 过滤启用的 provider。
+3. 遍历配置了 `web_search` 的指标。
+4. 根据 `when` 和本地证据决定是否搜索。
+5. 执行固定查询和可选自动查询。
+6. 过滤非目标公司或非指标相关结果。
+7. 写入 Web 查询、结果、trace 和指标证据。
+
+输出文件：
 
 ```text
 web_queries.jsonl
@@ -155,39 +164,46 @@ web_trace.json
 indicator_evidence.json
 ```
 
-## 产物
+## 运行产物
 
-推荐运行目录包含：
+单次推荐输出目录：
+
+```text
+outputs/recommender/xft/<run_id>/
+```
 
 | 文件 | 内容 |
 | --- | --- |
-| `result.json` | 最终业务交付结果 |
-| `label_result.json` | 全量业务模块、标签、指标结果 |
-| `indicator_evidence.json` | 指标证据 |
-| `profile.json` | 企业画像 |
-| `decision_trace.json` | 规则、LLM、业务 Web 决策过程 |
-| `llm_calls.jsonl` | LLM 调用明细 |
-| `llm_metrics.json` | LLM 统计 |
-| `scenario_resolved.json` | 场景解析结果 |
-| `config_manifest.json` | 配置审计清单 |
+| `result.json` | 最终业务交付 JSON |
 | `report.md` | 人类可读报告 |
+| `label_result.json` | 模块、标签、指标完整结果 |
+| `indicator_evidence.json` | 本地证据和 Web 证据 |
+| `profile.json` | 本次读取的企业画像 |
+| `decision_trace.json` | Web trace、规则 trace、LLM trace |
+| `llm_calls.jsonl` | LLM 调用明细 |
+| `llm_metrics.json` | LLM 调用统计 |
+| `web_queries.jsonl` | Web 查询记录 |
+| `web_results.jsonl` | Web 查询结果 |
+| `web_trace.json` | Web 查询 trace |
+| `scenario_resolved.json` | 解析后的场景配置 |
+| `config_manifest.json` | 参与本次运行的配置文件和哈希 |
 
-不再生成：
-
-```text
-dimension_analysis.json
-match_results.json
-internal_result.json
-```
+批量运行会额外生成 batch summary、quality report、delivery manifest 和 failed companies 文件，逻辑在 `src/xft/pipeline/recommender/batch.py` 与 `src/xft/runtime/artifacts.py`。
 
 ## 质量门禁
 
-基础门禁：
+常用验证命令：
 
 ```bash
-uv run ruff check src tests scripts
-uv run mypy src
-uv run pytest
 uv run xft scenario validate config/recommender/xft
 uv run xft recommend --no-llm --scenario config/recommender/xft "企业名称"
+uv run ruff check src tests scripts
+uv run mypy src
+uv run pytest -q
+```
+
+涉及 Web/LLM 的配置变更，额外跑：
+
+```bash
+uv run xft recommend --with-web --llm-debug --scenario config/recommender/xft "企业名称"
 ```

@@ -1,28 +1,37 @@
-# XFT 企业产品推荐工具
+# XFT 企业推荐工具
 
-XFT 用本地企业画像、业务规则、LLM 和可选的业务指标级 Web 搜索，生成面向销售/业务人员的产品推荐结果。
+XFT 根据本地企业画像、业务规则、LLM 和可选的公开 Web 证据，为销售/业务人员生成企业适配的产品模块推荐结果。
 
-当前产品推荐的配置文件聚焦到 `modules.yaml` + `modules.d/*.yaml`。
+业务人员通常只需要关注三件事：
 
-## 一句话流程
+1. 企业画像库是否已构建到 DuckDB。
+2. 推荐场景配置是否正确。
+3. `result.json` 和 `report.md` 是否能解释推荐结论。
+
+## 推荐流程
 
 ```mermaid
 flowchart LR
-    data["data/ 企业 JSON"] --> warehouse["DuckDB 企业画像"]
-    warehouse --> gather["data_gather"]
-    gather --> evidence["本地业务证据"]
-    evidence --> web["可选业务 Web 证据"]
-    web --> recommend["业务指标判断 rule / llm / hybrid / llm_web"]
-    recommend --> result["result.json + report.md"]
+    data["data/ 企业 JSON"] --> warehouse["DuckDB 企业画像库"]
+    warehouse --> gather["读取企业画像和本地证据"]
+    gather --> web["可选 Web 补证"]
+    web --> recommend["指标判断 rule / llm / hybrid / llm_web"]
+    recommend --> output["result.json + report.md"]
 ```
 
-推荐图：
+当前默认场景：
+
+```text
+config/recommender/xft
+```
+
+当前推荐主链路：
 
 ```text
 data_gather -> web_evidence -> recommend -> save
 ```
 
-## 快速运行
+## 快速开始
 
 ### 1. 安装依赖
 
@@ -30,21 +39,27 @@ data_gather -> web_evidence -> recommend -> save
 uv sync
 ```
 
-### 2. 构建本地企业画像库
+### 2. 准备企业画像库
 
-把企业 JSON 放到 `data/` 后执行：
+把企业 JSON 目录放到 `data/`，目录名格式通常是：
+
+```text
+统一社会信用代码_企业名称/
+```
+
+构建 DuckDB：
 
 ```bash
 uv run xft warehouse build --input data --output cache/company_warehouse.duckdb
 ```
 
-### 3. 验证推荐场景配置
+### 3. 检查推荐配置
 
 ```bash
 uv run xft scenario validate config/recommender/xft
 ```
 
-正常会看到类似：
+正常情况下会看到类似结果：
 
 ```json
 {
@@ -56,65 +71,101 @@ uv run xft scenario validate config/recommender/xft
 }
 ```
 
-### 4. 离线跑推荐
+### 4. 跑一家公司
 
-`--scenario` 默认为 `config/recommender/xft`，日常可省略：
+离线模式，不调用 LLM、不搜索 Web，适合快速检查本地规则：
 
 ```bash
 uv run xft recommend --no-llm "企业名称"
 ```
 
-### 5. 启用 LLM
-
-配置 `.env` 中的 LLM key 后执行：
+启用 LLM：
 
 ```bash
 uv run xft recommend "企业名称"
 ```
 
-### 6. 启用业务 Web 证据
-
-业务 Web 服务 `modules.d` 中配置了 `web_search` 的指标。`llm_web` 默认 Web-first，`llm/hybrid/rule` 可按 `web_search.when` 在证据不足或规则未命中时补证。
+启用 Web 补证：
 
 ```bash
 uv run xft recommend --with-web "企业名称"
 ```
 
-刷新业务 Web 缓存：
+刷新 Web 缓存：
 
 ```bash
 uv run xft recommend --with-web --web-refresh "企业名称"
 ```
 
-指定 provider：
+指定 Web provider：
 
 ```bash
 uv run xft recommend --with-web --web-provider minimax_search "企业名称"
 ```
 
-## 输出文件
+## 常用参数
 
-每次运行会写入 `outputs/recommender/xft/<run_id>/`：
+| 参数 | 用途 | 什么时候用 |
+| --- | --- | --- |
+| `--warehouse` | 指定 DuckDB 文件，默认 `cache/company_warehouse.duckdb` | 有多份企业画像库时 |
+| `--scenario` | 指定场景目录，默认 `config/recommender/xft` | 跑非默认场景时 |
+| `--output-dir` | 指定输出目录，默认来自 `scenario.yaml` | 临时试跑或隔离结果时 |
+| `--no-llm` | 关闭 LLM，只跑规则和兜底判断 | 快速冒烟、排查规则配置时 |
+| `--with-web` | 启用指标级 Web 补证 | 需要公开网页证据时 |
+| `--web-refresh` | 忽略已有 Web 查询缓存，重新搜索 | 调整查询词或怀疑缓存过旧时 |
+| `--web-provider` | 指定 Web 搜索 provider，逗号分隔 | 对比 `minimax_search` / `metaso_search` 时 |
+| `--llm-debug` | 打印 LLM 调用耗时、错误和响应预览 | 调试 prompt、证据不足、LLM 失败时 |
+| `--llm-concurrency` | 设置 LLM 并发数，默认 4 | 批量跑且需要控制成本/限流时 |
+| `--company-list` | 批量读取企业名单文件 | 批量推荐时 |
+| `--limit` | 只跑名单前 N 家 | 小样本验证时 |
+| `--skip-existing` | 已有 `result.json` 的企业跳过 | 断点续跑批量任务时 |
 
-| 文件 | 用途 |
+批量推荐示例：
+
+```bash
+uv run xft recommend \
+  --company-list company.txt \
+  --with-web \
+  --limit 10
+```
+
+## 运行结果怎么看
+
+每次推荐会写入：
+
+```text
+outputs/recommender/xft/<run_id>/
+```
+
+核心文件：
+
+| 文件 | 业务用途 |
 | --- | --- |
-| `result.json` | 最终业务交付结果，业务人员优先看这个 |
-| `report.md` | 人类可读推荐报告 |
-| `label_result.json` | 全量模块、标签、指标判断明细 |
-| `indicator_evidence.json` | 本地证据和业务 Web 证据合并后的指标证据 |
-| `web_queries.jsonl` | 业务 Web 查询记录，仅启用业务 Web 时生成 |
-| `web_results.jsonl` | 业务 Web 搜索结果，仅启用业务 Web 时生成 |
-| `web_trace.json` | 业务 Web 执行 trace，仅启用业务 Web 时生成 |
-| `profile.json` | 企业画像 |
-| `decision_trace.json` | 规则、LLM、业务 Web 决策过程 |
-| `llm_calls.jsonl` | LLM 原始调用记录 |
+| `result.json` | 最终推荐交付结果，业务系统优先读取这个 |
+| `report.md` | 人类可读报告，适合人工检查 |
+| `label_result.json` | 模块、标签、指标的完整判断明细 |
+| `indicator_evidence.json` | 每个指标使用的本地证据和 Web 证据 |
+| `profile.json` | 本次读取到的企业画像 |
+| `decision_trace.json` | 规则、Web、LLM 的决策过程 |
+| `llm_calls.jsonl` | LLM 调用记录 |
 | `llm_metrics.json` | LLM 调用统计 |
+| `web_queries.jsonl` | Web 查询记录，仅启用 `--with-web` 时生成 |
+| `web_results.jsonl` | Web 搜索结果，仅启用 `--with-web` 时生成 |
+| `web_trace.json` | Web 补证 trace |
 | `scenario_resolved.json` | 本次运行解析后的场景配置 |
-| `config_manifest.json` | 本次运行使用的配置文件及其哈希 |
+| `config_manifest.json` | 本次运行使用的配置文件和哈希 |
 
-## 配置目录
+判断一次推荐是否可用，建议按顺序看：
 
-推荐主场景目录：
+1. `result.json` 的 `Module`、`AcceptanceResult`、`Conclusion`。
+2. `report.md` 是否能解释推荐理由。
+3. `indicator_evidence.json` 是否有足够证据支撑命中指标。
+4. 如启用 LLM，检查 `llm_metrics.json` 是否有失败调用。
+5. 如启用 Web，检查 `web_trace.json` 中查询词和结果是否与指标相关。
+
+## 配置文件怎么改
+
+默认场景目录：
 
 ```text
 config/recommender/xft/
@@ -133,7 +184,7 @@ config/recommender/xft/
 
 ### `scenario.yaml`
 
-场景入口只声明主配置、Web provider 配置、输出目录和业务 Web 缓存目录：
+声明场景入口、输出目录和 Web 缓存目录：
 
 ```yaml
 version: "1.0"
@@ -148,9 +199,18 @@ output_dir: ../../../outputs/recommender/xft
 web_cache_root: ../../../data/web/recommender/xft
 ```
 
+常调参数：
+
+| 字段 | 含义 |
+| --- | --- |
+| `modules_config` | 指向主模块配置，默认 `modules.yaml` |
+| `web_search_config` | 指向 Web provider 配置，默认 `web_search.yaml` |
+| `output_dir` | 推荐结果输出目录 |
+| `web_cache_root` | Web 查询缓存目录 |
+
 ### `modules.yaml`
 
-全局配置文件只放版本、场景、评分、全局接受策略和模块目录：
+配置全局分数、接受策略和模块目录：
 
 ```yaml
 version: "1.0"
@@ -180,11 +240,20 @@ acceptance_policy:
 modules_dir: modules.d
 ```
 
+常调参数：
+
+| 字段 | 调整效果 |
+| --- | --- |
+| `indicator_scores` | 控制单个指标对结果的贡献 |
+| `label_scores` | 控制标签命中对模块分的贡献 |
+| `acceptance_policy.levels` | 控制“高 / 中高 / 低”的门槛和结论文案 |
+| `modules_dir` | 指定模块文件目录 |
+
 ### `modules.d/*.yaml`
 
-一个业务模块一个文件。新增模块时添加一个 YAML 文件，删除模块时删除对应文件，系统会动态识别 `modules_dir` 下所有 `*.yaml`。
+一个模块一个文件。新增模块就是新增 YAML 文件；删除模块就是删除文件。
 
-模块文件示例：
+模块示例：
 
 ```yaml
 module_id: 日常报销
@@ -210,65 +279,79 @@ labels:
               - 渠道
 ```
 
-### evaluator
+每个指标最重要的字段：
+
+| 字段 | 用途 |
+| --- | --- |
+| `evaluator` | 判断方式：`rule`、`llm`、`hybrid`、`llm_web` |
+| `standard` | 业务判断标准 |
+| `rule` | 直接读取企业画像字段进行判断 |
+| `data_sources` | 从 DuckDB 明细表取本地证据 |
+| `prompt` | LLM 判断时的任务说明 |
+| `evidence_hints` | LLM 关注的证据线索 |
+| `web_search` | 指标级 Web 补证策略 |
+
+### evaluator 怎么选
 
 | evaluator | 适合场景 | 是否需要 LLM | Web 角色 |
 | --- | --- | ---: | --- |
-| `rule` | 结构化字段明确，例如资质、标签、招聘表字段 | 否 | 可选，仅补线索；配置 `possible_on_evidence` 时最多提升到 `possible` |
-| `llm` | 需要综合企业画像文本和本地证据推理 | 是 | 可选，通常 `when: insufficient` |
-| `hybrid` | 规则先处理硬证据，LLM 补充模糊判断 | 可选 | 可选，通常在规则/本地证据不足时补证 |
-| `llm_web` | 本地库基本不可能有、必须查公开网页的信息 | 是 | 必选，默认 `when: always` |
+| `rule` | 结构化字段明确，例如招聘标题、资质、分支机构 | 否 | 可选，最多补到 `possible` |
+| `llm` | 需要综合文本和证据推理 | 是 | 可选，通常证据不足时补证 |
+| `hybrid` | 先用规则判断硬证据，再让 LLM 处理模糊判断 | 可选 | 可选，推荐的增强方式 |
+| `llm_web` | 必须依赖公开网页才能判断 | 是 | 必须，Web-first |
 
-配置优先级建议：
+推荐顺序：
 
-1. 能用 `profile` 字段或 DuckDB 明细表判断的指标，优先配置成 `rule`。
-2. 有明确本地信号、但需要补充解释或公开证据的指标，配置成 `hybrid` + `merge_policy: rule_first`。
-3. 只有公开网页才可能判断的指标，才配置成 `llm_web`。
+1. 能用本地字段或明细表判断，优先 `rule`。
+2. 有本地信号但需要解释或补证，优先 `hybrid`。
+3. 只有公开网页才可能判断，才用 `llm_web`。
 
-`rule` 可以使用 `rule.source_field` 直接读画像字段，也可以用 `data_sources` 从画像字段或 DuckDB 明细表取证据。当前表级 `data_sources` 支持：
+### 本地证据怎么配
+
+当前表级 `data_sources` 支持：
 
 ```text
-recruitments.title/city/district/education/experience/salary_text/employer_number/source
-branches.branch_name/reg_status/legal_person
-qualifications.qualification_name/qualification_type/level_name/issuing_org
-outbound_investments.invested_company_name/proportion/reg_status
-key_personnel.person_name/role/affiliate_company_count
+recruitments
+branches
+qualifications
+outbound_investments
+key_personnel
 ```
 
-`web_search` 是指标级 Web policy，所有 evaluator 都可以配置；`llm_web` 必须配置。常用字段：
-
-- `when`: `always`、`insufficient`、`rule_not_matched`、`never`
-- `effect`: `llm_evidence`、`evidence_only`、`possible_on_evidence`
-- `fixed_queries`: 固定搜索词，支持 `{company_name}`
-- `auto`: 可选 LLM 自动生成少量补充搜索词
-- `max_results`: 每个查询最多保留结果数
-
-重要约束：
-
-- `data_sources` 的 `text_contains` 必须配置具体 `keywords`，不要留空；否则本地证据会退化成“只要有记录就像命中”。
-- `fixed_queries` 应该带指标词，例如“海外出差”“售后派驻”“开票专员”，不要只写 `{company_name} 官网` / `{company_name} 新闻`。
-- Web 结果进入证据前会同时检查目标公司和指标相关词；`llm_web` 没有实际 Web 证据时会返回 `unknown`，不会空证据调用 LLM。
-
-Web-first 指标：
+`text_contains` 必须写具体 `keywords`，不要留空：
 
 ```yaml
-evaluator: llm_web
-standard: 企业公开信息显示存在海外业务
-prompt: 请判断企业是否存在海外业务，只能基于证据判断，不得编造。
-web_search:
-  when: always
-  effect: llm_evidence
-  fixed_queries:
-    - "{company_name} 官网"
-    - "{company_name} 海外业务"
-  auto: false
-  max_results: 5
+data_sources:
+  - type: table
+    table: recruitments
+    field: title
+    op: text_contains
+    keywords:
+      - 销售
+      - 渠道
 ```
 
-本地证据不足时补证：
+如果只是判断是否存在记录，用 `op: exists`，不要用空关键词模拟存在性。
+
+### Web 补证怎么配
+
+指标级 `web_search` 常用字段：
+
+| 字段 | 可选值 / 含义 |
+| --- | --- |
+| `when` | `always`、`insufficient`、`rule_not_matched`、`never` |
+| `effect` | `llm_evidence`、`evidence_only`、`possible_on_evidence` |
+| `fixed_queries` | 固定查询词，支持 `{company_name}` |
+| `auto.enabled` | 是否让 LLM 生成少量补充查询 |
+| `auto.max_queries` | 自动查询数量上限 |
+| `auto.intent` | 自动查询目标 |
+| `max_results` | 每个查询最多保留的结果数 |
+
+示例：
 
 ```yaml
 evaluator: hybrid
+merge_policy: rule_first
 web_search:
   when: insufficient
   effect: llm_evidence
@@ -280,20 +363,11 @@ web_search:
     intent: 判断企业是否有差旅、商旅、报销、费控管理需求
 ```
 
-规则未命中时只补线索：
+查询词要带指标词，不要只写 `{company_name} 官网` 或 `{company_name} 新闻`。
 
-```yaml
-evaluator: rule
-web_search:
-  when: rule_not_matched
-  effect: possible_on_evidence
-  fixed_queries:
-    - "{company_name} 工厂 分支机构"
-```
+### `web_search.yaml`
 
-## `web_search.yaml`
-
-`web_search.yaml` 只配置业务指标级 Web 搜索 provider，不再承担旧的抓取、抽取、入库链路。
+配置 Web provider 和查询上限：
 
 ```yaml
 version: "1.1"
@@ -309,29 +383,64 @@ providers:
     max_results: 5
     timeout_seconds: 30
 
+  metaso_search:
+    type: metaso
+    enabled: true
+    mode: search
+    search_size: 3
+    timeout_seconds: 30
+
 execution:
   max_results_per_query: 5
 ```
 
-场景里的 `web_cache_root` 会覆盖 `cache_root`，销售推荐默认写到 `data/web/recommender/xft`。
+场景里的 `web_cache_root` 会覆盖这里的 `cache_root`。
 
-## LLM 调试
+## LLM 和 Web Key
 
-测试阶段建议加上：
-
-```bash
-uv run xft recommend --llm-debug "企业名称"
-```
-
-运行产物里会保留：
+`.env` 支持：
 
 ```text
-llm_calls.jsonl
-llm_metrics.json
-decision_trace.json
+LLM_API_KEY=...
+LLM_BASE_URL=https://api.minimax.io/v1
+LLM_MODEL=MiniMax-M2.7-Highspeed
+
+MINIMAX_API_KEY=...
+METASO_API_KEY=...
+METASO_ENABLED=true
 ```
 
-## 批量与校准
+也可以用 SM4 前缀保存 key：
+
+```bash
+python -m xft.keys encode <plaintext_key>
+```
+
+## 调优建议
+
+### 推荐结果不准
+
+1. 先看 `label_result.json`，确认误命中的模块、标签和指标。
+2. 再看 `indicator_evidence.json`，确认证据是否真的支持指标。
+3. 如果本地证据误命中，优先调整 `data_sources.keywords` 或 `rule`。
+4. 如果 Web 噪声误导，调整对应指标的 `fixed_queries`、`when`、`effect`。
+5. 如果接受度过高或过低，调整 `modules.yaml` 的 `acceptance_policy`。
+
+### LLM 成本或速度有问题
+
+- 冒烟时用 `--no-llm`。
+- 批量时降低 `--llm-concurrency`。
+- 能写成 `rule` 的指标不要写成 `llm`。
+- `hybrid` 建议使用 `merge_policy: rule_first`，规则命中时可跳过 LLM。
+
+### Web 证据噪声大
+
+- 固定查询词必须包含指标词。
+- `llm_web` 没有实际 Web 证据时会输出 `unknown`，不会空证据调用 LLM。
+- `rule` 配 `effect: possible_on_evidence` 时，Web 证据最多提升为 `possible`，不会直接变成 `matched`。
+- 抽查 `web_trace.json`，确认过滤后的结果既属于目标公司，也与指标相关。
+
+## 校准
 
 准备企业名单：
 
@@ -339,37 +448,34 @@ decision_trace.json
 company.txt
 ```
 
-批量推荐：
-
-```bash
-uv run xft recommend --company-list company.txt --no-llm --limit 10
-```
-
-批量校准：
-
-```bash
-uv run xft calibrate \
-  --company-list company.txt \
-  --labels calibration_labels.csv \
-  --limit 10
-```
-
-标注 CSV 推荐字段：
+准备人工标注 CSV：
 
 ```csv
 company_name,expected_top_module,acceptable_modules,comment
 某公司,日常报销,日常报销；差旅报销,人工标注说明
 ```
 
-启用业务 Web 校准：
+运行校准：
 
 ```bash
 uv run xft calibrate \
   --company-list company.txt \
   --labels calibration_labels.csv \
+  --limit 10
+```
+
+启用 LLM 和 Web：
+
+```bash
+uv run xft calibrate \
+  --company-list company.txt \
+  --labels calibration_labels.csv \
+  --with-llm \
   --with-web \
   --limit 10
 ```
+
+校准结果会输出 top1 命中率、可接受命中率、Web 覆盖率和需要人工复核的样本。
 
 ## Docker
 
@@ -379,26 +485,27 @@ uv run xft calibrate \
 docker build -t xft-dd .
 ```
 
-运行帮助：
+查看帮助：
 
 ```bash
 docker run --rm xft-dd uv run xft --help
 ```
 
-挂载本地数据和输出目录后运行推荐：
+挂载数据、缓存和输出目录后运行：
 
 ```bash
 docker run --rm \
   -v "$PWD/data:/app/data" \
   -v "$PWD/cache:/app/cache" \
-  -v "$PWD/outputs/recommender/xft:/app/outputs/recommender/xft" \
+  -v "$PWD/outputs:/app/outputs" \
   xft-dd uv run xft recommend --no-llm "企业名称"
 ```
 
-## 更多文档
+## 技术文档
 
 - [架构说明](docs/ARCHITECTURE.md)
-- [业务评分规则](docs/SCORING.md)
-- [冒烟验证](docs/SMOKE.md)
+- [评分与指标配置](docs/SCORING.md)
+- [冒烟验收](docs/SMOKE.md)
 - [下一步计划](docs/NEXT.md)
 - [技术债](docs/TECH_DEBT.md)
+- [DuckDB 数据流](docs/duckdb_data_flow_design.md)
