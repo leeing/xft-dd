@@ -170,7 +170,7 @@ def _write_web_config(tmp_path: Path) -> Path:
                         "enabled": True,
                         "max_results": 2,
                         "timeout_seconds": 3,
-                    }
+                    },
                 },
                 "execution": {"max_results_per_query": 2},
             },
@@ -1658,7 +1658,27 @@ async def test_run_recommendation_business_first_ignores_dimension_outputs(tmp_p
                                 ],
                             }
                         ],
-                    }
+                    },
+                    {
+                        "module_id": "tax",
+                        "module_name": "个税管理",
+                        "base_score": 100,
+                        "labels": [
+                            {
+                                "label_id": "manufacturing",
+                                "label_name": "制造业",
+                                "indicators": [
+                                    {
+                                        "indicator_id": "industry",
+                                        "indicator_name": "行业",
+                                        "evaluator": "rule",
+                                        "standard": "制造业",
+                                        "rule": {"source_field": "industry", "op": "contains", "value": "制造"},
+                                    }
+                                ],
+                            }
+                        ],
+                    },
                 ],
             },
             allow_unicode=True,
@@ -1673,10 +1693,78 @@ async def test_run_recommendation_business_first_ignores_dimension_outputs(tmp_p
         output_dir=str(tmp_path / "runs"),
         run_id="business-first",
         use_llm=False,
+        module_ids=["attendance"],
     )
 
     output_dir = Path(result.output_dir)
+    payload = json.loads((output_dir / "result.json").read_text(encoding="utf-8"))
+    manifest = json.loads((output_dir / "config_manifest.json").read_text(encoding="utf-8"))
+    assert payload["Module"] == "假勤管理"
+    assert manifest["mode"]["module_ids"] == ["attendance"]
     assert not (output_dir / "dimension_analysis.json").exists()
     report = (output_dir / "report.md").read_text(encoding="utf-8")
     assert "业务推荐结果" in report
     assert "维度分析摘要" not in report
+
+
+async def test_run_recommendation_unknown_module_returns_clear_failure(tmp_path: Path) -> None:
+    scenario_dir = tmp_path / "scenario"
+    scenario_dir.mkdir()
+    (scenario_dir / "scenario.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "extends": str(Path("config/recommender/xft/scenario.yaml").resolve()),
+                "id": "test",
+                "name": "test",
+                "modules_config": "modules.yaml",
+                "output_dir": str(tmp_path / "runs"),
+            },
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+    (scenario_dir / "modules.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "acceptance_policy": {"levels": [{"result": "低", "min_matched_labels": 0, "conclusion": "低"}]},
+                "modules": [
+                    {
+                        "module_id": "attendance",
+                        "module_name": "假勤管理",
+                        "labels": [
+                            {
+                                "label_id": "l",
+                                "label_name": "标签",
+                                "indicators": [
+                                    {
+                                        "indicator_id": "i",
+                                        "indicator_name": "指标",
+                                        "evaluator": "rule",
+                                        "standard": "存在",
+                                        "rule": {"source_field": "industry", "op": "exists"},
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            },
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+
+    result = await run_recommendation(
+        company_name="测试公司",
+        warehouse_db=str(tmp_path / "missing.duckdb"),
+        scenario_path=str(scenario_dir),
+        output_dir=str(tmp_path / "runs"),
+        run_id="bad-module",
+        use_llm=False,
+        module_ids=["missing"],
+    )
+
+    assert result.status == "failed"
+    assert result.error is not None
+    assert "unknown module_id: missing" in result.error
+    assert "available module_ids: attendance" in result.error
