@@ -47,7 +47,7 @@ class _AutoQueryPayload(BaseModel):
     queries: list[str]
 
 
-async def run_business_web_evidence(  # noqa: C901, PLR0913
+async def run_business_web_evidence(  # noqa: C901, PLR0913, PLR0915
     *,
     config: BusinessRecommendationConfig | None,
     company_name: str,
@@ -58,6 +58,7 @@ async def run_business_web_evidence(  # noqa: C901, PLR0913
     refresh: bool = False,
     provider_factory: Any = build_provider,
     query_planner: Any | None = None,
+    business_evidence: dict[str, list[dict[str, Any]]] | None = None,
 ) -> BusinessWebRunResult:
     """Execute indicator-level Web queries and convert results into evidence."""
     out_dir = Path(output_dir)
@@ -92,13 +93,18 @@ async def run_business_web_evidence(  # noqa: C901, PLR0913
     evidence: dict[str, list[dict[str, Any]]] = {}
     query_index = 0
     planner = query_planner or _plan_auto_queries_with_llm
+    local_evidence_map = business_evidence or {}
+    _query_cache: dict[str, tuple[dict[str, Any], list[dict[str, Any]]]] = {}
     for module in config.modules:
         for label in module.labels:
             for indicator in label.indicators:
                 if indicator.web_search is None:
                     continue
                 key = indicator_key(module, label.label_id, indicator)
-                decision = should_search_indicator(indicator=indicator, local_evidence=[], rule_result=None)
+                indicator_local_evidence = local_evidence_map.get(key, [])
+                decision = should_search_indicator(
+                    indicator=indicator, local_evidence=indicator_local_evidence, rule_result=None
+                )
                 if not decision.enabled:
                     trace.append(_skip_trace(module, label, indicator, key, decision))
                     continue
@@ -117,6 +123,25 @@ async def run_business_web_evidence(  # noqa: C901, PLR0913
                 for query, is_auto in query_specs:
                     for provider_name in provider_names:
                         provider_cfg = web_config.providers[provider_name]
+                        cache_key = f"{query}:{provider_name}"
+                        if cache_key in _query_cache:
+                            cached_query_row, cached_rows = _query_cache[cache_key]
+                            per_key_row = {
+                                **cached_query_row,
+                                "indicator_key": key,
+                                "module_id": module.module_id,
+                                "label_id": label.label_id,
+                                "indicator_id": indicator.indicator_id,
+                                "auto": is_auto,
+                                "trigger_reason": decision.reason,
+                                "when": decision.when,
+                                "effect": decision.effect,
+                            }
+                            query_rows.append(per_key_row)
+                            result_rows.extend(cached_rows)
+                            trace.append(_trace_row(per_key_row, cached_rows))
+                            evidence.setdefault(key, []).extend(_result_evidence(per_key_row, cached_rows))
+                            continue
                         query_index += 1
                         query_id = f"bq_{query_index:04d}"
                         query_row, rows = await _run_one_query(
@@ -138,6 +163,7 @@ async def run_business_web_evidence(  # noqa: C901, PLR0913
                             auto=is_auto,
                             decision=decision,
                         )
+                        _query_cache[cache_key] = (query_row, rows)
                         query_rows.append(query_row)
                         result_rows.extend(rows)
                         trace.append(_trace_row(query_row, rows))

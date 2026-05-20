@@ -24,6 +24,7 @@ async def business_web_evidence_node(state: RecommenderState) -> dict[str, objec
         output_dir=out_dir,
         providers=state.get("business_web_providers"),
         refresh=state.get("refresh_business_web", False),
+        business_evidence=state.get("business_evidence", {}),
     )
     if result.queries:
         display.ok(f"业务 Web → {result.queries} 次查询, {result.results} 条结果")
