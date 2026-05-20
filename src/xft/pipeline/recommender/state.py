@@ -44,3 +44,4 @@ class RecommenderState(TypedDict):
     output_dir: Annotated[str, keep_nonempty_str]
     report_path: Annotated[str, keep_nonempty_str]
     result_path: Annotated[str, keep_nonempty_str]
+    log_path: Annotated[str, keep_nonempty_str]

@@ -29,6 +29,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         help="limit recommendation to one module_id; repeat to test multiple modules",
     )
+    parser.add_argument(
+        "--indicator",
+        dest="indicator_ids",
+        action="append",
+        help="limit recommendation to one indicator_id; repeat to test multiple indicators",
+    )
     parser.add_argument("--output-dir")
     parser.add_argument("--batch-id", help="batch id for --company-list runs")
     parser.add_argument("--batch-output", help="directory that contains batch folders")
@@ -74,7 +80,7 @@ def _load_company_names(args: argparse.Namespace) -> list[str]:
     return names
 
 
-async def _main_async(argv: list[str] | None = None) -> int:  # noqa: C901
+async def _main_async(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0912
     load_dotenv()
     args = build_parser().parse_args(argv)
 
@@ -110,6 +116,7 @@ async def _main_async(argv: list[str] | None = None) -> int:  # noqa: C901
                 refresh_web=args.web_refresh,
                 web_providers=csv(args.web_provider),
                 module_ids=args.module_ids,
+                indicator_ids=args.indicator_ids,
                 llm_debug=args.llm_debug,
                 llm_concurrency=args.llm_concurrency,
                 continue_on_error=args.continue_on_error,
@@ -142,6 +149,7 @@ async def _main_async(argv: list[str] | None = None) -> int:  # noqa: C901
             refresh_web=args.web_refresh,
             web_providers=csv(args.web_provider),
             module_ids=args.module_ids,
+            indicator_ids=args.indicator_ids,
             llm_debug=args.llm_debug,
             llm_concurrency=args.llm_concurrency,
         )
@@ -150,6 +158,8 @@ async def _main_async(argv: list[str] | None = None) -> int:  # noqa: C901
             sys.stdout.write(f"  report: {single_result.report_path}\n")
         if single_result.result_path:
             sys.stdout.write(f"  result: {single_result.result_path}\n")
+        if single_result.log_path:
+            sys.stdout.write(f"  log: {single_result.log_path}\n")
         if single_result.error:
             sys.stderr.write(f"  error: {single_result.error}\n")
         if single_result.status not in ("success", "partial"):

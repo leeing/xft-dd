@@ -118,6 +118,18 @@ uv run xft recommend --module 个税管理 --with-web "企业名称"
 uv run xft recommend --module 个税管理 --module 差旅报销 "企业名称"
 ```
 
+只测试单个指标：
+
+```bash
+uv run xft recommend --module 个税管理 --indicator 个税相关招聘 --with-web "企业名称"
+```
+
+审计当前场景配置：
+
+```bash
+uv run xft scenario audit config/recommender/xft
+```
+
 ## 常用参数
 
 | 参数 | 用途 | 什么时候用 |
@@ -125,6 +137,7 @@ uv run xft recommend --module 个税管理 --module 差旅报销 "企业名称"
 | `--warehouse` | 指定 DuckDB 文件，默认 `cache/company_warehouse.duckdb` | 有多份企业画像库时 |
 | `--scenario` | 指定场景目录，默认 `config/recommender/xft` | 跑非默认场景时 |
 | `--module` | 只评估指定 `module_id`，可重复传入 | 调试单个模块的规则、LLM、Web 搜索词时 |
+| `--indicator` | 只评估指定 `indicator_id`，可重复传入 | 精调单个指标、搜索词、prompt 时 |
 | `--output-dir` | 指定输出目录，默认来自 `scenario.yaml` | 临时试跑或隔离结果时 |
 | `--no-llm` | 关闭 LLM，只跑规则和兜底判断 | 快速冒烟、排查规则配置时 |
 | `--with-web` | 启用指标级 Web 补证 | 需要公开网页证据时 |
@@ -159,6 +172,7 @@ outputs/recommender/xft/<run_id>/
 | --- | --- |
 | `result.json` | 最终推荐交付结果，业务系统优先读取这个 |
 | `report.md` | 人类可读报告，适合人工检查 |
+| `logs/<run_id>.log` | 人类可读调试日志，按模块/标签/指标展开每个决策点 |
 | `label_result.json` | 模块、标签、指标的完整判断明细 |
 | `indicator_evidence.json` | 每个指标使用的本地证据和 Web 证据 |
 | `profile.json` | 本次读取到的企业画像 |
@@ -174,10 +188,11 @@ outputs/recommender/xft/<run_id>/
 判断一次推荐是否可用，建议按顺序看：
 
 1. `result.json` 的 `Module`、`AcceptanceResult`、`Conclusion`。
-2. `report.md` 是否能解释推荐理由。
-3. `indicator_evidence.json` 是否有足够证据支撑命中指标。
-4. 如启用 LLM，检查 `llm_metrics.json` 是否有失败调用。
-5. 如启用 Web，检查 `web_trace.json` 中查询词和结果是否与指标相关。
+2. `logs/<run_id>.log` 是否能解释每个指标为什么命中、未命中或调用 Web/LLM。
+3. `report.md` 是否能解释推荐理由。
+4. `indicator_evidence.json` 是否有足够证据支撑命中指标。
+5. 如启用 LLM，检查 `llm_metrics.json` 是否有失败调用。
+6. 如启用 Web，检查 `web_trace.json` 中查询词和结果是否与指标相关。
 
 ## 配置文件怎么改
 
@@ -448,7 +463,9 @@ python -m xft.keys encode <plaintext_key>
 4. 如果 Web 噪声误导，调整对应指标的 `fixed_queries`、`when`、`effect`。
 5. 如果接受度过高或过低，调整 `modules.yaml` 的 `acceptance_policy`。
 
-调试单个模块时先加 `--module <module_id>`，缩小输出和 LLM/Web 调用范围。确认该模块稳定后，再去掉 `--module` 做全场景对比。
+调试单个模块时先加 `--module <module_id>`，缩小输出和 LLM/Web 调用范围。精调某个指标时再加 `--indicator <indicator_id>`。确认该模块稳定后，再去掉过滤参数做全场景对比。
+
+每次运行都会生成 `logs/<run_id>.log`。调配置时优先读这个文件，它会先给出调优建议摘要，再按模块、标签、指标展开 Rule、Data sources、Web policy、Web 查询、LLM 调用和最终采纳证据。
 
 ### LLM 成本或速度有问题
 
@@ -529,6 +546,7 @@ docker run --rm \
 ## 技术文档
 
 - [架构说明](docs/ARCHITECTURE.md)
+- [模块调优流程](docs/MODULE_TUNING.md)
 - [评分与指标配置](docs/SCORING.md)
 - [冒烟验收](docs/SMOKE.md)
 - [下一步计划](docs/NEXT.md)

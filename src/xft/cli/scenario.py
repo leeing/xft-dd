@@ -9,6 +9,7 @@ from pathlib import Path
 
 from xft.core.scenario import load_scenario
 from xft.pipeline.recommender.config_loader import load_recommendation_config
+from xft.pipeline.recommender.scenario_audit import audit_recommendation_config, render_audit_text
 from xft.web.config_loader import load_web_search_config
 
 
@@ -21,6 +22,9 @@ def build_parser() -> argparse.ArgumentParser:
     inspect.add_argument("--print", action="store_true", dest="print_json", help="print resolved JSON to stdout")
     validate = sub.add_parser("validate", help="validate scenario bundle and referenced configs")
     validate.add_argument("scenario")
+    audit = sub.add_parser("audit", help="audit recommendation module configuration for tuning")
+    audit.add_argument("scenario")
+    audit.add_argument("--json", action="store_true", dest="json_output", help="print machine-readable JSON")
     return parser
 
 
@@ -63,10 +67,27 @@ def _validate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _audit(args: argparse.Namespace) -> int:
+    try:
+        business = load_recommendation_config(args.scenario)
+    except (OSError, TypeError, ValueError) as exc:
+        sys.stderr.write(f"invalid scenario: {exc}\n")
+        return 1
+    payload = audit_recommendation_config(business)
+    if args.json_output:
+        sys.stdout.write(json.dumps(payload, ensure_ascii=False, indent=2))
+        sys.stdout.write("\n")
+    else:
+        sys.stdout.write(render_audit_text(payload))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "inspect":
         return _inspect(args)
     if args.command == "validate":
         return _validate(args)
+    if args.command == "audit":
+        return _audit(args)
     return 2

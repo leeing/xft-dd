@@ -8,6 +8,7 @@ from typing import Any
 from xft.pipeline.recommender.evidence_utils import merge_indicator_evidence
 from xft.pipeline.recommender.report_renderer import render_report
 from xft.pipeline.recommender.result_renderer import render_result_json
+from xft.pipeline.recommender.run_log import write_run_log
 from xft.pipeline.recommender.state import RecommenderState
 from xft.progress import display
 from xft.utils.file_io import write_json, write_jsonl
@@ -55,7 +56,8 @@ async def save_node(state: RecommenderState) -> dict[str, object]:
     write_json(profile_path, state.get("profile", {}))
     llm_events = state.get("llm_call_events", [])
     write_jsonl(llm_calls_path, llm_events)
-    write_json(llm_metrics_path, _llm_metrics(llm_events))
+    llm_metrics = _llm_metrics(llm_events)
+    write_json(llm_metrics_path, llm_metrics)
     business = state.get("recommendation")
     write_json(
         indicator_evidence_path,
@@ -72,13 +74,16 @@ async def save_node(state: RecommenderState) -> dict[str, object]:
     write_json(result_path, business_payload)
     write_json(decision_trace_path, _decision_trace(state, llm_events))
     report_path.write_text(render_report(state), encoding="utf-8")
+    log_path = write_run_log(out_dir=out_dir, state=state, llm_metrics=llm_metrics)
 
     status = "failed" if state.get("errors") else "partial" if state.get("needs_web_enrichment") else "success"
     display.done(str(report_path), status=status)
+    display.info(f"调试日志: {log_path}")
     return {
         "output_dir": str(out_dir),
         "report_path": str(report_path),
         "result_path": str(result_path),
+        "log_path": str(log_path),
     }
 
 

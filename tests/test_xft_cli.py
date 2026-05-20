@@ -70,6 +70,7 @@ def test_recommend_smoke_command_uses_offline_no_llm(monkeypatch: pytest.MonkeyP
             output_dir="outputs/recommender/xft/smoke",
             report_path="outputs/recommender/xft/smoke/report.md",
             result_path="outputs/recommender/xft/smoke/result.json",
+            log_path="outputs/recommender/xft/smoke/logs/smoke.log",
             error=None,
         )
 
@@ -95,6 +96,8 @@ def test_recommend_smoke_command_uses_offline_no_llm(monkeypatch: pytest.MonkeyP
                 "个税管理",
                 "--module",
                 "差旅报销",
+                "--indicator",
+                "社保个税岗位",
                 "烟测公司",
             ]
         )
@@ -108,3 +111,11 @@ def test_recommend_smoke_command_uses_offline_no_llm(monkeypatch: pytest.MonkeyP
     assert captured["refresh_web"] is True
     assert captured["web_providers"] == ["fake_search"]
     assert captured["module_ids"] == ["个税管理", "差旅报销"]
+    assert captured["indicator_ids"] == ["社保个税岗位"]
+
+
+def test_xft_scenario_audit_outputs_human_report(capsys: pytest.CaptureFixture[str]) -> None:
+    assert xft_main(["scenario", "audit", "config/recommender/xft"]) == 0
+    captured = capsys.readouterr()
+    assert "# 推荐场景配置审计" in captured.out
+    assert "evaluator 分布" in captured.out
