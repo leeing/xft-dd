@@ -5,12 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from xft.core.config_loader import load_dimensions_config
-from xft.pipeline.recommender.graph import run_recommendation
 from xft.core.scenario import load_scenario
-from xft.evidence.policy import load_evidence_policy
+from xft.pipeline.recommender.graph import run_recommendation
 from xft.pipeline.recommender.business_config_loader import load_business_recommendation_config
-from xft.web.config_loader import load_web_extract_llm_config, load_web_search_config
+from xft.web.config_loader import load_web_search_config
 from xft.warehouse.prophet_loader import load_prophet_data
 
 
@@ -66,10 +64,8 @@ def test_load_scenario_resolves_bundle_paths() -> None:
 
     assert scenario is not None
     assert scenario.config.id == "sales_recommendation"
-    assert scenario.evidence_policy_path.endswith("config/recommend/sales_recommendation/evidence_policy.yaml")
     assert scenario.business_modules_path is not None
     assert scenario.business_modules_path.endswith("config/recommend/sales_recommendation/business_modules.yaml")
-    assert scenario.prompt_paths["web_extract_system"].endswith("prompts/extract_evidence_system.md")
 
 
 def test_scenario_extends_and_writes_resolved_config(tmp_path: Path) -> None:
@@ -82,11 +78,9 @@ def test_scenario_extends_and_writes_resolved_config(tmp_path: Path) -> None:
 version: "1.0"
 id: base_sales
 name: 基础销售场景
-dimensions_config: analysis_dimensions.yaml
 web_search_config: web_search.yaml
-web_extract_llm_config: web_extract_llm.yaml
 prompts:
-  web_extract_system: prompts/extract.md
+  business_system: prompts/business.md
 output_dir: runs/base
 web_cache_root: web/base
 """,
@@ -99,7 +93,7 @@ id: child_sales
 name: 子销售场景
 overrides:
   prompts:
-    business_system: prompts/business.md
+    business_followup: prompts/followup.md
   output_dir: runs/child
 """,
         encoding="utf-8",
@@ -109,27 +103,21 @@ overrides:
 
     assert scenario is not None
     assert scenario.config.id == "child_sales"
-    assert scenario.prompt_paths["web_extract_system"].endswith("base/prompts/extract.md")
-    assert scenario.prompt_paths["business_system"].endswith("child/prompts/business.md")
+    assert scenario.prompt_paths["business_system"].endswith("base/prompts/business.md")
+    assert scenario.prompt_paths["business_followup"].endswith("child/prompts/followup.md")
     assert scenario.output_dir is not None
     assert scenario.output_dir.endswith("child/runs/child")
     resolved_path = scenario.write_resolved_config(tmp_path / "scenario_resolved.json")
     resolved = json.loads(resolved_path.read_text(encoding="utf-8"))
     assert resolved["id"] == "child_sales"
-    assert resolved["prompt_paths"]["business_system"].endswith("child/prompts/business.md")
+    assert resolved["prompt_paths"]["business_followup"].endswith("child/prompts/followup.md")
 
 
 def test_config_loaders_accept_scenario_directory() -> None:
-    dimensions = load_dimensions_config(SCENARIO_DIR)
     web_config = load_web_search_config(SCENARIO_DIR)
-    extract_config = load_web_extract_llm_config(SCENARIO_DIR)
-    evidence_policy = load_evidence_policy(SCENARIO_DIR)
     business = load_business_recommendation_config(SCENARIO_DIR)
 
-    assert dimensions.dimensions
-    assert web_config.cache_root.endswith("data/web/sales_recommendation")
-    assert extract_config.prompt_file.endswith("prompts/extract_evidence_system.md")
-    assert evidence_policy.web_planning.supported_facts_to_skip_web == 3
+    assert web_config.cache_root.endswith("data/web_business/sales_recommendation")
     assert len(business.modules) == 7
 
 
@@ -168,4 +156,6 @@ async def test_run_recommendation_accepts_scenario_bundle(
     assert manifest["scenario_id"] == "sales_recommendation"
     assert "products" not in manifest["files"]
     assert "scoring_policy" not in manifest["files"]
-    assert len(manifest["effective_hashes"]["dimensions"]) == 64
+    assert "business_module:假勤管理" in manifest["files"]
+    assert "dimensions" not in manifest["effective_hashes"]
+    assert len(manifest["effective_hashes"]["business_modules"]) == 64
