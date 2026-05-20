@@ -25,6 +25,7 @@ from xft.pipeline.recommender.models import (
     RecommendationConfig,
 )
 from xft.pipeline.recommender.web_policy import WebSearchDecision, should_search_indicator
+from xft.progress import display
 from xft.settings import settings
 from xft.utils.file_io import read_jsonl, write_json, write_jsonl
 from xft.utils.misc import str_or_none
@@ -148,7 +149,10 @@ async def run_web_evidence(  # noqa: PLR0913
         query_planner=query_planner or _plan_auto_queries_with_llm,
         local_evidence_map=evidence or {},
     )
+    display.info("  规划业务 Web 查询...")
     specs, planning_trace = await _plan_web_queries(config=config, ctx=ctx)
+    n_auto = sum(1 for s in specs if s.auto)
+    display.info(f"  共 {len(specs)} 个查询 (其中 {n_auto} 个自动生成), 开始执行...")
     acc = await _execute_web_queries(ctx=ctx, specs=specs, initial_trace=planning_trace)
     write_jsonl(paths.queries_path, acc.query_rows)
     write_jsonl(paths.results_path, acc.result_rows)
@@ -289,14 +293,17 @@ async def _execute_web_queries(
 ) -> WebAccumulator:
     acc = WebAccumulator.create()
     acc.trace.extend(initial_trace)
-    for spec in specs:
+    total = len(specs)
+    for i, spec in enumerate(specs, 1):
         provider_cfg = ctx.web_config.providers[spec.provider_name]
         cache_key = f"{spec.query}:{spec.provider_name}"
         if cache_key in acc.query_cache:
             cached_query_row, cached_rows = acc.query_cache[cache_key]
             per_key_row = _query_row_for_spec(cached_query_row, spec)
             _append_web_rows(acc=acc, key=spec.indicator_key, query_row=per_key_row, rows=cached_rows)
+            display.info(f"  [{i}/{total}] 复用缓存: {spec.query[:50]}")
             continue
+        display.info(f"  [{i}/{total}] 搜索: {spec.query[:50]}")
         web_search = spec.indicator.web_search
         if web_search is None:
             continue
@@ -451,6 +458,7 @@ async def _plan_auto_queries_with_llm(  # noqa: PLR0913
 ) -> list[str]:
     if not (settings.llm_api_key or settings.minimax_api_key):
         return []
+    display.info(f"  LLM 自动生成搜索词: {indicator.indicator_name}")
     system = (
         "你是企业推荐系统的Web搜索词规划器。"
         "只输出JSON，字段为queries。"
