@@ -155,4 +155,3 @@ async def test_enrich_items_uses_l2_fetch_cache(monkeypatch: pytest.MonkeyPatch,
 
     mock_fetch.assert_not_called()
     assert result[0].full_text.startswith("cached full text")
-
