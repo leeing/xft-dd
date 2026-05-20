@@ -96,6 +96,64 @@ class _NoisyBusinessProvider:
         )
 
 
+class _CompanyOnlyBusinessProvider:
+    name = "fake_search"
+
+    async def search(self, query: str, *, dimension_id: str) -> ProviderSearchResponse:
+        item = SearchItem(
+            id=make_item_id(
+                url="https://example.com/company",
+                title="测试公司招聘首页",
+                snippet="测试公司欢迎注册账号并查看更多职位。",
+            ),
+            title="测试公司招聘首页",
+            url="https://example.com/company",
+            snippet="测试公司欢迎注册账号并查看更多职位。",
+            query=query,
+            dimension_id=dimension_id,
+            source="minimax",
+            rank=0,
+            fetched_at=datetime.now(UTC),
+        )
+        return ProviderSearchResponse(
+            provider=self.name,
+            provider_type="minimax",
+            query=query,
+            dimension_id=dimension_id,
+            status="success",
+            items=[item.model_dump()],
+        )
+
+
+class _QueryEchoBusinessProvider:
+    name = "fake_search"
+
+    async def search(self, query: str, *, dimension_id: str) -> ProviderSearchResponse:
+        item = SearchItem(
+            id=make_item_id(
+                url="https://example.com/query",
+                title=f"{query} 公开线索",
+                snippet=f"{query} 相关公开信息。",
+            ),
+            title=f"{query} 公开线索",
+            url="https://example.com/query",
+            snippet=f"{query} 相关公开信息。",
+            query=query,
+            dimension_id=dimension_id,
+            source="minimax",
+            rank=0,
+            fetched_at=datetime.now(UTC),
+        )
+        return ProviderSearchResponse(
+            provider=self.name,
+            provider_type="minimax",
+            query=query,
+            dimension_id=dimension_id,
+            status="success",
+            items=[item.model_dump()],
+        )
+
+
 def _write_business_web_config(tmp_path: Path) -> Path:
     path = tmp_path / "web_search.yaml"
     path.write_text(
@@ -182,6 +240,17 @@ def test_business_config_loader_accepts_scenario_bundle() -> None:
     attendance = next(module for module in config.modules if module.module_id == "假勤管理")
     assert attendance.labels[0].label_name == "科技属性"
     assert any(ind.evaluator == "llm_web" for label in attendance.labels for ind in label.indicators)
+    evaluator_counts: dict[str, int] = {}
+    for label in attendance.labels:
+        for indicator in label.indicators:
+            evaluator_counts[indicator.evaluator] = evaluator_counts.get(indicator.evaluator, 0) + 1
+    assert evaluator_counts == {"rule": 10, "llm_web": 5, "llm": 2, "hybrid": 4}
+    travel = next(module for module in config.modules if module.module_id == "差旅报销")
+    travel_counts: dict[str, int] = {}
+    for label in travel.labels:
+        for indicator in label.indicators:
+            travel_counts[indicator.evaluator] = travel_counts.get(indicator.evaluator, 0) + 1
+    assert travel_counts == {"hybrid": 10, "llm_web": 3}
 
 
 def test_business_config_loader_discovers_module_files(tmp_path: Path) -> None:
@@ -651,7 +720,7 @@ async def test_business_web_evidence_runs_llm_fixed_queries(tmp_path: Path) -> N
         profile={"company_name": "测试公司"},
         web_config_path=str(_write_business_web_config(tmp_path)),
         output_dir=tmp_path / "out",
-        provider_factory=lambda _name, _config: _FakeBusinessProvider(),
+        provider_factory=lambda _name, _config: _QueryEchoBusinessProvider(),
         refresh=True,
     )
 
@@ -910,6 +979,50 @@ async def test_business_web_evidence_filters_results_for_other_companies(tmp_pat
     assert result.trace[0]["filtered_result_count"] == 1
 
 
+async def test_business_web_evidence_filters_company_only_indicator_noise(tmp_path: Path) -> None:
+    config = BusinessRecommendationConfig.model_validate(
+        {
+            "acceptance_policy": {"levels": [{"result": "低", "min_matched_labels": 0, "conclusion": "低"}]},
+            "modules": [
+                {
+                    "module_id": "attendance",
+                    "module_name": "假勤管理",
+                    "labels": [
+                        {
+                            "label_id": "export",
+                            "label_name": "出口海外",
+                            "indicators": [
+                                {
+                                    "indicator_id": "overseas_oem",
+                                    "indicator_name": "海外代工",
+                                    "evaluator": "llm_web",
+                                    "standard": "存在海外代工业务线索",
+                                    "prompt": "判断是否存在海外代工。",
+                                    "web_search": {"fixed_queries": ["{company_name} 海外代工"]},
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+    result = await run_business_web_evidence(
+        config=config,
+        company_name="测试公司",
+        profile={"company_name": "测试公司", "credit_code": "91440000MA5UW5Y08T"},
+        web_config_path=str(_write_business_web_config(tmp_path)),
+        output_dir=tmp_path / "run",
+        provider_factory=lambda _name, _config: _CompanyOnlyBusinessProvider(),
+        query_planner=lambda **_: [],
+    )
+
+    assert result.results == 0
+    assert result.evidence == {}
+    assert result.trace[0]["filtered_result_count"] == 1
+
+
 async def test_business_web_evidence_feeds_indicator_result() -> None:
     config = BusinessRecommendationConfig.model_validate(
         {
@@ -966,6 +1079,57 @@ async def test_business_web_evidence_feeds_indicator_result() -> None:
     assert indicator.result == "matched"
     assert indicator.evidence_details[0]["source_type"] == "web"
     assert indicator.web_search_trace[0]["result_count"] == 1
+
+
+async def test_llm_web_without_web_evidence_skips_llm(monkeypatch: pytest.MonkeyPatch) -> None:
+    config = BusinessRecommendationConfig.model_validate(
+        {
+            "acceptance_policy": {"levels": [{"result": "低", "min_matched_labels": 0, "conclusion": "低"}]},
+            "modules": [
+                {
+                    "module_id": "attendance",
+                    "module_name": "假勤管理",
+                    "labels": [
+                        {
+                            "label_id": "export",
+                            "label_name": "出口海外",
+                            "indicators": [
+                                {
+                                    "indicator_id": "overseas_oem",
+                                    "indicator_name": "海外代工",
+                                    "evaluator": "llm_web",
+                                    "standard": "存在海外代工业务线索",
+                                    "prompt": "判断是否存在海外代工。",
+                                    "web_search": {"fixed_queries": ["{company_name} 海外代工"]},
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+    def fail_get_ai_client() -> object:
+        msg = "llm_web without web evidence should not call LLM"
+        raise AssertionError(msg)
+
+    monkeypatch.setattr("xft.pipeline.recommender.business_evaluator.get_ai_client", fail_get_ai_client)
+    monkeypatch.setattr("xft.pipeline.recommender.business_evaluator.settings.llm_api_key", "test")
+
+    result = await evaluate_business_recommendation(
+        config=config,
+        company_name="测试公司",
+        profile={"company_name": "测试公司"},
+        business_evidence={},
+        use_llm=True,
+    )
+
+    assert result is not None
+    indicator = result.indicator_results[0]
+    assert indicator.result == "unknown"
+    assert indicator.confidence == "低"
+    assert "Web 证据不足" in indicator.current_status
 
 
 async def test_rule_web_evidence_can_only_raise_to_possible() -> None:
