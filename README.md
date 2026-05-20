@@ -2,7 +2,7 @@
 
 XFT 用本地企业画像、业务规则、LLM 和可选的业务指标级 Web 搜索，生成面向销售/业务人员的产品推荐结果。
 
-当前推荐主链路已经聚焦到 `business_modules.yaml` + `business_modules.d/*.yaml`。旧的产品评分配置、维度分析配置、旧 Web enrichment 和旧证据策略都已删除。
+当前产品推荐的配置文件聚焦到 `business_modules.yaml` + `business_modules.d/*.yaml`。
 
 ## 一句话流程
 
@@ -112,15 +112,6 @@ uv run xft recommend --with-business-web --business-web-provider minimax_search 
 | `scenario_resolved.json` | 本次运行解析后的场景配置 |
 | `config_manifest.json` | 本次运行使用的配置文件及其哈希 |
 
-不再生成：
-
-```text
-dimension_analysis.json
-match_results.json
-internal_result.json
-web_evidence.jsonl
-```
-
 ## 配置目录
 
 推荐主场景目录：
@@ -156,8 +147,6 @@ business_modules_config: business_modules.yaml
 output_dir: ../../../recommendation_runs/sales_recommendation
 web_cache_root: ../../../data/web_business/sales_recommendation
 ```
-
-注意：推荐场景不再支持 `dimensions_config`、`web_extract_llm_config`、`evidence_policy_config`、`prompts.web_extract_system`。
 
 ### `business_modules.yaml`
 
