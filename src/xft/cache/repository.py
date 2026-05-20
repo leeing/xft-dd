@@ -62,6 +62,7 @@ class SearchCacheRepo:
         query_texts: list[str],
         *,
         params: dict[str, Any],
+        provider: str = "minimax",
     ) -> set[str]:
         """Batch fetch which query texts have a valid L1 cache entry.
 
@@ -78,7 +79,7 @@ class SearchCacheRepo:
                 (
                     await session.execute(
                         select(search_cache.c.query_hash, search_cache.c.expires_at)
-                        .where(search_cache.c.provider == "minimax")
+                        .where(search_cache.c.provider == provider)
                         .where(search_cache.c.query_hash.in_([stable_hash(q) for q in query_texts]))
                         .where(search_cache.c.params_hash == params_hash)
                         .where(search_cache.c.policy_version == settings.cache_policy_version)
