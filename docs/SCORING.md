@@ -1,6 +1,6 @@
 # 业务评分规则
 
-当前推荐结果完全由 `business_modules.yaml` 驱动。旧的产品评分引擎 `xft.scoring`、`products.yaml`、`scoring_policy.yaml` 已删除。
+当前推荐结果完全由 `business_modules.yaml` 和 `business_modules.d/*.yaml` 驱动。旧的产品评分引擎 `xft.scoring`、`products.yaml`、`scoring_policy.yaml` 已删除。
 
 ## 结果层级
 
@@ -8,7 +8,7 @@
 flowchart TB
     module["业务模块 module"] --> label["业务标签 label"]
     label --> indicator["业务指标 indicator"]
-    indicator --> eval["evaluator: rule / llm / hybrid"]
+    indicator --> eval["evaluator: rule / llm / hybrid / llm_web"]
     eval --> score["指标分"]
     score --> labelscore["标签分"]
     labelscore --> modulescore["模块分"]
@@ -51,7 +51,7 @@ flowchart TB
 
 ## 分数配置
 
-`business_modules.yaml` 顶部配置分数映射：
+`business_modules.yaml` 配置全局分数映射：
 
 ```yaml
 scoring:
@@ -75,9 +75,19 @@ module.score = module.base_score + sum(label.score) + sum(indicator.score)
 
 再限制在 0-100。
 
+正式销售场景的模块定义在 `business_modules.d/*.yaml`：
+
+```text
+business_modules.yaml        全局 scoring、acceptance_policy、modules_dir
+business_modules.d/假勤管理.yaml   单个业务模块
+business_modules.d/差旅报销.yaml   单个业务模块
+```
+
+新增模块时添加一个模块 YAML 文件；删除模块时删除对应文件。loader 会动态加载 `modules_dir` 下所有 `*.yaml`。
+
 ## Rule
 
-`rule` 适合结构化字段明确的指标：
+`rule` 适合结构化字段明确的指标。可以直接读取 `company_profile` 字段：
 
 ```yaml
 evaluator: rule
@@ -98,6 +108,31 @@ rule:
 | `==` / `!=` | 等于 / 不等于 |
 | `>` / `>=` / `<` / `<=` | 数值比较 |
 
+也可以通过 `data_sources` 从画像字段或 DuckDB 明细表取证据：
+
+```yaml
+evaluator: rule
+standard: 招聘标题包含销售或渠道
+data_sources:
+  - type: table
+    table: recruitments
+    field: title
+    op: text_contains
+    keywords:
+      - 销售
+      - 渠道
+```
+
+当前表级 `data_sources` 支持：
+
+```text
+recruitments
+branches
+qualifications
+outbound_investments
+key_personnel
+```
+
 ## LLM
 
 `llm` 适合需要综合文本、证据和业务标准推理的指标：
@@ -110,7 +145,7 @@ evidence_hints:
   - 企业规模
   - 分支机构
   - 招聘信息
-  - Web 证据
+  - 企业画像
 ```
 
 LLM 输出会写入：
@@ -148,6 +183,38 @@ prompt: 判断企业是否具备科技型企业资质。
 | `llm_confirm` | 规则给候选信号，LLM 负责确认；如 LLM 否定则降级 |
 | `require_both` | 规则和 LLM 都命中才 `matched` |
 
+## 指标级 Web Policy
+
+`web_search` 是指标级补证策略。它只在推荐命令带 `--with-business-web` 时执行。
+
+`llm_web` 适合必须查公开网页才能判断的指标，默认 Web-first；`llm/hybrid` 可在本地证据不足时补证；`rule` 可在规则未命中时补线索，但不能直接从 Web 证据变成 `matched`。
+
+```yaml
+indicator_id: 海外业务
+indicator_name: 海外业务
+evaluator: llm_web
+standard: 企业公开信息显示存在海外客户、海外业务或跨境服务
+prompt: 请判断企业是否存在海外业务，只能基于证据判断，不得编造。
+evidence_hints:
+  - 海外业务
+  - 海外客户
+web_search:
+  when: always
+  effect: llm_evidence
+  fixed_queries:
+    - "{company_name} 官网"
+    - "{company_name} 海外业务"
+  auto: false
+  max_results: 5
+```
+
+注意：
+
+- `llm_web` 必须配置 `web_search`。
+- `fixed_queries` 优先执行；`auto.enabled: true` 时可由 LLM 生成少量补充查询。
+- 搜索结果会作为 `source_type=web` 的指标证据进入 `business_indicator_evidence.json`。
+- `rule` 使用 `effect: possible_on_evidence` 时，Web 证据最多把结果提升到 `possible`，不会变成 `matched`。
+
 ## 标签与模块
 
 标签根据指标聚合：
@@ -181,6 +248,7 @@ acceptance_policy:
 | 证据模糊、规则太死 | 把 `rule` 改成 `hybrid` |
 | LLM 判断太宽 | 收紧 `standard` 和 `prompt` |
 | LLM 判断太保守 | 增加 `evidence_hints`，明确可接受的间接证据 |
+| Web 证据噪声大 | 调整对应指标的 `web_search.fixed_queries` |
 | 模块分数整体偏高/偏低 | 调整 `base_score`、`indicator_scores`、`label_scores` |
 
 ## 验证
@@ -189,4 +257,5 @@ acceptance_policy:
 uv run xft scenario validate config/recommend/sales_recommendation
 uv run xft recommend --no-llm --scenario config/recommend/sales_recommendation "企业名称"
 uv run xft recommend --llm-debug --scenario config/recommend/sales_recommendation "企业名称"
+uv run xft recommend --with-business-web --scenario config/recommend/sales_recommendation "企业名称"
 ```

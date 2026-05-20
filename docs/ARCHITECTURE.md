@@ -1,6 +1,6 @@
 # 架构说明
 
-本文档面向开发和维护人员，描述当前真实架构。推荐流水线已删除旧的 `llm_match + llm_recommend + scoring/` 链路，主线只保留业务指标推荐。
+本文档面向开发和维护人员，描述当前真实架构。推荐主线已经聚焦为业务指标推荐，不再包含旧维度分析、旧 Web enrichment、旧产品评分引擎。
 
 ## 总览
 
@@ -9,26 +9,37 @@ flowchart TB
     cli["uv run xft"] --> recommend["recommend 产品推荐"]
     cli --> diligence["diligence 企业尽调"]
     cli --> warehouse["warehouse build"]
-    cli --> web["web enrich/import"]
     cli --> scenario["scenario validate/inspect"]
-    cli --> calibrate["calibrate 批量校准"]
+    cli --> calibrate["calibrate 推荐校准"]
 
-    recommend --> wh["DuckDB company_profile"]
-    recommend --> dims["analysis_dimensions.yaml"]
-    recommend --> biz["business_modules.yaml"]
-    recommend --> evidence["evidence_policy.yaml"]
-    recommend --> webconf["web_search.yaml / web_extract_llm.yaml"]
+    recommend --> wh["DuckDB company_profile + 明细表"]
+    recommend --> bizroot["business_modules.yaml"]
+    recommend --> bizdir["business_modules.d/*.yaml"]
+    recommend --> webconf["web_search.yaml"]
 ```
+
+顶层 CLI 当前包含：
+
+```text
+recommend
+diligence
+calibrate
+warehouse
+scenario
+runs
+cache
+```
+
+已删除 `xft web` 和 `warehouse web-import`。
 
 ## 推荐流水线
 
-当前推荐图是 5 个节点：
+当前推荐图是 4 个节点：
 
 ```mermaid
 flowchart LR
-    gather["data_gather 读取画像"] --> analyze["dimension_analyze 维度分析"]
-    analyze --> webnode["web_evidence 合并 Web 证据"]
-    webnode --> business["business_recommend rule / llm / hybrid"]
+    gather["data_gather 读取画像与本地证据"] --> web["business_web_evidence 可选业务 Web"]
+    web --> business["business_recommend rule / llm / hybrid / llm_web"]
     business --> save["save 写结果"]
 ```
 
@@ -36,19 +47,22 @@ flowchart LR
 
 | 节点 | 职责 |
 | --- | --- |
-| `data_gather` | 从 DuckDB 读取企业画像 |
-| `dimension_analyze` | 根据 `analysis_dimensions.yaml` 生成维度证据 |
-| `web_evidence` | 读取已入库 Web 证据，合并到维度分析 |
-| `business_recommend` | 根据 `business_modules.yaml` 判断业务模块、标签、指标 |
+| `data_gather` | 从 DuckDB 读取 `company_profile`，并按指标 `data_sources` 加载本地证据 |
+| `business_web_evidence` | 仅在 `--with-business-web` 时，按指标 `web_search` policy 执行固定查询和可选自动查询 |
+| `business_recommend` | 根据业务模块、标签、指标配置生成推荐结果 |
 | `save` | 写入 `result.json`、`business_label_result.json`、`report.md` 等产物 |
 
-已删除：
+不再存在：
 
 ```text
-src/xft/pipeline/recommender/nodes/llm_match_node.py
-src/xft/pipeline/recommender/nodes/llm_recommend_node.py
-src/xft/pipeline/recommender/recommendation_normalizer.py
-src/xft/scoring/
+dimension_analyze
+web_evidence
+run_web_enrichment
+load_web_cache_to_duckdb
+EvidencePolicy
+analysis_dimensions.yaml
+web_extract_llm.yaml
+evidence_policy.yaml
 ```
 
 ## 数据流
@@ -58,26 +72,19 @@ flowchart TB
     raw["data/ Prophet JSON"] --> etl["warehouse build"]
     etl --> duck["cache/company_warehouse.duckdb"]
     duck --> profile["company_profile"]
-    profile --> dim["DimensionAnalysis"]
-    dim --> local["本地证据"]
-    dim --> infer["规则推断证据"]
-    webraw["data/web 原始/中间 Web 缓存"] --> webetl["web import"]
-    webetl --> duck
-    dim --> biz["BusinessRecommendationResult"]
+    duck --> details["recruitments / qualifications / branches 等明细表"]
+    profile --> local["business_evidence_loader"]
+    details --> local
+    local --> biz["business_recommend"]
+    webcfg["web_search.yaml"] --> web["business_web_evidence"]
+    modcfg["business_modules.d/*.yaml"] --> web
+    web --> biz
     biz --> result["result.json"]
     biz --> detail["business_label_result.json"]
-    dim --> trace["decision_trace.json"]
+    biz --> trace["decision_trace.json"]
 ```
 
-## 配置体系
-
-当前 `config/` 按业务入口分两层：
-
-```text
-config/
-  recommend/   推荐场景配置
-  diligence/   尽调流水线配置
-```
+## 推荐配置体系
 
 推荐主场景：
 
@@ -85,48 +92,72 @@ config/
 config/recommend/sales_recommendation/
   scenario.yaml
   business_modules.yaml
-  analysis_dimensions.yaml
-  evidence_policy.yaml
+  business_modules.d/
+    个税管理.yaml
+    假勤管理.yaml
+    对公报账.yaml
+    差旅报销.yaml
+    日常报销.yaml
+    进项发票.yaml
+    销项发票.yaml
   web_search.yaml
-  web_extract_llm.yaml
-  prompts/extract_evidence_system.md
 ```
 
 核心配置：
 
 | 文件 | 作用 |
 | --- | --- |
-| `scenario.yaml` | 场景入口，声明配置文件、输出目录、Web 缓存目录 |
-| `business_modules.yaml` | 业务推荐模块、标签、指标、rule/llm/hybrid 判断 |
-| `analysis_dimensions.yaml` | 企业维度分析、本地证据字段、Web 搜索词 |
-| `evidence_policy.yaml` | 证据优先级、Web 跳过、冲突处理 |
-| `web_search.yaml` | Web provider、抓取、缓存、屏蔽域名 |
-| `web_extract_llm.yaml` | Web 抽取 LLM 配置 |
+| `scenario.yaml` | 场景入口，声明业务模块配置、Web provider 配置和输出目录 |
+| `business_modules.yaml` | 全局评分、全局接受策略、`modules_dir` |
+| `business_modules.d/*.yaml` | 一个文件一个业务模块，动态发现 |
+| `web_search.yaml` | 业务指标级 Web 搜索 provider 配置 |
 
-旧配置已移除：
+`config/diligence/` 是独立的尽调配置包，只服务 `uv run xft diligence`，不参与推荐主线。
 
-```text
-products.yaml
-scoring_policy.yaml
-config/recommender/
-config/evidence_policy.yaml
+## 业务模块配置加载
+
+`business_modules.yaml` 可以继续兼容单文件 `modules`，但正式销售场景使用目录化模块：
+
+```yaml
+modules_dir: business_modules.d
 ```
 
-`config/diligence/` 是独立的尽调配置包：
+加载规则：
+
+- loader 先读取 `business_modules.yaml` 的全局配置。
+- 如果存在 `modules`，会先加载内联模块。
+- 如果存在 `modules_dir`，会按文件名排序加载目录下所有 `*.yaml`。
+- 每个模块文件可以是单个模块映射，也可以包含 `modules: [...]`。
+- `module_id` 必须全局唯一；同一模块下 `label_id`、同一标签下 `indicator_id` 必须唯一。
+
+这意味着增减模块只需要增删 `business_modules.d/*.yaml` 文件。
+
+## 业务 Web
+
+业务 Web 与旧 Web enrichment 不同：
+
+| 项 | 旧 Web enrichment | 当前业务 Web |
+| --- | --- | --- |
+| 入口 | `xft web enrich` / `--with-web` | `xft recommend --with-business-web` |
+| 粒度 | 维度分析 | 业务指标 |
+| 查询来源 | `analysis_dimensions.yaml` | 指标 `web_search.fixed_queries`，必要时由 LLM 生成少量补充查询 |
+| 抽取方式 | 独立 Web 抽取 LLM | 作为指标证据交给业务 evaluator |
+| 入库 | `web_evidence` DuckDB 表 | 运行目录 JSON/JSONL |
+
+`web_search.yaml` 只保留 provider 和每次查询结果数量等执行参数。是否搜索由指标自己的 `web_search.when/effect` 决定：
+
+- `llm_web`: Web-first，默认 `when: always`
+- `llm/hybrid`: 通常本地证据不足时补证，`when: insufficient`
+- `rule`: 通常规则未命中时补线索，`when: rule_not_matched`
+
+业务 Web 输出：
 
 ```text
-config/diligence/app.yaml
-config/diligence/dimensions/
-config/diligence/prompts/
+business_web_queries.jsonl
+business_web_results.jsonl
+business_web_trace.json
+business_indicator_evidence.json
 ```
-
-这套配置只服务 `uv run xft diligence --config config/diligence ...`，不参与当前产品推荐主线。各文件职责：
-
-| 文件/目录 | 作用 |
-| --- | --- |
-| `config/diligence/app.yaml` | 尽调流水线并发、抓取、输出和报告参数 |
-| `config/diligence/dimensions/` | 尽调维度定义、MiniMax/Metaso 查询词、结构化抽取字段 |
-| `config/diligence/prompts/` | 尽调摘要、字段抽取、合并报告和各维度提示词 |
 
 ## 产物
 
@@ -136,54 +167,31 @@ config/diligence/prompts/
 | --- | --- |
 | `result.json` | 最终业务交付结果 |
 | `business_label_result.json` | 全量业务模块、标签、指标结果 |
+| `business_indicator_evidence.json` | 指标证据 |
 | `profile.json` | 企业画像 |
-| `dimension_analysis.json` | 维度证据分析 |
-| `decision_trace.json` | Web、业务规则、LLM 决策过程 |
+| `decision_trace.json` | 规则、LLM、业务 Web 决策过程 |
 | `llm_calls.jsonl` | LLM 调用明细 |
 | `llm_metrics.json` | LLM 统计 |
+| `scenario_resolved.json` | 场景解析结果 |
 | `config_manifest.json` | 配置审计清单 |
 | `report.md` | 人类可读报告 |
 
 不再生成：
 
 ```text
+dimension_analysis.json
 match_results.json
 internal_result.json
 ```
 
-## Web 子系统
-
-Web 子系统仍然支持独立准备数据、入库和在推荐时自动补证。
-
-```mermaid
-flowchart LR
-    plan["Web plan"] --> search["provider search"]
-    search --> cache["原始结果缓存 data/web"]
-    cache --> fetch["crawl/fetch 页面"]
-    fetch --> extract["LLM 抽取证据"]
-    extract --> jsonl["web_evidence.jsonl"]
-    jsonl --> duck["DuckDB web_evidence"]
-    duck --> recommend["recommend --with-web-evidence"]
-```
-
-推荐时：
-
-- `--with-web-evidence`：只复用已有 DuckDB Web 证据。
-- `--with-web`：缺少缓存时搜索、抓取、抽取并入库。
-- `--refresh-web`：忽略已有缓存重新抓取。
-
-## 尽调流水线
-
-`xft diligence` 仍保留为企业尽调场景，不属于当前推荐主线。当前策略是保持 dry-run 和既有测试稳定，不把新增推荐能力继续塞回尽调链。
-
 ## 质量门禁
 
-推荐重构后基础门禁：
+基础门禁：
 
 ```bash
-uv run ruff check src tests
+uv run ruff check src tests scripts
 uv run mypy src
-uv run pytest -q
+uv run pytest
 uv run xft scenario validate config/recommend/sales_recommendation
 uv run xft recommend --no-llm --scenario config/recommend/sales_recommendation "企业名称"
 ```

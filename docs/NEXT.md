@@ -1,27 +1,23 @@
 # NEXT.md
 
-本文档记录当前优先级。项目已经完成旧推荐链删除，下一步集中打磨 `business_modules.yaml` 驱动的 `rule / llm / hybrid` 推荐体系。
+本文档记录当前优先级。项目已经完成推荐主链路聚焦：旧维度分析、旧 Web enrichment、旧 evidence policy 和旧产品评分链路均已移除。下一步集中打磨业务模块配置质量。
 
 ## 当前状态
 
 推荐主线：
 
 ```text
-data_gather -> dimension_analyze -> web_evidence -> business_recommend -> save
+data_gather -> business_web_evidence -> business_recommend -> save
 ```
 
-已删除：
+当前核心配置：
 
 ```text
-llm_match_node.py
-llm_recommend_node.py
-recommendation_normalizer.py
-src/xft/scoring/
-products.yaml
-scoring_policy.yaml
-config/recommender/
-match_results.json
-internal_result.json
+config/recommend/sales_recommendation/
+  scenario.yaml
+  business_modules.yaml
+  business_modules.d/*.yaml
+  web_search.yaml
 ```
 
 当前核心产物：
@@ -29,20 +25,28 @@ internal_result.json
 ```text
 result.json
 business_label_result.json
+business_indicator_evidence.json
 profile.json
-dimension_analysis.json
 decision_trace.json
 llm_calls.jsonl
 llm_metrics.json
+scenario_resolved.json
 config_manifest.json
 report.md
 ```
 
-当前配置目录已经拆分为：
+已删除：
 
 ```text
-config/recommend/   推荐场景配置
-config/diligence/   尽调流水线配置
+analysis_dimensions.yaml
+evidence_policy.yaml
+web_extract_llm.yaml
+dimension_analysis.json
+web_evidence.jsonl
+match_results.json
+internal_result.json
+xft web
+warehouse web-import
 ```
 
 ## 当前优先级
@@ -54,15 +58,15 @@ config/diligence/   尽调流水线配置
 ```bash
 uv run xft scenario validate config/recommend/sales_recommendation
 uv run xft recommend --no-llm --scenario config/recommend/sales_recommendation "企业名称"
-uv run xft recommend --with-web-evidence --scenario config/recommend/sales_recommendation "企业名称"
+uv run xft recommend --with-business-web --scenario config/recommend/sales_recommendation "企业名称"
 ```
 
 关注点：
 
 - `result.json` 是唯一最终业务结果。
 - `business_label_result.json` 能解释每个模块、标签、指标。
-- `decision_trace.json` 能解释 rule、llm、hybrid 的判断过程。
-- 不再出现旧产物 `internal_result.json`、`match_results.json`。
+- `business_indicator_evidence.json` 能解释每个指标用了哪些本地或 Web 证据。
+- 不再出现旧产物 `dimension_analysis.json`、`internal_result.json`、`match_results.json`。
 
 ### 2. 业务配置调优
 
@@ -70,14 +74,12 @@ uv run xft recommend --with-web-evidence --scenario config/recommend/sales_recom
 
 | 想调什么 | 文件 |
 | --- | --- |
-| 模块、标签、指标、分数、话术 | `business_modules.yaml` |
-| 本地证据字段、维度、Web 搜索词 | `analysis_dimensions.yaml` |
-| 本地证据足够时是否跳过 Web | `evidence_policy.yaml` |
-| Web provider、抓取、缓存策略 | `web_search.yaml` |
-| Web 抽取模型 | `web_extract_llm.yaml` |
-| Web 抽取提示词 | `prompts/extract_evidence_system.md` |
+| 全局分数、全局接受策略、模块目录 | `business_modules.yaml` |
+| 单个产品模块的标签、指标、话术、规则 | `business_modules.d/<模块名>.yaml` |
+| 业务 Web provider 和每次查询结果数量 | `web_search.yaml` |
+| 场景输出目录和业务 Web 缓存目录 | `scenario.yaml` |
 
-下一步建议准备 5-10 家人工标注样本，跑：
+建议准备 5-10 家人工标注样本，跑：
 
 ```bash
 uv run xft calibrate \
@@ -87,34 +89,32 @@ uv run xft calibrate \
   --limit 10
 ```
 
-### 3. Web 证据质量抽查
+根据错配案例调整 `business_modules.d/*.yaml`。
 
-目标：确认 Web 补证真正提升推荐质量，而不是引入噪声。
+### 3. 业务 Web 证据质量抽查
 
-建议：
-
-1. 选 2-3 家企业运行 `--with-web --llm-debug`。
-2. 人工检查 `dimension_analysis.json` 的 `web_evidence`。
-3. 检查 `decision_trace.json` 中 Web plan 是否合理。
-4. 根据噪声调整：
-   - `analysis_dimensions.yaml` 搜索词
-   - `web_search.yaml` blocked domains
-   - `web_extract_llm.yaml`
-   - `prompts/extract_evidence_system.md`
-
-### 4. 第二真实场景
-
-`bank_marketing` 当前仍是继承示例，不是真实银行营销验收场景。
+目标：确认指标级 `web_search` policy 能带来有效证据，而不是引入噪声。
 
 建议：
 
-1. 复制或继承 `sales_recommendation`。
-2. 业务人员独立维护一份银行营销版 `business_modules.yaml`。
-3. 用相同企业分别跑两个场景，对比 `result.json` 差异。
+1. 选 2-3 家企业运行 `--with-business-web --llm-debug`。
+2. 人工检查 `business_web_trace.json` 和 `business_indicator_evidence.json`。
+3. 根据噪声调整对应指标的 `web_search.when/effect/fixed_queries/auto`。
+4. 必要时调整 `web_search.yaml` 的 provider 或 `max_results_per_query`。
+
+### 4. 第二真实业务场景
+
+当前仓库只保留 `sales_recommendation` 正式场景。新增场景建议：
+
+1. 复制 `config/recommend/sales_recommendation/`。
+2. 保留 `scenario.yaml`、`business_modules.yaml`、`web_search.yaml` 结构。
+3. 为新场景维护独立 `business_modules.d/*.yaml`。
+4. 用同一批企业对比不同场景的 `result.json`。
 
 ## 近期不做
 
 - 不恢复旧产品评分引擎。
-- 不恢复 `products.yaml` 和 `scoring_policy.yaml`。
-- 不继续扩展旧尽调链路，只保证 `xft diligence` 入口和 `config/diligence/` 可用。
-- 不增加新的抽象框架，先保证推荐质量和配置可读性。
+- 不恢复 `analysis_dimensions.yaml`、`evidence_policy.yaml`、`web_extract_llm.yaml`。
+- 不恢复 `xft web` 或旧 Web enrichment。
+- 不继续把推荐能力塞回尽调链路；`xft diligence` 保持独立。
+- 不增加新的抽象框架，先保证推荐准确性和配置可读性。
