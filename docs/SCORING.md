@@ -297,8 +297,8 @@ acceptance_policy:
 ## 验证
 
 ```bash
-uv run xft scenario validate config/recommend/sales_recommendation
-uv run xft recommend --no-llm --scenario config/recommend/sales_recommendation "企业名称"
-uv run xft recommend --llm-debug --scenario config/recommend/sales_recommendation "企业名称"
-uv run xft recommend --with-web --scenario config/recommend/sales_recommendation "企业名称"
+uv run xft scenario validate config/recommender/xft
+uv run xft recommend --no-llm --scenario config/recommender/xft "企业名称"
+uv run xft recommend --llm-debug --scenario config/recommender/xft "企业名称"
+uv run xft recommend --with-web --scenario config/recommender/xft "企业名称"
 ```

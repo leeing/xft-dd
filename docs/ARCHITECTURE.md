@@ -87,7 +87,7 @@ flowchart TB
 推荐主场景：
 
 ```text
-config/recommend/sales_recommendation/
+config/recommender/xft/
   scenario.yaml
   modules.yaml
   modules.d/
@@ -188,6 +188,6 @@ internal_result.json
 uv run ruff check src tests scripts
 uv run mypy src
 uv run pytest
-uv run xft scenario validate config/recommend/sales_recommendation
-uv run xft recommend --no-llm --scenario config/recommend/sales_recommendation "企业名称"
+uv run xft scenario validate config/recommender/xft
+uv run xft recommend --no-llm --scenario config/recommender/xft "企业名称"
 ```

@@ -21,7 +21,7 @@ def main() -> None:
     parser.add_argument(
         "-o",
         "--output",
-        default="config/recommend/sales_recommendation/business_modules.generated.yaml",
+        default="config/recommender/xft/business_modules.generated.yaml",
         help="Draft YAML output path",
     )
     parser.add_argument("--sheet", default="最新版（0204-全）", help="Worksheet name")

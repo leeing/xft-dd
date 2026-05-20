@@ -41,7 +41,7 @@ data_gather -> web_evidence -> recommend -> save
 
 ```bash
 uv run xft calibrate \
-  --scenario config/recommend/sales_recommendation \
+  --scenario config/recommender/xft \
   --company-list company.txt \
   --labels calibration_labels.csv \
   --limit 10

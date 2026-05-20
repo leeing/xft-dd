@@ -21,7 +21,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--scenario", default=DEFAULT_SCENARIO)
     parser.add_argument("--company-list", help="text file with one company name per line")
     parser.add_argument("--batch-id")
-    parser.add_argument("--batch-output", default="recommendation_runs/calibration")
+    parser.add_argument("--batch-output", default="outputs/recommender/xft/batches")
     parser.add_argument("--limit", type=int, default=10)
     parser.add_argument("--labels", help="CSV file with business expected/acceptable modules")
     parser.add_argument("--with-llm", action="store_true")

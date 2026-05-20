@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import structlog
 from langgraph.graph import END, START, StateGraph
@@ -42,9 +43,12 @@ def _get_graph() -> Any:
     return _cache["graph"]
 
 
+TZ = ZoneInfo("Asia/Shanghai")
+
+
 def make_recommendation_run_id(company_name: str) -> str:
     safe = "".join(ch if ch.isalnum() else "_" for ch in company_name)[:40].strip("_") or "company"
-    return f"rec_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}_{safe}"
+    return f"{datetime.now(TZ).strftime('%Y%m%d_%H%M%S')}_{safe}"
 
 
 async def run_recommendation(  # noqa: PLR0913
@@ -71,7 +75,7 @@ async def run_recommendation(  # noqa: PLR0913
     modules_path = scenario.modules_path
     prompt_paths = scenario.prompt_paths
     modules_config = load_recommendation_config(modules_path)
-    root = output_dir or scenario.output_dir or "recommendation_runs"
+    root = output_dir or scenario.output_dir or "outputs/recommender/xft"
     rid = run_id or make_recommendation_run_id(company_name)
     out_dir = Path(root) / rid
     scenario_out = out_dir / "scenario_resolved.json"

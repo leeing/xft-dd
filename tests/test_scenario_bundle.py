@@ -12,7 +12,7 @@ from xft.web.config_loader import load_web_search_config
 from xft.warehouse.prophet_loader import load_prophet_data
 
 
-SCENARIO_DIR = Path("config/recommend/sales_recommendation")
+SCENARIO_DIR = Path("config/recommender/xft")
 
 
 def _write_json(path: Path, value: object) -> None:
@@ -65,7 +65,7 @@ def test_load_scenario_resolves_bundle_paths() -> None:
     assert scenario is not None
     assert scenario.config.id == "sales_recommendation"
     assert scenario.modules_path is not None
-    assert scenario.modules_path.endswith("config/recommend/sales_recommendation/modules.yaml")
+    assert scenario.modules_path.endswith("config/recommender/xft/modules.yaml")
 
 
 def test_scenario_extends_and_writes_resolved_config(tmp_path: Path) -> None:
@@ -117,7 +117,7 @@ def test_config_loaders_accept_scenario_directory() -> None:
     web_config = load_web_search_config(SCENARIO_DIR)
     business = load_recommendation_config(SCENARIO_DIR)
 
-    assert web_config.cache_root.endswith("data/web/sales_recommendation")
+    assert web_config.cache_root.endswith("data/web/recommender/xft")
     assert len(business.modules) == 7
 
 

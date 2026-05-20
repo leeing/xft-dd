@@ -182,7 +182,7 @@ def _write_web_config(tmp_path: Path) -> Path:
 
 
 async def test_recommendation_no_llm_generates_result_json_shape() -> None:
-    config = load_recommendation_config("config/recommend/sales_recommendation")
+    config = load_recommendation_config("config/recommender/xft")
     assert config is not None
 
     profile = {
@@ -224,7 +224,7 @@ async def test_recommendation_no_llm_generates_result_json_shape() -> None:
 
 
 def test_modules_config_loader_accepts_scenario_bundle() -> None:
-    config = load_recommendation_config("config/recommend/sales_recommendation")
+    config = load_recommendation_config("config/recommender/xft")
 
     assert config is not None
     assert config.modules_dir == "modules.d"
@@ -1482,7 +1482,7 @@ async def test_run_recommendation_business_first_ignores_dimension_outputs(tmp_p
     (scenario_dir / "scenario.yaml").write_text(
         yaml.safe_dump(
             {
-                "extends": str(Path("config/recommend/sales_recommendation/scenario.yaml").resolve()),
+                "extends": str(Path("config/recommender/xft/scenario.yaml").resolve()),
                 "id": "test",
                 "name": "test",
                 "modules_config": "modules.yaml",

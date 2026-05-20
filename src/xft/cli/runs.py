@@ -15,8 +15,8 @@ from xft.utils.file_io import read_json
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="xft runs", description="inspect XFT run outputs")
     subparsers = parser.add_subparsers(dest="command")
-    inspect_parser = subparsers.add_parser("inspect", help="inspect recommendation_runs output directories")
-    inspect_parser.add_argument("--runs-dir", default="recommendation_runs")
+    inspect_parser = subparsers.add_parser("inspect", help="inspect recommendation run output directories")
+    inspect_parser.add_argument("--runs-dir", default="outputs/recommender/xft")
     inspect_parser.add_argument("--output", help="optional CSV output path")
     return parser
 
@@ -96,7 +96,7 @@ def _inspect(args: argparse.Namespace) -> int:
         sys.stderr.write(f"runs dir not found: {runs_dir}\n")
         return 1
     rows = [
-        _summarize_run(path) for path in sorted(runs_dir.iterdir()) if path.is_dir() and path.name.startswith("rec_")
+        _summarize_run(path) for path in sorted(runs_dir.iterdir()) if path.is_dir() and (path / "result.json").exists()
     ]
     _print_summary(rows)
     if args.output:

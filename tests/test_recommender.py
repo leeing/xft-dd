@@ -62,7 +62,7 @@ async def test_run_recommendation_business_first_without_llm(monkeypatch: pytest
     result = await run_recommendation(
         company_name="广东德美精细化工集团股份有限公司",
         warehouse_db=str(warehouse),
-        scenario_path="config/recommend/sales_recommendation",
+        scenario_path="config/recommender/xft",
         output_dir=str(tmp_path / "runs"),
         run_id="test-run",
         use_llm=False,

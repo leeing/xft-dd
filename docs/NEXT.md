@@ -15,7 +15,7 @@ data_gather -> web_evidence -> recommend -> save
 当前核心配置：
 
 ```text
-config/recommend/sales_recommendation/
+config/recommender/xft/
   scenario.yaml
   modules.yaml
   modules.d/*.yaml
@@ -58,9 +58,9 @@ warehouse web-import
 必须稳定：
 
 ```bash
-uv run xft scenario validate config/recommend/sales_recommendation
-uv run xft recommend --no-llm --scenario config/recommend/sales_recommendation "企业名称"
-uv run xft recommend --with-web --scenario config/recommend/sales_recommendation "企业名称"
+uv run xft scenario validate config/recommender/xft
+uv run xft recommend --no-llm --scenario config/recommender/xft "企业名称"
+uv run xft recommend --with-web --scenario config/recommender/xft "企业名称"
 ```
 
 关注点：
@@ -85,7 +85,7 @@ uv run xft recommend --with-web --scenario config/recommend/sales_recommendation
 
 ```bash
 uv run xft calibrate \
-  --scenario config/recommend/sales_recommendation \
+  --scenario config/recommender/xft \
   --company-list company.txt \
   --labels calibration_labels.csv \
   --limit 10
@@ -114,7 +114,7 @@ uv run xft calibrate \
 
 当前仓库只保留 `sales_recommendation` 正式场景。新增场景建议：
 
-1. 复制 `config/recommend/sales_recommendation/`。
+1. 复制 `config/recommender/xft/`。
 2. 保留 `scenario.yaml`、`modules.yaml`、`web_search.yaml` 结构。
 3. 为新场景维护独立 `modules.d/*.yaml`。
 4. 用同一批企业对比不同场景的 `result.json`。

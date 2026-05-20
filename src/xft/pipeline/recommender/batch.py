@@ -6,10 +6,11 @@ import csv
 import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from time import perf_counter
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, Field
 
@@ -24,7 +25,9 @@ from xft.runtime.artifacts import (
 )
 from xft.utils.file_io import read_json, write_json
 
-DEFAULT_BATCH_OUTPUT = "recommendation_runs/batches"
+DEFAULT_BATCH_OUTPUT = "outputs/recommender/xft/batches"
+
+TZ = ZoneInfo("Asia/Shanghai")
 SUMMARY_FIELDS = [
     "company_name",
     "status",
@@ -128,7 +131,7 @@ __all__ = [
 
 def make_batch_id() -> str:
     """Return a stable human-readable batch id."""
-    return datetime.now(UTC).strftime("batch_%Y%m%d_%H%M%S")
+    return datetime.now(TZ).strftime("batch_%Y%m%d_%H%M%S")
 
 
 async def run_recommendation_batch(  # noqa: PLR0913
@@ -151,7 +154,7 @@ async def run_recommendation_batch(  # noqa: PLR0913
     runs_root = batch_dir / "runs"
     batch_dir.mkdir(parents=True, exist_ok=True)
     runs_root.mkdir(parents=True, exist_ok=True)
-    started_at = datetime.now(UTC)
+    started_at = datetime.now(TZ)
     manifest = BatchManifest(
         batch_id=bid,
         company_count=len(selected),
@@ -198,7 +201,7 @@ async def run_recommendation_batch(  # noqa: PLR0913
         rows.append(row)
 
     status = batch_status(rows)
-    manifest = manifest.model_copy(update={"finished_at": datetime.now(UTC), "status": status})
+    manifest = manifest.model_copy(update={"finished_at": datetime.now(TZ), "status": status})
     write_json(batch_dir / "batch_manifest.json", manifest.model_dump(mode="json"))
     summary_json, summary_csv = write_batch_summary(batch_dir, rows)
     failed_path = write_failed_companies(batch_dir, rows)

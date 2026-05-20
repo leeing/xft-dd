@@ -41,7 +41,7 @@ uv run xft warehouse build --input data --output cache/company_warehouse.duckdb
 ### 3. 验证推荐场景配置
 
 ```bash
-uv run xft scenario validate config/recommend/sales_recommendation
+uv run xft scenario validate config/recommender/xft
 ```
 
 正常会看到类似：
@@ -50,7 +50,7 @@ uv run xft scenario validate config/recommend/sales_recommendation
 {
   "scenario_id": "sales_recommendation",
   "scenario_name": "销售产品推荐",
-  "root": "config/recommend/sales_recommendation",
+  "root": "config/recommender/xft",
   "web_enabled": true,
   "modules": 7
 }
@@ -58,7 +58,7 @@ uv run xft scenario validate config/recommend/sales_recommendation
 
 ### 4. 离线跑推荐
 
-`--scenario` 默认为 `config/recommend/sales_recommendation`，日常可省略：
+`--scenario` 默认为 `config/recommender/xft`，日常可省略：
 
 ```bash
 uv run xft recommend --no-llm "企业名称"
@@ -94,7 +94,7 @@ uv run xft recommend --with-web --web-provider minimax_search "企业名称"
 
 ## 输出文件
 
-每次运行会写入 `recommendation_runs/sales_recommendation/<run_id>/`：
+每次运行会写入 `outputs/recommender/xft/<run_id>/`：
 
 | 文件 | 用途 |
 | --- | --- |
@@ -117,7 +117,7 @@ uv run xft recommend --with-web --web-provider minimax_search "企业名称"
 推荐主场景目录：
 
 ```text
-config/recommend/sales_recommendation/
+config/recommender/xft/
   scenario.yaml
   modules.yaml
   modules.d/
@@ -144,8 +144,8 @@ description: 面向企业软件销售线索的产品模块推荐场景
 web_search_config: web_search.yaml
 modules_config: modules.yaml
 
-output_dir: ../../../recommendation_runs/sales_recommendation
-web_cache_root: ../../../data/web/sales_recommendation
+output_dir: ../../../outputs/recommender/xft
+web_cache_root: ../../../data/web/recommender/xft
 ```
 
 ### `modules.yaml`
@@ -313,7 +313,7 @@ execution:
   max_results_per_query: 5
 ```
 
-场景里的 `web_cache_root` 会覆盖 `cache_root`，销售推荐默认写到 `data/web/sales_recommendation`。
+场景里的 `web_cache_root` 会覆盖 `cache_root`，销售推荐默认写到 `data/web/recommender/xft`。
 
 ## LLM 调试
 
@@ -391,7 +391,7 @@ docker run --rm xft-dd uv run xft --help
 docker run --rm \
   -v "$PWD/data:/app/data" \
   -v "$PWD/cache:/app/cache" \
-  -v "$PWD/recommendation_runs:/app/recommendation_runs" \
+  -v "$PWD/outputs/recommender/xft:/app/outputs/recommender/xft" \
   xft-dd uv run xft recommend --no-llm "企业名称"
 ```
 
