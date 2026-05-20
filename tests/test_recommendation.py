@@ -1654,6 +1654,18 @@ async def test_run_recommendation_business_first_ignores_dimension_outputs(tmp_p
                                         "evaluator": "rule",
                                         "standard": "制造业",
                                         "rule": {"source_field": "industry", "op": "contains", "value": "制造"},
+                                        "web_search": {
+                                            "when": "rule_not_matched",
+                                            "effect": "possible_on_evidence",
+                                            "fixed_queries": ["{company_name} 制造业"],
+                                        },
+                                    },
+                                    {
+                                        "indicator_id": "unused",
+                                        "indicator_name": "不参与调试的指标",
+                                        "evaluator": "rule",
+                                        "standard": "存在行业",
+                                        "rule": {"source_field": "industry", "op": "exists"},
                                     }
                                 ],
                             }
@@ -1694,13 +1706,29 @@ async def test_run_recommendation_business_first_ignores_dimension_outputs(tmp_p
         run_id="business-first",
         use_llm=False,
         module_ids=["attendance"],
+        indicator_ids=["industry"],
     )
 
     output_dir = Path(result.output_dir)
     payload = json.loads((output_dir / "result.json").read_text(encoding="utf-8"))
+    label_payload = json.loads((output_dir / "label_result.json").read_text(encoding="utf-8"))
     manifest = json.loads((output_dir / "config_manifest.json").read_text(encoding="utf-8"))
     assert payload["Module"] == "假勤管理"
     assert manifest["mode"]["module_ids"] == ["attendance"]
+    assert manifest["mode"]["indicator_ids"] == ["industry"]
+    assert [item["indicator_id"] for item in label_payload["indicator_results"]] == ["industry"]
+    assert result.log_path == str(output_dir / "logs" / "business-first.log")
+    log_text = Path(result.log_path).read_text(encoding="utf-8")
+    assert "# 推荐运行日志：广东泰琪丰电子有限公司" in log_text
+    assert "## 企业画像摘要" in log_text
+    assert "## 调优建议摘要" in log_text
+    assert "## 模块：假勤管理 (attendance)" in log_text
+    assert "#### 指标：行业 (industry)" in log_text
+    assert "- Rule 决策点:" in log_text
+    assert "字段: industry" in log_text
+    assert "实际: 制造业" in log_text
+    assert "Web 执行: skipped; reason=web_disabled" in log_text
+    assert "## 最终推荐" in log_text
     assert not (output_dir / "dimension_analysis.json").exists()
     report = (output_dir / "report.md").read_text(encoding="utf-8")
     assert "业务推荐结果" in report
@@ -1762,9 +1790,12 @@ async def test_run_recommendation_unknown_module_returns_clear_failure(tmp_path:
         run_id="bad-module",
         use_llm=False,
         module_ids=["missing"],
+        indicator_ids=["industry"],
     )
 
     assert result.status == "failed"
+    assert result.log_path == str(tmp_path / "runs" / "bad-module" / "logs" / "bad-module.log")
+    assert Path(result.log_path).exists()
     assert result.error is not None
     assert "unknown module_id: missing" in result.error
     assert "available module_ids: attendance" in result.error

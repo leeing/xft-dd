@@ -312,4 +312,5 @@ class RecommendationRunResult(BaseModel):
     output_dir: str
     report_path: str | None = None
     result_path: str | None = None
+    log_path: str | None = None
     error: str | None = None

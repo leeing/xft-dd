@@ -38,6 +38,7 @@ uv run xft recommend --no-llm \
 ```text
 result.json
 report.md
+logs/<run_id>.log
 label_result.json
 indicator_evidence.json
 profile.json
@@ -59,6 +60,20 @@ MarketingPoint
 Conclusion
 ```
 
+`logs/<run_id>.log` 应包含：
+
+```text
+## 企业画像摘要
+## 推荐配置
+## 调优建议摘要
+## 最终推荐
+## 模块：
+#### 指标：
+Rule 决策点
+Web policy
+LLM 执行
+```
+
 只验收单个模块时加 `--module`：
 
 ```bash
@@ -66,6 +81,28 @@ uv run xft recommend --no-llm \
   --scenario config/recommender/xft \
   --module 个税管理 \
   "企业名称"
+```
+
+只验收单个指标时再加 `--indicator`：
+
+```bash
+uv run xft recommend --no-llm \
+  --scenario config/recommender/xft \
+  --module 个税管理 \
+  --indicator 个税相关招聘 \
+  "企业名称"
+```
+
+## 2.1 配置审计
+
+```bash
+uv run xft scenario audit config/recommender/xft
+```
+
+预期包含模块概览、evaluator 分布和配置告警。需要机器可读结果时使用：
+
+```bash
+uv run xft scenario audit config/recommender/xft --json
 ```
 
 预期：

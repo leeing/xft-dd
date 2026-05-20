@@ -36,7 +36,7 @@ flowchart LR
 | --- | --- | --- |
 | `data_gather` | `nodes/data_gather_node.py` | 从 DuckDB 读取 `company_profile`，并根据指标 `data_sources` 加载本地证据 |
 | `recommend` | `nodes/recommend_node.py` | 调用 evaluator 生成模块/标签/指标结果；开启 Web 时创建 lazy resolver，指标需要补证时才搜索 |
-| `save` | `nodes/save_node.py` | 写入 `result.json`、`label_result.json`、`indicator_evidence.json`、`report.md` 等产物 |
+| `save` | `nodes/save_node.py` | 写入 `result.json`、`label_result.json`、`indicator_evidence.json`、`report.md`、`logs/<run_id>.log` 等产物 |
 
 公开入口：
 
@@ -50,7 +50,9 @@ CLI 入口：
 src/xft/cli/recommend.py
 ```
 
-`xft recommend --module <module_id>` 会在配置加载后、进入 graph 前过滤 `modules_config.modules`。这个参数可重复传入，用于调试单个或少量模块；过滤条件写入 `config_manifest.json` 的 `mode.module_ids`。
+`xft recommend --module <module_id>` 和 `--indicator <indicator_id>` 会在配置加载后、进入 graph 前过滤 `modules_config.modules`。两个参数都可重复传入，用于调试单个或少量模块/指标；过滤条件写入 `config_manifest.json` 的 `mode.module_ids` 和 `mode.indicator_ids`。
+
+`xft scenario audit <scenario>` 会审计模块配置，输出 evaluator 分布、模块概览和常见配置告警，例如泛查询词、`text_contains` 缺关键词、LLM 指标缺少证据来源等。
 
 ## 数据流
 
@@ -187,6 +189,7 @@ outputs/recommender/xft/<run_id>/
 | --- | --- |
 | `result.json` | 最终业务交付 JSON |
 | `report.md` | 人类可读报告 |
+| `logs/<run_id>.log` | 人类可读调试日志，面向模块/指标调优 |
 | `label_result.json` | 模块、标签、指标完整结果 |
 | `indicator_evidence.json` | 本地证据和 Web 证据 |
 | `profile.json` | 本次读取的企业画像 |

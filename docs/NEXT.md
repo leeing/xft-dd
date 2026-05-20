@@ -104,6 +104,7 @@ uv run xft calibrate \
 
 ```bash
 uv run xft scenario validate config/recommender/xft
+uv run xft scenario audit config/recommender/xft
 uv run xft recommend --no-llm --module 日常报销 --scenario config/recommender/xft "企业名称"
 uv run xft recommend --with-web --llm-debug --module 日常报销 --scenario config/recommender/xft "企业名称"
 ```

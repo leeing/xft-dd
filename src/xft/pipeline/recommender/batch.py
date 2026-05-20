@@ -35,6 +35,7 @@ SUMMARY_FIELDS = [
     "output_dir",
     "report_path",
     "result_path",
+    "log_path",
     "scenario",
     "scenario_name",
     "top_module_id",
@@ -91,6 +92,7 @@ class BatchOptions:
     refresh_web: bool = False
     web_providers: list[str] | None = None
     module_ids: list[str] | None = None
+    indicator_ids: list[str] | None = None
     llm_debug: bool = False
     llm_concurrency: int = 4
     continue_on_error: bool = True
@@ -190,6 +192,7 @@ async def run_recommendation_batch(  # noqa: PLR0913
                 refresh_web=options.refresh_web,
                 web_providers=options.web_providers,
                 module_ids=options.module_ids,
+                indicator_ids=options.indicator_ids,
                 llm_debug=options.llm_debug,
                 llm_concurrency=options.llm_concurrency,
             )
@@ -257,6 +260,7 @@ def summarize_run(result: RecommendationRunResult) -> dict[str, Any]:
             "output_dir": result.output_dir,
             "report_path": result.report_path or "",
             "result_path": result.result_path or "",
+            "log_path": result.log_path or "",
             "scenario": "",
             "scenario_name": "",
             "top_module_id": selected_module.get("module_id", ""),
@@ -308,6 +312,9 @@ def _summarize_existing(*, company_name: str, run_id: str, result_path: Path) ->
             output_dir=str(output_dir),
             report_path=str(output_dir / "report.md") if (output_dir / "report.md").exists() else None,
             result_path=str(result_path),
+            log_path=str(output_dir / "logs" / f"{run_id}.log")
+            if (output_dir / "logs" / f"{run_id}.log").exists()
+            else None,
         )
     )
     row["status"] = "skipped"
@@ -389,6 +396,7 @@ def _failed_row(company_name: str, run_id: str, output_dir: str, error: str) -> 
             "output_dir": output_dir,
             "report_path": "",
             "result_path": "",
+            "log_path": "",
             "scenario": "",
             "scenario_name": "",
             "top_module_id": "",
@@ -429,6 +437,7 @@ def _options_payload(options: BatchOptions, *, limit: int | None, skip_existing:
         "refresh_web": options.refresh_web,
         "web_providers": options.web_providers,
         "module_ids": options.module_ids,
+        "indicator_ids": options.indicator_ids,
         "llm_debug": options.llm_debug,
         "llm_concurrency": options.llm_concurrency,
         "continue_on_error": options.continue_on_error,

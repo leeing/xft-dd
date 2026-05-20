@@ -17,6 +17,7 @@ from xft.pipeline.recommender.models import RecommendationConfig, Recommendation
 from xft.pipeline.recommender.nodes.data_gather_node import data_gather_node
 from xft.pipeline.recommender.nodes.recommend_node import recommend_node
 from xft.pipeline.recommender.nodes.save_node import save_node
+from xft.pipeline.recommender.run_log import write_failure_log
 from xft.pipeline.recommender.state import RecommenderState
 from xft.progress import display
 from xft.runtime.config_manifest import ConfigManifest, file_ref, model_hash, write_config_manifest
@@ -61,6 +62,7 @@ async def run_recommendation(  # noqa: PLR0913
     refresh_web: bool = False,
     web_providers: list[str] | None = None,
     module_ids: list[str] | None = None,
+    indicator_ids: list[str] | None = None,
     llm_debug: bool = False,
     llm_concurrency: int = 4,
 ) -> RecommendationRunResult:
@@ -76,13 +78,25 @@ async def run_recommendation(  # noqa: PLR0913
     root = output_dir or scenario.output_dir or "outputs/recommender/xft"
     rid = run_id or make_recommendation_run_id(company_name)
     try:
-        modules_config = _filter_modules_config(modules_config, module_ids)
+        modules_config = _filter_modules_config(modules_config, module_ids, indicator_ids)
     except ValueError as exc:
+        log_path = write_failure_log(
+            out_dir=Path(root) / rid,
+            company_name=company_name,
+            run_id=rid,
+            error=str(exc),
+            context={
+                "scenario": scenario.config.id,
+                "requested_module_ids": module_ids or [],
+                "requested_indicator_ids": indicator_ids or [],
+            },
+        )
         return RecommendationRunResult(
             company_name=company_name,
             status="failed",
             run_id=rid,
             output_dir=str(Path(root) / rid),
+            log_path=str(log_path),
             error=str(exc),
         )
     out_dir = Path(root) / rid
@@ -104,6 +118,7 @@ async def run_recommendation(  # noqa: PLR0913
         with_web=with_web,
         refresh_web=refresh_web,
         module_ids=module_ids,
+        indicator_ids=indicator_ids,
         llm_debug=llm_debug,
         llm_concurrency=llm_concurrency,
     )
@@ -136,15 +151,29 @@ async def run_recommendation(  # noqa: PLR0913
         "output_dir": "",
         "report_path": "",
         "result_path": "",
+        "log_path": "",
     }
     try:
         final = await _get_graph().ainvoke(initial)
     except (OSError, RuntimeError, ValueError, TypeError, KeyError) as exc:
+        log_path = write_failure_log(
+            out_dir=Path(root) / rid,
+            company_name=company_name,
+            run_id=rid,
+            error=str(exc),
+            context={
+                "scenario": scenario.config.id,
+                "warehouse_db": warehouse_db,
+                "with_web": with_web,
+                "use_llm": use_llm,
+            },
+        )
         return RecommendationRunResult(
             company_name=company_name,
             status="failed",
             run_id=rid,
             output_dir=str(Path(root) / rid),
+            log_path=str(log_path),
             error=str(exc),
         )
     status: str = "failed" if final.get("errors") else "partial" if final.get("needs_web_enrichment") else "success"
@@ -156,6 +185,7 @@ async def run_recommendation(  # noqa: PLR0913
         output_dir=final.get("output_dir") or str(Path(root) / rid),
         report_path=final.get("report_path"),
         result_path=final.get("result_path"),
+        log_path=final.get("log_path"),
         error="; ".join(final.get("errors", [])) or None,
     )
 
@@ -176,6 +206,7 @@ def _write_config_manifest(  # noqa: PLR0913
     with_web: bool,
     refresh_web: bool,
     module_ids: list[str] | None,
+    indicator_ids: list[str] | None,
     llm_debug: bool,
     llm_concurrency: int,
 ) -> Path:
@@ -202,6 +233,7 @@ def _write_config_manifest(  # noqa: PLR0913
             "with_web": with_web,
             "refresh_web": refresh_web,
             "module_ids": module_ids or [],
+            "indicator_ids": indicator_ids or [],
             "llm_debug": llm_debug,
             "llm_concurrency": llm_concurrency,
         },
@@ -216,22 +248,55 @@ def _write_config_manifest(  # noqa: PLR0913
 def _filter_modules_config(
     config: RecommendationConfig | None,
     module_ids: list[str] | None,
+    indicator_ids: list[str] | None,
 ) -> RecommendationConfig | None:
-    if config is None or not module_ids:
+    if config is None:
         return config
-    requested = [module_id.strip() for module_id in module_ids if module_id.strip()]
-    if not requested:
+    requested = [module_id.strip() for module_id in module_ids or [] if module_id.strip()]
+    requested_indicators = [indicator_id.strip() for indicator_id in indicator_ids or [] if indicator_id.strip()]
+    if not requested and not requested_indicators:
         return config
     available = {module.module_id: module for module in config.modules}
     missing = [module_id for module_id in requested if module_id not in available]
     if missing:
-        msg = (
-            f"unknown module_id: {', '.join(missing)}; "
-            f"available module_ids: {', '.join(sorted(available))}"
-        )
+        msg = f"unknown module_id: {', '.join(missing)}; available module_ids: {', '.join(sorted(available))}"
         raise ValueError(msg)
-    selected = [available[module_id] for module_id in requested]
+    selected = [available[module_id] for module_id in requested] if requested else list(config.modules)
+    if requested_indicators:
+        selected = _filter_indicators(selected, requested_indicators)
     return config.model_copy(update={"modules": selected})
+
+
+def _filter_indicators(modules: list[Any], indicator_ids: list[str]) -> list[Any]:
+    available = {
+        indicator.indicator_id
+        for module in modules
+        for label in module.labels
+        for indicator in label.indicators
+    }
+    missing = [indicator_id for indicator_id in indicator_ids if indicator_id not in available]
+    if missing:
+        msg = f"unknown indicator_id: {', '.join(missing)}; available indicator_ids: {', '.join(sorted(available))}"
+        raise ValueError(msg)
+    return [
+        module.model_copy(
+            update={
+                "labels": [
+                    label.model_copy(
+                        update={
+                            "indicators": [
+                                indicator for indicator in label.indicators if indicator.indicator_id in indicator_ids
+                            ]
+                        }
+                    )
+                    for label in module.labels
+                    if any(indicator.indicator_id in indicator_ids for indicator in label.indicators)
+                ]
+            }
+        )
+        for module in modules
+        if any(indicator.indicator_id in indicator_ids for label in module.labels for indicator in label.indicators)
+    ]
 
 
 def _module_files(modules_path: str, modules_config: Any) -> dict[str, Any]:
