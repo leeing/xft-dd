@@ -9,7 +9,7 @@ from xft.pipeline.recommender.business_result_renderer import render_business_re
 from xft.pipeline.recommender.report_renderer import render_report
 from xft.pipeline.recommender.state import RecommenderState
 from xft.progress import display
-from xft.utils.file_io import read_json, write_json, write_jsonl
+from xft.utils.file_io import write_json, write_jsonl
 
 
 def _llm_metrics(events: list[dict[str, Any]]) -> dict[str, Any]:
@@ -42,8 +42,9 @@ async def save_node(state: RecommenderState) -> dict[str, object]:
     out_dir = Path(state["output_root"]) / state["run_id"]
     out_dir.mkdir(parents=True, exist_ok=True)
     profile_path = out_dir / "profile.json"
-    dimensions_path = out_dir / "dimension_analysis.json"
     business_label_path = out_dir / "business_label_result.json"
+    business_indicator_evidence_path = out_dir / "business_indicator_evidence.json"
+    business_web_trace_path = out_dir / "business_web_trace.json"
     llm_calls_path = out_dir / "llm_calls.jsonl"
     llm_metrics_path = out_dir / "llm_metrics.json"
     decision_trace_path = out_dir / "decision_trace.json"
@@ -54,8 +55,12 @@ async def save_node(state: RecommenderState) -> dict[str, object]:
     llm_events = state.get("llm_call_events", [])
     write_jsonl(llm_calls_path, llm_events)
     write_json(llm_metrics_path, _llm_metrics(llm_events))
-    write_json(dimensions_path, [item.model_dump() for item in state["dimension_analysis"]])
     business = state.get("business_recommendation")
+    write_json(
+        business_indicator_evidence_path,
+        _merge_business_evidence(state.get("business_evidence", {}), state.get("business_web_evidence", {})),
+    )
+    write_json(business_web_trace_path, {"trace": state.get("business_web_trace", [])})
     business_label_payload = business.model_dump() if business else {"warning": "business result not generated"}
     write_json(business_label_path, business_label_payload)
     business_payload = render_business_result_json(
@@ -77,12 +82,11 @@ async def save_node(state: RecommenderState) -> dict[str, object]:
 
 
 def _decision_trace(state: RecommenderState, llm_events: list[dict[str, Any]]) -> dict[str, Any]:
-    web_trace = read_json(Path(state["web_trace_path"])) if state.get("web_trace_path") else {}
     return {
         "company_name": state["company_name"],
         "run_id": state["run_id"],
         "scenario_id": state.get("scenario_id"),
-        "web_plan_trace": web_trace,
+        "business_web_trace": state.get("business_web_trace", []),
         "business_rule_trace": _business_rule_trace(state),
         "llm_call_trace": llm_events,
     }
@@ -107,15 +111,30 @@ def _business_rule_trace(state: RecommenderState) -> list[dict[str, Any]]:
                 **indicator.model_dump(mode="json"),
                 "configured_evaluator": cfg.evaluator if cfg else indicator.evaluator,
                 "rule": cfg.rule.model_dump(mode="json") if cfg and cfg.rule else None,
+                "data_sources": [item.model_dump(mode="json") for item in cfg.data_sources] if cfg else [],
+                "web_search": cfg.web_search.model_dump(mode="json") if cfg and cfg.web_search else None,
                 "prompt": cfg.prompt if cfg else None,
                 "evidence_hints": cfg.evidence_hints if cfg else [],
                 "decision": (
-                    "rule compared source_field/op/value against company_profile"
+                    "rule compared configured data_sources or source_field/op/value; "
+                    "web_search may add evidence or possible result when configured"
                     if indicator.evaluator == "rule"
-                    else "hybrid combined rule and llm evidence"
+                    else "hybrid combined rule, llm, and optional web evidence"
                     if indicator.evaluator == "hybrid"
-                    else "llm judged against standard using profile and dimension evidence"
+                    else "llm_web searched public web first and judged against standard"
+                    if indicator.evaluator == "llm_web"
+                    else "llm judged against standard using profile, indicator evidence, and optional web evidence"
                 ),
             }
         )
     return rows
+
+
+def _merge_business_evidence(
+    local: dict[str, list[dict[str, Any]]],
+    web: dict[str, list[dict[str, Any]]],
+) -> dict[str, list[dict[str, Any]]]:
+    merged = {key: list(value) for key, value in local.items()}
+    for key, items in web.items():
+        merged.setdefault(key, []).extend(items)
+    return merged

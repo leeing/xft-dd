@@ -82,18 +82,11 @@ class BatchOptions:
 
     warehouse_db: str
     scenario_path: str | None = None
-    dimensions_config_path: str | None = None
     use_llm: bool = True
-    use_web_evidence: bool = False
-    with_web: bool = False
-    refresh_web: bool = False
     web_config_path: str | None = None
-    web_extract_llm_config_path: str | None = None
-    evidence_policy_path: str | None = None
-    web_providers: list[str] | None = None
-    web_fetch_pages: bool | None = None
-    web_force_dimensions: bool = False
-    web_use_llm_extraction: bool = True
+    with_business_web: bool = False
+    refresh_business_web: bool = False
+    business_web_providers: list[str] | None = None
     llm_debug: bool = False
     llm_concurrency: int = 4
     continue_on_error: bool = True
@@ -185,20 +178,13 @@ async def run_recommendation_batch(  # noqa: PLR0913
                 company_name=company_name,
                 warehouse_db=options.warehouse_db,
                 scenario_path=options.scenario_path,
-                dimensions_config_path=options.dimensions_config_path,
                 output_dir=str(output_dir),
                 run_id=run_id,
                 use_llm=options.use_llm,
-                use_web_evidence=options.use_web_evidence,
-                with_web=options.with_web,
-                refresh_web=options.refresh_web,
                 web_config_path=options.web_config_path,
-                web_extract_llm_config_path=options.web_extract_llm_config_path,
-                evidence_policy_path=options.evidence_policy_path,
-                web_providers=options.web_providers,
-                web_fetch_pages=options.web_fetch_pages,
-                web_force_dimensions=options.web_force_dimensions,
-                web_use_llm_extraction=options.web_use_llm_extraction,
+                with_business_web=options.with_business_web,
+                refresh_business_web=options.refresh_business_web,
+                business_web_providers=options.business_web_providers,
                 llm_debug=options.llm_debug,
                 llm_concurrency=options.llm_concurrency,
             )
@@ -366,8 +352,8 @@ def _llm_metrics(output_dir: Path) -> dict[str, Any]:
 
 
 def _evidence_counts(output_dir: Path) -> dict[str, int]:
-    """Summarize evidence counts from dimension_analysis.json."""
-    path = output_dir / "dimension_analysis.json"
+    """Summarize evidence counts from business_indicator_evidence.json."""
+    path = output_dir / "business_indicator_evidence.json"
     if not path.exists():
         return {
             "local_evidence_count": 0,
@@ -376,14 +362,12 @@ def _evidence_counts(output_dir: Path) -> dict[str, int]:
             "missing_evidence_count": 0,
         }
     value = json.loads(path.read_text(encoding="utf-8"))
-    rows: list[Any] = value if isinstance(value, list) else []
+    rows = [item for items in value.values() for item in _list(items)] if isinstance(value, dict) else []
     return {
-        "local_evidence_count": sum(len(_list(item.get("local_evidence"))) for item in rows if isinstance(item, dict)),
-        "web_evidence_count": sum(len(_list(item.get("web_evidence"))) for item in rows if isinstance(item, dict)),
-        "conflict_count": sum(len(_list(item.get("conflicts"))) for item in rows if isinstance(item, dict)),
-        "missing_evidence_count": sum(
-            len(_list(item.get("missing_evidence"))) for item in rows if isinstance(item, dict)
-        ),
+        "local_evidence_count": sum(1 for item in rows if isinstance(item, dict) and item.get("source_type") != "web"),
+        "web_evidence_count": sum(1 for item in rows if isinstance(item, dict) and item.get("source_type") == "web"),
+        "conflict_count": 0,
+        "missing_evidence_count": sum(1 for item in rows if isinstance(item, dict) and not item.get("matched")),
     }
 
 
@@ -434,20 +418,13 @@ def _failed_row(company_name: str, run_id: str, output_dir: str, error: str) -> 
 def _options_payload(options: BatchOptions, *, limit: int | None, skip_existing: bool) -> dict[str, Any]:
     return {
         "scenario_path": options.scenario_path,
-        "dimensions_config_path": options.dimensions_config_path,
         "use_llm": options.use_llm,
-        "use_web_evidence": options.use_web_evidence,
-        "with_web": options.with_web,
-        "refresh_web": options.refresh_web,
         "web_config_path": options.web_config_path,
-        "web_extract_llm_config_path": options.web_extract_llm_config_path,
-        "web_providers": options.web_providers,
-        "web_fetch_pages": options.web_fetch_pages,
-        "web_force_dimensions": options.web_force_dimensions,
-        "web_use_llm_extraction": options.web_use_llm_extraction,
+        "with_business_web": options.with_business_web,
+        "refresh_business_web": options.refresh_business_web,
+        "business_web_providers": options.business_web_providers,
         "llm_debug": options.llm_debug,
         "llm_concurrency": options.llm_concurrency,
-        "evidence_policy_path": options.evidence_policy_path,
         "continue_on_error": options.continue_on_error,
         "limit": limit,
         "skip_existing": skip_existing,

@@ -32,16 +32,10 @@ def test_web_cache_utils_do_not_import_diligence_models() -> None:
 
 
 def test_core_imports_without_recommender_side_effects() -> None:
-    from xft.core.config_loader import load_dimensions_config
-    from xft.core.dimension_analyzer import analyze_dimensions
-    from xft.core.models import DimensionAnalysis
     from xft.core.search_models import SearchItem, make_item_id
     from xft.core.scenario import load_scenario
     from xft.warehouse.profile_repository import CompanyProfileRepository
 
-    assert load_dimensions_config.__name__ == "load_dimensions_config"
-    assert analyze_dimensions.__name__ == "analyze_dimensions"
-    assert DimensionAnalysis.__name__ == "DimensionAnalysis"
     assert SearchItem.__name__ == "SearchItem"
     assert make_item_id.__name__ == "make_item_id"
     assert load_scenario.__name__ == "load_scenario"

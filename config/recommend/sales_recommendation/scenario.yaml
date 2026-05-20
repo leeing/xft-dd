@@ -3,14 +3,8 @@ id: sales_recommendation
 name: 销售产品推荐
 description: 面向企业软件销售线索的产品模块推荐场景
 
-dimensions_config: analysis_dimensions.yaml
 web_search_config: web_search.yaml
-web_extract_llm_config: web_extract_llm.yaml
-evidence_policy_config: evidence_policy.yaml
 business_modules_config: business_modules.yaml
 
-prompts:
-  web_extract_system: prompts/extract_evidence_system.md
-
 output_dir: ../../../recommendation_runs/sales_recommendation
-web_cache_root: ../../../data/web/sales_recommendation
+web_cache_root: ../../../data/web_business/sales_recommendation

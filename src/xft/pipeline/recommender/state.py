@@ -7,12 +7,7 @@ from typing import Annotated, Any
 
 from typing_extensions import TypedDict
 
-from xft.evidence.policy import EvidencePolicy
 from xft.pipeline.recommender.business_models import BusinessRecommendationConfig, BusinessRecommendationResult
-from xft.pipeline.recommender.models import (
-    AnalysisDimensionsConfig,
-    DimensionAnalysis,
-)
 
 
 def merge_dicts(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
@@ -32,16 +27,18 @@ class RecommenderState(TypedDict):
     llm_debug: bool
     llm_concurrency: int
     llm_call_events: Annotated[list[dict[str, Any]], operator.add]
-    use_web_evidence: bool
-    web_trace_path: Annotated[str, keep_nonempty_str]
+    with_business_web: bool
+    refresh_business_web: bool
+    business_web_config_path: str
+    business_web_providers: list[str] | None
     scenario_id: str | None
     scenario_name: str | None
     prompt_paths: dict[str, str]
-    dimensions_config: AnalysisDimensionsConfig
-    evidence_policy: EvidencePolicy
     business_config: BusinessRecommendationConfig | None
     profile: Annotated[dict[str, Any], merge_dicts]
-    dimension_analysis: list[DimensionAnalysis]
+    business_evidence: dict[str, list[dict[str, Any]]]
+    business_web_evidence: dict[str, list[dict[str, Any]]]
+    business_web_trace: list[dict[str, Any]]
     business_recommendation: BusinessRecommendationResult | None
     needs_web_enrichment: bool
     errors: Annotated[list[str], operator.add]

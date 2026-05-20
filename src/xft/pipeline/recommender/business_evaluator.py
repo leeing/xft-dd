@@ -32,7 +32,6 @@ from xft.pipeline.recommender.business_models import (
     BusinessRecommendationResult,
     BusinessResult,
 )
-from xft.pipeline.recommender.models import DimensionAnalysis
 from xft.progress import display
 from xft.settings import settings
 from xft.utils.misc import contains, get_nested
@@ -53,7 +52,8 @@ async def evaluate_business_recommendation(  # noqa: PLR0913
     config: BusinessRecommendationConfig | None,
     company_name: str,
     profile: dict[str, Any],
-    dimension_analysis: list[DimensionAnalysis],
+    business_evidence: dict[str, list[dict[str, Any]]] | None = None,
+    business_web_trace: list[dict[str, Any]] | None = None,
     use_llm: bool,
     llm_debug: bool = False,
     llm_concurrency: int = 4,
@@ -69,6 +69,8 @@ async def evaluate_business_recommendation(  # noqa: PLR0913
     concurrency = max(1, llm_concurrency)
     semaphore = asyncio.Semaphore(concurrency)
     llm_events = llm_events if llm_events is not None else []
+    business_evidence = business_evidence or {}
+    web_trace_by_indicator = _web_trace_by_indicator(business_web_trace or [])
     if llm_debug and use_llm and (settings.llm_api_key or settings.minimax_api_key):
         display.info(f"LLM 业务指标并发: {concurrency}")
     module_results = await asyncio.gather(
@@ -78,7 +80,8 @@ async def evaluate_business_recommendation(  # noqa: PLR0913
                 module=module,
                 company_name=company_name,
                 profile=profile,
-                dimension_analysis=dimension_analysis,
+                business_evidence=business_evidence,
+                web_trace_by_indicator=web_trace_by_indicator,
                 use_llm=use_llm,
                 llm_debug=llm_debug,
                 llm_events=llm_events,
@@ -109,7 +112,8 @@ async def _evaluate_module(  # noqa: PLR0913
     module: BusinessModuleConfig,
     company_name: str,
     profile: dict[str, Any],
-    dimension_analysis: list[DimensionAnalysis],
+    business_evidence: dict[str, list[dict[str, Any]]],
+    web_trace_by_indicator: dict[str, list[dict[str, Any]]],
     use_llm: bool,
     llm_debug: bool,
     llm_events: list[dict[str, Any]],
@@ -125,7 +129,8 @@ async def _evaluate_module(  # noqa: PLR0913
                 label=label,
                 company_name=company_name,
                 profile=profile,
-                dimension_analysis=dimension_analysis,
+                business_evidence=business_evidence,
+                web_trace_by_indicator=web_trace_by_indicator,
                 use_llm=use_llm,
                 llm_debug=llm_debug,
                 llm_events=llm_events,
@@ -140,7 +145,7 @@ async def _evaluate_module(  # noqa: PLR0913
 
     attributes_number = sum(1 for item in labels if item.result == "matched")
     indicators_number = sum(item.matched_indicators for item in labels)
-    acceptance_result, conclusion = _acceptance(config, attributes_number, indicators_number)
+    acceptance_result, conclusion = _acceptance(config, module, attributes_number, indicators_number)
     score = module.base_score + sum(item.score for item in labels)
     return (
         BusinessModuleResult(
@@ -164,7 +169,8 @@ async def _evaluate_label(  # noqa: PLR0913
     label: BusinessLabelConfig,
     company_name: str,
     profile: dict[str, Any],
-    dimension_analysis: list[DimensionAnalysis],
+    business_evidence: dict[str, list[dict[str, Any]]],
+    web_trace_by_indicator: dict[str, list[dict[str, Any]]],
     use_llm: bool,
     llm_debug: bool,
     llm_events: list[dict[str, Any]],
@@ -181,7 +187,8 @@ async def _evaluate_label(  # noqa: PLR0913
                 indicator=indicator,
                 company_name=company_name,
                 profile=profile,
-                dimension_analysis=dimension_analysis,
+                business_evidence=business_evidence,
+                web_trace_by_indicator=web_trace_by_indicator,
                 use_llm=use_llm,
                 llm_debug=llm_debug,
                 llm_events=llm_events,
@@ -231,7 +238,8 @@ async def _evaluate_indicator_with_fallback(  # noqa: PLR0913
     indicator: BusinessIndicatorConfig,
     company_name: str,
     profile: dict[str, Any],
-    dimension_analysis: list[DimensionAnalysis],
+    business_evidence: dict[str, list[dict[str, Any]]],
+    web_trace_by_indicator: dict[str, list[dict[str, Any]]],
     use_llm: bool,
     llm_debug: bool,
     llm_events: list[dict[str, Any]],
@@ -245,7 +253,7 @@ async def _evaluate_indicator_with_fallback(  # noqa: PLR0913
             indicator=indicator,
             company_name=company_name,
             profile=profile,
-            dimension_analysis=dimension_analysis,
+            business_evidence=business_evidence,
             use_llm=use_llm,
             llm_debug=llm_debug,
             llm_events=llm_events,
@@ -262,7 +270,7 @@ async def _evaluate_indicator_with_fallback(  # noqa: PLR0913
     ) as exc:
         recorded = bool(getattr(exc, "_xft_llm_event_recorded", False))
         should_record_failure = (
-            indicator.evaluator in ("llm", "hybrid")
+            indicator.evaluator in ("llm", "hybrid", "llm_web")
             and use_llm
             and (settings.llm_api_key or settings.minimax_api_key)
             and not recorded
@@ -297,10 +305,12 @@ async def _evaluate_indicator_with_fallback(  # noqa: PLR0913
             label=label,
             indicator=indicator,
             profile=profile,
+            indicator_evidence=_indicator_evidence(business_evidence, module, label, indicator),
         )
+        result = _with_actual_web_trace(result, web_trace_by_indicator, module, label, indicator)
         return result, f"{_indicator_key(module, label, indicator)}: {exception_summary(exc)}"
     else:
-        return result, None
+        return _with_actual_web_trace(result, web_trace_by_indicator, module, label, indicator), None
 
 
 async def _evaluate_indicator(  # noqa: PLR0913
@@ -311,14 +321,15 @@ async def _evaluate_indicator(  # noqa: PLR0913
     indicator: BusinessIndicatorConfig,
     company_name: str,
     profile: dict[str, Any],
-    dimension_analysis: list[DimensionAnalysis],
+    business_evidence: dict[str, list[dict[str, Any]]],
     use_llm: bool,
     llm_debug: bool,
     llm_events: list[dict[str, Any]],
     semaphore: asyncio.Semaphore,
 ) -> BusinessIndicatorResult:
+    indicator_evidence = _indicator_evidence(business_evidence, module, label, indicator)
     if indicator.evaluator == "rule":
-        return _evaluate_rule_indicator(config, module, label, indicator, profile)
+        return _evaluate_rule_indicator(config, module, label, indicator, profile, indicator_evidence)
     if indicator.evaluator == "hybrid":
         return await _evaluate_hybrid_indicator(
             config=config,
@@ -327,7 +338,7 @@ async def _evaluate_indicator(  # noqa: PLR0913
             indicator=indicator,
             company_name=company_name,
             profile=profile,
-            dimension_analysis=dimension_analysis,
+            business_evidence=business_evidence,
             use_llm=use_llm,
             llm_debug=llm_debug,
             llm_events=llm_events,
@@ -342,11 +353,18 @@ async def _evaluate_indicator(  # noqa: PLR0913
                 indicator=indicator,
                 company_name=company_name,
                 profile=profile,
-                dimension_analysis=dimension_analysis,
+                indicator_evidence=indicator_evidence,
                 llm_debug=llm_debug,
                 llm_events=llm_events,
             )
-    return _fallback_indicator_result(config=config, module=module, label=label, indicator=indicator, profile=profile)
+    return _fallback_indicator_result(
+        config=config,
+        module=module,
+        label=label,
+        indicator=indicator,
+        profile=profile,
+        indicator_evidence=indicator_evidence,
+    )
 
 
 async def _evaluate_hybrid_indicator(  # noqa: PLR0913
@@ -357,13 +375,14 @@ async def _evaluate_hybrid_indicator(  # noqa: PLR0913
     indicator: BusinessIndicatorConfig,
     company_name: str,
     profile: dict[str, Any],
-    dimension_analysis: list[DimensionAnalysis],
+    business_evidence: dict[str, list[dict[str, Any]]],
     use_llm: bool,
     llm_debug: bool,
     llm_events: list[dict[str, Any]],
     semaphore: asyncio.Semaphore,
 ) -> BusinessIndicatorResult:
-    rule_result = _evaluate_rule_indicator(config, module, label, indicator, profile)
+    indicator_evidence = _indicator_evidence(business_evidence, module, label, indicator)
+    rule_result = _evaluate_rule_indicator(config, module, label, indicator, profile, indicator_evidence)
     trace: dict[str, Any] = {
         "merge_policy": indicator.merge_policy,
         "rule_result": rule_result.result,
@@ -387,6 +406,7 @@ async def _evaluate_hybrid_indicator(  # noqa: PLR0913
             label=label,
             indicator=indicator,
             profile=profile,
+            indicator_evidence=indicator_evidence,
         )
         trace.update(
             {
@@ -407,7 +427,7 @@ async def _evaluate_hybrid_indicator(  # noqa: PLR0913
             indicator=indicator,
             company_name=company_name,
             profile=profile,
-            dimension_analysis=dimension_analysis,
+            indicator_evidence=indicator_evidence,
             llm_debug=llm_debug,
             llm_events=llm_events,
         )
@@ -467,30 +487,80 @@ def _hybrid_decision_text(rule_result: str, llm_result: str, policy: str) -> str
     return f"rule={rule_result}; llm={llm_result}; rule_first used llm because rule did not match"
 
 
-def _evaluate_rule_indicator(
+def _evaluate_rule_indicator(  # noqa: PLR0913
     config: BusinessRecommendationConfig,
     module: BusinessModuleConfig,
     label: BusinessLabelConfig,
     indicator: BusinessIndicatorConfig,
     profile: dict[str, Any],
+    indicator_evidence: list[dict[str, Any]] | None = None,
 ) -> BusinessIndicatorResult:
+    indicator_evidence = indicator_evidence or []
+    if indicator.data_sources:
+        matched = any(bool(item.get("matched")) for item in indicator_evidence)
+        data_source_result: BusinessResult = "matched" if matched else "not_matched"
+        evidence = [str(item.get("evidence")) for item in indicator_evidence if item.get("evidence")]
+        current_status = "；".join(evidence[:2]) if evidence else "未命中已配置的本地数据源。"
+        return _indicator_result(
+            config=config,
+            module=module,
+            label=label,
+            indicator=indicator,
+            result=data_source_result,
+            confidence="高" if matched else "中",
+            current_status=current_status,
+            evidence=evidence,
+            evidence_details=indicator_evidence,
+        )
     if indicator.rule is None:
         msg = f"missing rule config: {indicator.indicator_id}"
         raise ValueError(msg)
     value = get_nested(profile, indicator.rule.source_field)
     matched = _compare(value, indicator.rule.op, indicator.rule.value)
-    result: BusinessResult = "matched" if matched else "not_matched"
+    rule_result: BusinessResult = "matched" if matched else "not_matched"
     evidence = [f"{indicator.rule.source_field} = {_display_value(value)}"] if value not in (None, "", [], {}) else []
     current_status = _rule_current_status(indicator, value, matched=matched)
+    web_evidence = [
+        item
+        for item in indicator_evidence
+        if item.get("source_type") == "web" and item.get("matched") and item.get("evidence")
+    ]
+    if (
+        rule_result != "matched"
+        and indicator.web_search is not None
+        and (indicator.web_search.effect or "evidence_only") == "possible_on_evidence"
+        and web_evidence
+    ):
+        evidence = [str(item.get("evidence")) for item in web_evidence[:3]]
+        return _indicator_result(
+            config=config,
+            module=module,
+            label=label,
+            indicator=indicator,
+            result="possible",
+            confidence="中",
+            current_status="；".join(evidence[:2]),
+            evidence=evidence,
+            evidence_details=indicator_evidence,
+            web_search_trace=_render_web_search_trace(
+                company_name=str(profile.get("company_name") or ""),
+                indicator=indicator,
+            ),
+        )
     return _indicator_result(
         config=config,
         module=module,
         label=label,
         indicator=indicator,
-        result=result,
+        result=rule_result,
         confidence="高" if matched else "中",
         current_status=current_status,
         evidence=evidence,
+        evidence_details=indicator_evidence,
+        web_search_trace=_render_web_search_trace(
+            company_name=str(profile.get("company_name") or ""),
+            indicator=indicator,
+        ),
     )
 
 
@@ -502,15 +572,18 @@ async def _evaluate_llm_indicator(  # noqa: PLR0913
     indicator: BusinessIndicatorConfig,
     company_name: str,
     profile: dict[str, Any],
-    dimension_analysis: list[DimensionAnalysis],
+    indicator_evidence: list[dict[str, Any]] | None = None,
     llm_debug: bool,
     llm_events: list[dict[str, Any]],
 ) -> BusinessIndicatorResult:
     key = _indicator_key(module, label, indicator)
+    indicator_evidence = indicator_evidence or []
+    web_trace = _render_web_search_trace(company_name=company_name, indicator=indicator)
     payload = {
         "company_name": company_name,
         "company_profile": _compact_profile(profile),
-        "dimension_evidence": _dimension_evidence(dimension_analysis),
+        "indicator_evidence": _compact_indicator_evidence(indicator_evidence),
+        "web_search": web_trace,
         "module": {"id": module.module_id, "name": module.module_name},
         "label": {"id": label.label_id, "name": label.label_name, "description": label.description},
         "indicator": {
@@ -532,7 +605,7 @@ async def _evaluate_llm_indicator(  # noqa: PLR0913
         "module_id": module.module_id,
         "label_id": label.label_id,
         "indicator_id": indicator.indicator_id,
-        "evidence_items": len(payload["dimension_evidence"]),
+        "evidence_items": len(payload["indicator_evidence"]),
         "timeout_seconds": LLM_TIMEOUT_SECONDS,
     }
     if llm_debug:
@@ -608,6 +681,8 @@ async def _evaluate_llm_indicator(  # noqa: PLR0913
         confidence=parsed.confidence,
         current_status=parsed.current_status,
         evidence=parsed.evidence,
+        evidence_details=indicator_evidence,
+        web_search_trace=web_trace,
     )
 
 
@@ -619,15 +694,96 @@ def _indicator_key(
     return f"{module.module_id}.{label.label_id}.{indicator.indicator_id}"
 
 
-def _fallback_indicator_result(
+def _indicator_evidence(
+    business_evidence: dict[str, list[dict[str, Any]]],
+    module: BusinessModuleConfig,
+    label: BusinessLabelConfig,
+    indicator: BusinessIndicatorConfig,
+) -> list[dict[str, Any]]:
+    return business_evidence.get(_indicator_key(module, label, indicator), [])
+
+
+def _web_trace_by_indicator(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        key = str(row.get("indicator_key") or "")
+        if key:
+            grouped.setdefault(key, []).append(row)
+    return grouped
+
+
+def _with_actual_web_trace(
+    result: BusinessIndicatorResult,
+    grouped: dict[str, list[dict[str, Any]]],
+    module: BusinessModuleConfig,
+    label: BusinessLabelConfig,
+    indicator: BusinessIndicatorConfig,
+) -> BusinessIndicatorResult:
+    actual = grouped.get(_indicator_key(module, label, indicator), [])
+    if not actual:
+        return result
+    return result.model_copy(update={"web_search_trace": actual})
+
+
+def _compact_indicator_evidence(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "source_type": item.get("source_type"),
+            "source": item.get("source"),
+            "matched": item.get("matched"),
+            "evidence": item.get("evidence"),
+            "value": item.get("value"),
+            "expected": item.get("expected"),
+            "sample_count": item.get("sample_count"),
+        }
+        for item in items[:MAX_EVIDENCE_ITEMS]
+    ]
+
+
+def _render_web_search_trace(company_name: str, indicator: BusinessIndicatorConfig) -> list[dict[str, Any]]:
+    if indicator.web_search is None:
+        return []
+    trace: list[dict[str, Any]] = [
+        {
+            "query": query.format(company_name=company_name),
+            "status": "planned",
+            "auto": False,
+            "when": indicator.web_search.when,
+            "effect": indicator.web_search.effect,
+            "note": "indicator-level fixed query",
+        }
+        for query in indicator.web_search.fixed_queries
+    ]
+    if indicator.web_search.auto.enabled:
+        trace.append(
+            {
+                "status": "skipped",
+                "auto": True,
+                "when": indicator.web_search.when,
+                "effect": indicator.web_search.effect,
+                "max_auto_rounds": indicator.web_search.max_auto_rounds,
+                "max_queries": indicator.web_search.auto.max_queries,
+                "intent": indicator.web_search.auto.intent,
+                "note": "auto query generation is configured but not executed in planned trace",
+            }
+        )
+    return trace
+
+
+def _fallback_indicator_result(  # noqa: PLR0913
     *,
     config: BusinessRecommendationConfig,
     module: BusinessModuleConfig,
     label: BusinessLabelConfig,
     indicator: BusinessIndicatorConfig,
     profile: dict[str, Any],
+    indicator_evidence: list[dict[str, Any]] | None = None,
 ) -> BusinessIndicatorResult:
-    evidence = _hint_evidence(profile, indicator.evidence_hints)
+    indicator_evidence = indicator_evidence or []
+    source_evidence = [
+        str(item.get("evidence")) for item in indicator_evidence if item.get("matched") and item.get("evidence")
+    ]
+    evidence = source_evidence or _hint_evidence(profile, indicator.evidence_hints)
     if evidence:
         result: BusinessResult = "matched"
         confidence: BusinessConfidence = "中"
@@ -645,6 +801,11 @@ def _fallback_indicator_result(
         confidence=confidence,
         current_status=current_status,
         evidence=evidence,
+        evidence_details=indicator_evidence,
+        web_search_trace=_render_web_search_trace(
+            company_name=str(profile.get("company_name") or ""),
+            indicator=indicator,
+        ),
     )
 
 
@@ -658,6 +819,8 @@ def _indicator_result(  # noqa: PLR0913
     confidence: BusinessConfidence,
     current_status: str,
     evidence: list[str],
+    evidence_details: list[dict[str, Any]] | None = None,
+    web_search_trace: list[dict[str, Any]] | None = None,
     hybrid_trace: dict[str, Any] | None = None,
 ) -> BusinessIndicatorResult:
     return BusinessIndicatorResult(
@@ -673,6 +836,8 @@ def _indicator_result(  # noqa: PLR0913
         current_status=current_status,
         standard=indicator.standard,
         evidence=evidence[:8],
+        evidence_details=(evidence_details or [])[:24],
+        web_search_trace=(web_search_trace or [])[:24],
         evaluator=indicator.evaluator,
         hybrid_trace=hybrid_trace or {},
     )
@@ -680,10 +845,12 @@ def _indicator_result(  # noqa: PLR0913
 
 def _acceptance(
     config: BusinessRecommendationConfig,
+    module: BusinessModuleConfig,
     attributes_number: int,
     indicators_number: int,
 ) -> tuple[str, str]:
-    levels = sorted(config.acceptance_policy.levels, key=lambda item: item.min_matched_labels, reverse=True)
+    policy = module.acceptance_policy or config.acceptance_policy
+    levels = sorted(policy.levels, key=lambda item: item.min_matched_labels, reverse=True)
     selected = next((item for item in levels if attributes_number >= item.min_matched_labels), levels[-1])
     conclusion = selected.conclusion.format(
         attributes_number=attributes_number,
@@ -802,25 +969,3 @@ def _compact_profile(profile: dict[str, Any]) -> dict[str, Any]:
         "website",
     ]
     return {key: profile.get(key) for key in keys if key in profile}
-
-
-def _dimension_evidence(dimension_analysis: list[DimensionAnalysis]) -> list[dict[str, Any]]:
-    items: list[dict[str, Any]] = []
-    for analysis in dimension_analysis:
-        evidence = [
-            *analysis.local_evidence,
-            *analysis.web_evidence,
-            *analysis.inference_evidence,
-        ]
-        items.append(
-            {
-                "dimension_id": analysis.dimension_id,
-                "title": analysis.title,
-                "status": analysis.status,
-                "confidence": analysis.confidence,
-                "facts": [fact.claim for fact in analysis.facts[:5]],
-                "evidence": [item.claim for item in evidence[:MAX_EVIDENCE_ITEMS]],
-                "missing_evidence": analysis.missing_evidence[:8],
-            }
-        )
-    return items

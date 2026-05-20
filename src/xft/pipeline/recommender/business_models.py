@@ -4,13 +4,27 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
-BusinessEvaluator = Literal["rule", "llm", "hybrid"]
+BusinessEvaluator = Literal["rule", "llm", "hybrid", "llm_web"]
 BusinessResult = Literal["matched", "possible", "not_matched", "unknown"]
 BusinessConfidence = Literal["高", "中", "低"]
-BusinessRuleOperator = Literal[">", ">=", "<", "<=", "==", "!=", "contains", "contains_any", "exists"]
+BusinessRuleOperator = Literal[
+    ">",
+    ">=",
+    "<",
+    "<=",
+    "==",
+    "!=",
+    "contains",
+    "contains_any",
+    "exists",
+    "text_contains",
+]
 HybridMergePolicy = Literal["rule_first", "llm_confirm", "require_both"]
+BusinessDataSourceType = Literal["field", "table", "llm", "llm_web"]
+BusinessWebSearchWhen = Literal["always", "insufficient", "rule_not_matched", "never"]
+BusinessWebSearchEffect = Literal["llm_evidence", "evidence_only", "possible_on_evidence"]
 
 
 class BusinessRuleConfig(BaseModel):
@@ -21,6 +35,63 @@ class BusinessRuleConfig(BaseModel):
     value: Any | None = None
 
 
+class BusinessDataSourceConfig(BaseModel):
+    """Evidence source used by one business indicator."""
+
+    type: BusinessDataSourceType = "field"
+    path: str | None = None
+    table: str | None = None
+    field: str | None = None
+    op: BusinessRuleOperator = "exists"
+    value: Any | None = None
+    keywords: list[str] = Field(default_factory=list)
+    min_matches: int = Field(default=1, ge=1)
+    limit: int = Field(default=20, ge=1, le=200)
+    description: str = ""
+
+    @model_validator(mode="after")
+    def validate_source(self) -> BusinessDataSourceConfig:
+        if self.type == "field" and not self.path:
+            msg = "field data source requires path"
+            raise ValueError(msg)
+        if self.type == "table" and not (self.table and self.field):
+            msg = "table data source requires table and field"
+            raise ValueError(msg)
+        return self
+
+
+class BusinessWebAutoConfig(BaseModel):
+    """LLM-generated query policy for an indicator."""
+
+    enabled: bool = False
+    max_queries: int = Field(default=0, ge=0, le=5)
+    intent: str = ""
+
+
+class BusinessWebSearchConfig(BaseModel):
+    """Indicator-level web search policy."""
+
+    fixed_queries: list[str] = Field(default_factory=list)
+    when: BusinessWebSearchWhen | None = None
+    effect: BusinessWebSearchEffect | None = None
+    auto: BusinessWebAutoConfig = Field(default_factory=BusinessWebAutoConfig)
+    max_auto_rounds: int = Field(default=0, ge=0, le=3)
+    max_results: int = Field(default=5, ge=1, le=20)
+
+    @field_validator("auto", mode="before")
+    @classmethod
+    def parse_auto(cls, value: Any) -> Any:
+        if isinstance(value, bool):
+            return {"enabled": value}
+        return value
+
+    @model_validator(mode="after")
+    def normalize_auto(self) -> BusinessWebSearchConfig:
+        if self.auto.enabled and self.auto.max_queries == 0:
+            self.auto.max_queries = self.max_auto_rounds or 1
+        return self
+
+
 class BusinessIndicatorConfig(BaseModel):
     """One business indicator under a label."""
 
@@ -29,16 +100,18 @@ class BusinessIndicatorConfig(BaseModel):
     evaluator: BusinessEvaluator = "rule"
     standard: str
     rule: BusinessRuleConfig | None = None
+    data_sources: list[BusinessDataSourceConfig] = Field(default_factory=list)
+    web_search: BusinessWebSearchConfig | None = None
     prompt: str | None = None
     evidence_hints: list[str] = Field(default_factory=list)
     merge_policy: HybridMergePolicy = "rule_first"
 
     @model_validator(mode="after")
     def validate_evaluator_payload(self) -> BusinessIndicatorConfig:
-        if self.evaluator == "rule" and self.rule is None:
+        if self.evaluator == "rule" and self.rule is None and not self.data_sources:
             msg = f"rule evaluator requires rule: {self.indicator_id}"
             raise ValueError(msg)
-        if self.evaluator == "llm" and not (self.prompt or self.standard):
+        if self.evaluator in ("llm", "llm_web") and not (self.prompt or self.standard):
             msg = f"llm evaluator requires prompt or standard: {self.indicator_id}"
             raise ValueError(msg)
         if self.evaluator == "hybrid" and self.rule is None:
@@ -46,6 +119,9 @@ class BusinessIndicatorConfig(BaseModel):
             raise ValueError(msg)
         if self.evaluator == "hybrid" and not (self.prompt or self.standard):
             msg = f"hybrid evaluator requires prompt or standard: {self.indicator_id}"
+            raise ValueError(msg)
+        if self.evaluator == "llm_web" and self.web_search is None:
+            msg = f"llm_web evaluator requires web_search: {self.indicator_id}"
             raise ValueError(msg)
         return self
 
@@ -75,6 +151,7 @@ class BusinessModuleConfig(BaseModel):
     module_name: str
     priority: int = Field(default=0, ge=0, le=100)
     base_score: int = Field(default=0, ge=0, le=100)
+    acceptance_policy: AcceptancePolicyConfig | None = None
     labels: list[BusinessLabelConfig]
     marketing_points: dict[str, BusinessMarketingPointConfig] = Field(default_factory=dict)
 
@@ -136,6 +213,7 @@ class BusinessRecommendationConfig(BaseModel):
 
     version: str = "1.0"
     scenario: str = "sales_recommendation"
+    modules_dir: str | None = None
     scoring: BusinessScoringConfig = Field(default_factory=BusinessScoringConfig)
     acceptance_policy: AcceptancePolicyConfig
     modules: list[BusinessModuleConfig]
@@ -178,6 +256,8 @@ class BusinessIndicatorResult(BaseModel):
     current_status: str
     standard: str
     evidence: list[str] = Field(default_factory=list)
+    evidence_details: list[dict[str, Any]] = Field(default_factory=list)
+    web_search_trace: list[dict[str, Any]] = Field(default_factory=list)
     evaluator: BusinessEvaluator
     hybrid_trace: dict[str, Any] = Field(default_factory=dict)
 

@@ -1,0 +1,499 @@
+module_id: 假勤管理
+module_name: 假勤管理
+priority: 50
+base_score: 0
+acceptance_policy:
+  levels:
+  - result: 高
+    min_matched_labels: 3
+    conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为高。
+  - result: 中高
+    min_matched_labels: 2
+    conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为中高。
+  - result: 低
+    min_matched_labels: 0
+    conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为低。
+labels:
+- label_id: 科技属性
+  label_name: 科技属性
+  description: ''
+  min_matched_indicators: 1
+  indicators:
+  - indicator_id: 研发人员占比
+    indicator_name: 研发人员占比
+    evaluator: llm_web
+    standard: ≥20%（研发岗员工数 / 总员工数）
+    data_sources: []
+    prompt: 请判断企业是否满足指标：研发人员占比。只能基于证据判断，不得编造。
+    evidence_hints:
+    - 研发人员占比
+    - '20'
+    - 研发岗员工数
+    - 总员工数
+    web_search:
+      when: always
+      effect: llm_evidence
+      fixed_queries:
+      - '{company_name} 官网'
+      - '{company_name} 新闻'
+      auto: false
+  - indicator_id: 研发费用占比
+    indicator_name: 研发费用占比
+    evaluator: llm_web
+    standard: 营收＜5000 万→≥5%；5000 万 - 2 亿→≥4%；营收＞2 亿→按数字化转型型标准（≥3%）
+    data_sources: []
+    prompt: 请判断企业是否满足指标：研发费用占比。只能基于证据判断，不得编造。
+    evidence_hints:
+    - 研发费用占比
+    - 营收
+    - '5000'
+    - 按数字化转型型标准
+    web_search:
+      fixed_queries:
+      - '{company_name} 官网'
+      - '{company_name} 新闻'
+      auto: false
+  - indicator_id: 细分行业
+    indicator_name: 细分行业
+    evaluator: llm
+    standard: 电子信息、生物医药、新材料制造、新能源装备、工业机器人、工业母机、汽车零部件、医疗设备、集成电路、半导体、电子元件、通讯设备、高端装备、航天航空设备制造、精密仪器、传感器、电池、精密制造等科技行业
+    data_sources: []
+    prompt: 请判断企业是否满足指标：细分行业。只能基于证据判断，不得编造。
+    evidence_hints:
+    - 细分行业
+    - 电子信息
+    - 生物医药
+    - 新材料制造
+    - 新能源装备
+    - 工业机器人
+    - 工业母机
+    - 汽车零部件
+    web_search:
+      when: insufficient
+      effect: llm_evidence
+      fixed_queries:
+      - '{company_name} 官网 主营业务'
+      - '{company_name} 科技 制造 产品'
+      auto:
+        enabled: true
+        max_queries: 2
+        intent: 查企业公开主营业务、产品、行业属性，辅助判断是否属于科技制造细分行业
+  - indicator_id: 科技企业_科技资质认证
+    indicator_name: 科技企业-科技资质认证
+    evaluator: rule
+    standard: 高新技术企业证书、双软认证、专精特新、小巨人、隐形冠军、单项冠军、科技型中小企业
+    data_sources:
+    - type: table
+      table: qualifications
+      field: qualification_name
+      op: exists
+    - type: field
+      path: labels
+      op: exists
+    prompt: 请判断企业是否满足指标：科技企业-科技资质认证。只能基于证据判断，不得编造。
+    evidence_hints:
+    - 科技企业
+    - 科技资质认证
+    - 高新技术企业证书
+    - 双软认证
+    - 专精特新
+    - 小巨人
+    - 隐形冠军
+    - 单项冠军
+    web_search:
+      when: rule_not_matched
+      effect: possible_on_evidence
+      fixed_queries:
+      - '{company_name} 高新技术企业 专精特新'
+      - '{company_name} 科技型中小企业 资质'
+  - indicator_id: 知识产权数量多
+    indicator_name: 知识产权数量多
+    evaluator: rule
+    standard: 发明专利≥3 项 或 软件著作权≥5 项
+    data_sources:
+    - type: field
+      path: ip_counts.patent
+      op: '>'
+      value: 0
+    prompt: 请判断企业是否满足指标：知识产权数量多。只能基于证据判断，不得编造。
+    evidence_hints:
+    - 知识产权数量多
+    - 发明专利
+    - 软件著作权
+- label_id: 制造业通用考勤
+  label_name: 制造业通用考勤
+  description: ''
+  min_matched_indicators: 1
+  indicators:
+  - indicator_id: 行业
+    indicator_name: 行业
+    evaluator: llm
+    standard: 制造业
+    data_sources: []
+    prompt: 请判断企业是否满足指标：行业。只能基于证据判断，不得编造。
+    evidence_hints:
+    - 行业
+    - 制造业
+  - indicator_id: 考勤管理需求
+    indicator_name: 考勤管理需求
+    evaluator: rule
+    standard: 招聘 JD 提及 “考勤打卡”“工时统计”、考勤管理、数据统计、 关键词≥1 次
+    data_sources:
+    - type: table
+      table: recruitments
+      field: title
+      op: text_contains
+      keywords: []
+    prompt: 请判断企业是否满足指标：考勤管理需求。只能基于证据判断，不得编造。
+    evidence_hints:
+    - 考勤管理需求
+    - 招聘
+    - JD
+    - 提及
+    - 考勤打卡
+    - 工时统计
+    - 考勤管理
+    - 数据统计
+  - indicator_id: 劳动争议记录
+    indicator_name: 劳动争议记录
+    evaluator: llm
+    standard: 近 2 年（自查询日起）考勤 / 劳动报酬相关争议≥1 起（已结案 / 正在审理）
+    data_sources: []
+    prompt: 请判断企业是否满足指标：劳动争议记录。只能基于证据判断，不得编造。
+    evidence_hints:
+    - 劳动争议记录
+    - 自查询日起
+    - 考勤
+    - 劳动报酬相关争议
+    - 已结案
+    - 正在审理
+  - indicator_id: 多类型工种
+    indicator_name: 多类型工种
+    evaluator: rule
+    standard: 招聘岗位中，存在超过2种生产类、研发类、行政类、物流类、销售类 、售后类岗位
+    data_sources:
+    - type: table
+      table: recruitments
+      field: title
+      op: text_contains
+      keywords: []
+    prompt: 请判断企业是否满足指标：多类型工种。只能基于证据判断，不得编造。
+    evidence_hints:
+    - 多类型工种
+    - 招聘岗位中
+    - 存在超过2种生产类
+    - 研发类
+    - 行政类
+    - 物流类
+    - 销售类
+    - 售后类岗位
+- label_id: 多分支机构
+  label_name: 多分支机构
+  description: ''
+  min_matched_indicators: 1
+  indicators:
+  - indicator_id: 分支机构数量
+    indicator_name: 分支机构数量
+    evaluator: llm_web
+    standard: ≥3 个（需有独立办公场所 / 工商注册的分公司 / 办事处）
+    data_sources:
+    - type: table
+      table: branches
+      field: branch_name
+      op: exists
+    prompt: 请判断企业是否满足指标：分支机构数量。只能基于证据判断，不得编造。
+    evidence_hints:
+    - 分支机构数量
+    - 需有独立办公场所
+    - 工商注册的分公司
+    - 办事处
+    web_search:
+      fixed_queries:
+      - '{company_name} 官网'
+      - '{company_name} 新闻'
+      auto: false
+  - indicator_id: 多厂区布局
+    indicator_name: 多厂区布局
+    evaluator: llm_web
+    standard: ≥2 个省级生产基地（需具备独立生产资质 + 工商注册 / 租赁备案）
+    data_sources:
+    - type: table
+      table: branches
+      field: branch_name
+      op: exists
+    prompt: 请判断企业是否满足指标：多厂区布局。只能基于证据判断，不得编造。
+    evidence_hints:
+    - 多厂区布局
+    - 个省级生产基地
+    - 需具备独立生产资质
+    - 工商注册
+    - 租赁备案
+    web_search:
+      fixed_queries:
+      - '{company_name} 官网'
+      - '{company_name} 新闻'
+      auto: false
+  - indicator_id: 跨区域经营
+    indicator_name: 跨区域经营
+    evaluator: llm_web
+    standard: 分支机构≥3 个（分公司 / 办事处，含生产 / 经营职能）
+    data_sources:
+    - type: table
+      table: branches
+      field: branch_name
+      op: exists
+    prompt: 请判断企业是否满足指标：跨区域经营。只能基于证据判断，不得编造。
+    evidence_hints:
+    - 跨区域经营
+    - 分支机构
+    - 分公司
+    - 办事处
+    - 含生产
+    - 经营职能
+    web_search:
+      fixed_queries:
+      - '{company_name} 官网'
+      - '{company_name} 新闻'
+      auto: false
+- label_id: 倒班排班
+  label_name: 倒班排班
+  description: ''
+  min_matched_indicators: 1
+  indicators:
+  - indicator_id: 倒班制用工
+    indicator_name: 倒班制用工
+    evaluator: llm_web
+    standard: 招聘 JD 中倒班、排班、日班、晚班、夜班关键词出现频次≥1 次
+    data_sources:
+    - type: table
+      table: recruitments
+      field: title
+      op: text_contains
+      keywords: []
+    prompt: 请判断企业是否满足指标：倒班制用工。只能基于证据判断，不得编造。
+    evidence_hints:
+    - 倒班制用工
+    - 招聘
+    - JD
+    - 中倒班
+    - 排班
+    - 日班
+    - 晚班
+    - 夜班关键词出现频次
+    web_search:
+      fixed_queries:
+      - '{company_name} 官网'
+      - '{company_name} 新闻'
+      auto: false
+- label_id: 出口海外
+  label_name: 出口海外
+  description: ''
+  min_matched_indicators: 1
+  indicators:
+  - indicator_id: 海外代工
+    indicator_name: 海外代工
+    evaluator: llm_web
+    standard: 1. 海外代工业务占比≥30%（代工收入 ÷ 总营收）；2. 合作客户含 1 家以上海外知名品牌（如沃尔玛、ZARA、亚马逊）
+    data_sources: []
+    prompt: 请判断企业是否满足指标：海外代工。只能基于证据判断，不得编造。
+    evidence_hints:
+    - 海外代工
+    - 海外代工业务占比
+    - '30'
+    - 代工收入
+    - 总营收
+    - 合作客户含
+    - 家以上海外知名品牌
+    - 如沃尔玛
+    web_search:
+      fixed_queries:
+      - '{company_name} 官网'
+      - '{company_name} 新闻'
+      auto: false
+  - indicator_id: 海外营收
+    indicator_name: 海外营收
+    evaluator: llm_web
+    standard: 1. 出口营收占比≥50%（海关出口额 ÷ 总营收）；2. 行业属性为纺织 / 电子 / 玩具 / 家具（高验厂需求行业）
+    data_sources: []
+    prompt: 请判断企业是否满足指标：海外营收。只能基于证据判断，不得编造。
+    evidence_hints:
+    - 海外营收
+    - 出口营收占比
+    - '50'
+    - 海关出口额
+    - 总营收
+    - 行业属性为纺织
+    - 电子
+    - 玩具
+    web_search:
+      fixed_queries:
+      - '{company_name} 官网'
+      - '{company_name} 新闻'
+      auto: false
+  - indicator_id: 境外设厂
+    indicator_name: 境外设厂
+    evaluator: llm_web
+    standard: 在新闻招聘信息中体现海外有设立生产基地或者办公地点，或招聘 JD 提及境外国家、地区
+    data_sources:
+    - type: table
+      table: recruitments
+      field: title
+      op: text_contains
+      keywords: []
+    prompt: 请判断企业是否满足指标：境外设厂。只能基于证据判断，不得编造。
+    evidence_hints:
+    - 境外设厂
+    - 在新闻招聘信息中体现海外有设立生产基地或者办公地点
+    - 或招聘
+    - JD
+    - 提及境外国家
+    - 地区
+    web_search:
+      fixed_queries:
+      - '{company_name} 官网'
+      - '{company_name} 新闻'
+      auto: false
+  - indicator_id: 验厂相关资质_记录
+    indicator_name: 验厂相关资质 / 记录
+    evaluator: llm_web
+    standard: 1. 已通过 BSCI/Sedex/SA8000 任一认证（有效期内）； 近 2 年验厂次数≥1 次（含客户验厂 / 第三方审核）
+    data_sources:
+    - type: table
+      table: qualifications
+      field: qualification_name
+      op: exists
+    prompt: 请判断企业是否满足指标：验厂相关资质 / 记录。只能基于证据判断，不得编造。
+    evidence_hints:
+    - 验厂相关资质
+    - 记录
+    - 已通过
+    - BSCI
+    - Sedex
+    - SA8000
+    - 任一认证
+    - 有效期内
+    web_search:
+      fixed_queries:
+      - '{company_name} 官网'
+      - '{company_name} 新闻'
+      auto: false
+  - indicator_id: 考勤岗位设置
+    indicator_name: 考勤岗位设置
+    evaluator: llm_web
+    standard: 招聘 JD 提及 “合规专员”、“验厂专员” 关键词≥1 次
+    data_sources:
+    - type: table
+      table: recruitments
+      field: title
+      op: text_contains
+      keywords: []
+    prompt: 请判断企业是否满足指标：考勤岗位设置。只能基于证据判断，不得编造。
+    evidence_hints:
+    - 考勤岗位设置
+    - 招聘
+    - JD
+    - 提及
+    - 合规专员
+    - 验厂专员
+    - 关键词
+    web_search:
+      fixed_queries:
+      - '{company_name} 官网'
+      - '{company_name} 新闻'
+      auto: false
+  - indicator_id: 外贸岗位设置
+    indicator_name: 外贸岗位设置
+    evaluator: llm_web
+    standard: 招聘 JD 提及 “派驻海外”、“外贸“、”外语“ 关键词≥1 次
+    data_sources:
+    - type: table
+      table: recruitments
+      field: title
+      op: text_contains
+      keywords: []
+    prompt: 请判断企业是否满足指标：外贸岗位设置。只能基于证据判断，不得编造。
+    evidence_hints:
+    - 外贸岗位设置
+    - 招聘
+    - JD
+    - 提及
+    - 派驻海外
+    - 外贸
+    - 外语
+    - 关键词
+    web_search:
+      fixed_queries:
+      - '{company_name} 官网'
+      - '{company_name} 新闻'
+      auto: false
+  - indicator_id: 境外工作地点
+    indicator_name: 境外工作地点
+    evaluator: llm_web
+    standard: 招聘信息中体现有海外地址
+    data_sources:
+    - type: table
+      table: recruitments
+      field: title
+      op: text_contains
+      keywords: []
+    prompt: 请判断企业是否满足指标：境外工作地点。只能基于证据判断，不得编造。
+    evidence_hints:
+    - 境外工作地点
+    - 招聘信息中体现有海外地址
+    web_search:
+      fixed_queries:
+      - '{company_name} 官网'
+      - '{company_name} 新闻'
+      auto: false
+  - indicator_id: 商品服务有出口特征
+    indicator_name: 商品服务有出口特征
+    evaluator: llm_web
+    standard: 出口导向型业务
+    data_sources: []
+    prompt: 请判断企业是否满足指标：商品服务有出口特征。只能基于证据判断，不得编造。
+    evidence_hints:
+    - 商品服务有出口特征
+    - 出口导向型业务
+    web_search:
+      fixed_queries:
+      - '{company_name} 官网'
+      - '{company_name} 新闻'
+      auto: false
+marketing_points:
+  科技属性:
+    recommendation: ''
+    sale_rule: ''
+    kyc_questions:
+    - 了解企业目前有没有上考勤系统，平时怎样统计考勤？
+    - 了解企业是否存在不同岗位人员不同考勤规则的情况？有没有固定上班和排班？
+    - 了解员工是否有加班，加班是给加班费，还是转调休假，如果是调休假目前手工统计管理还是通过系统处理？
+    - 了解企业算工资是不是计时和月薪的，要不要通过考勤来核算。
+  制造业通用考勤:
+    recommendation: ''
+    sale_rule: ''
+    kyc_questions:
+    - 了解企业目前有没有上考勤系统，平时怎样统计考勤？
+    - 了解企业是否存在不同岗位人员不同考勤规则的情况？有没有固定上班和排班？
+    - 了解员工是否有加班，加班是给加班费，还是转调休假，如果是调休假目前手工统计管理还是通过系统处理？
+    - 了解企业算工资是不是计时和月薪的，要不要通过考勤来核算。
+  多分支机构:
+    recommendation: ''
+    sale_rule: ''
+    kyc_questions:
+    - 存在分支机构的企业，了解考勤是统一管理还是各自独立管理，集团要不要看分子公司考勤？
+    - 了解企业是否每个分子公司一张独立的考勤统计报表，统计项不一样
+  倒班排班:
+    recommendation: 倒班排班企业：常规的操作是每个生产线安排一个人去负责统筹管理和登记，就容易缺漏、错误，甚至是包庇的情况。因此通过介绍我们可以系统排班、打卡记录与班次关联、分权限每个产线单独排班进行切入。
+    sale_rule: 该类企业倒班排班漏洞多，传统人工易出错；介绍系统自动关联班次打卡、分权限排班，提升准确性与透明度。
+    kyc_questions:
+    - 了解企业车间生产是否有排班、倒班情况？现在谁负责排班？班次调整频率高不高？
+    - 了解企业是否需要统计夜班次数，发放夜班补贴。
+    - 了解企业是否存在连班情况，平时这类考勤怎样管理。
+  出口海外:
+    recommendation: ''
+    sale_rule: ''
+    kyc_questions:
+    - 了解企业有没有存在产品出口海外情况，面向客户是否涉及欧美等国家。
+    - 了解企业目前有没有上考勤系统，平时怎样统计考勤？
+    - 是否存在客户验厂的要求，尤其在考勤管理上，公司目前的应对措施有哪些？
+    - 了解企业工资核算是计件还是计时，考勤是否需要统计周一至周五、周六日加班的工时，用于核算工资和验厂使用。
