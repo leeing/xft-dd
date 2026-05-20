@@ -13,6 +13,7 @@ async def business_recommend_node(state: RecommenderState) -> dict[str, object]:
     if config is None:
         display.skip("业务结果: 未配置 business_modules.yaml")
         return {"business_recommendation": None}
+    display.phase(3, 4, "业务推荐评估")
     events: list[dict[str, object]] = []
     business_evidence = _merge_indicator_evidence(
         state.get("business_evidence", {}),

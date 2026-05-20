@@ -14,7 +14,7 @@ async def business_web_evidence_node(state: RecommenderState) -> dict[str, objec
     if not state.get("with_business_web", False):
         display.skip("业务 Web 证据: 未启用")
         return {}
-    display.phase(4, 6, "业务 Web 证据")
+    display.phase(2, 4, "业务 Web 证据")
     out_dir = Path(state["output_root"]) / state["run_id"]
     result = await run_business_web_evidence(
         config=state.get("business_config"),

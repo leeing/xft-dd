@@ -38,7 +38,7 @@ def _llm_metrics(events: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 async def save_node(state: RecommenderState) -> dict[str, object]:
-    display.phase(5, 5, "生成报告")
+    display.phase(4, 4, "生成报告")
     out_dir = Path(state["output_root"]) / state["run_id"]
     out_dir.mkdir(parents=True, exist_ok=True)
     profile_path = out_dir / "profile.json"
