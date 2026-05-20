@@ -8,8 +8,9 @@ from time import perf_counter
 from typing import Any
 
 from openai import OpenAIError
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
+from xft.ai.chat_json import create_json_chat_completion
 from xft.ai.client import get_ai_client
 from xft.ai.json_extractor import extract_json
 from xft.ai.llm_trace import (
@@ -44,7 +45,33 @@ class _LlmIndicatorPayload(BaseModel):
     result: BusinessResult
     confidence: BusinessConfidence
     current_status: str
-    evidence: list[str] = []
+    evidence: list[str] = Field(default_factory=list)
+
+    @field_validator("evidence", mode="before")
+    @classmethod
+    def coerce_evidence(cls, value: Any) -> list[str]:
+        if value in (None, ""):
+            return []
+        if isinstance(value, str):
+            return [value]
+        if isinstance(value, list):
+            return [_evidence_item_to_text(item) for item in value if _evidence_item_to_text(item)]
+        text = _evidence_item_to_text(value)
+        return [text] if text else []
+
+
+def _evidence_item_to_text(value: Any) -> str:
+    if value in (None, ""):
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict):
+        for key in ("evidence", "text", "content", "value", "description", "reason"):
+            item = value.get(key)
+            if isinstance(item, str) and item.strip():
+                return item.strip()
+        return json.dumps(value, ensure_ascii=False, default=str)
+    return str(value).strip()
 
 
 async def evaluate_business_recommendation(  # noqa: PLR0913
@@ -146,6 +173,14 @@ async def _evaluate_module(  # noqa: PLR0913
     attributes_number = sum(1 for item in labels if item.result == "matched")
     indicators_number = sum(item.matched_indicators for item in labels)
     acceptance_result, conclusion = _acceptance(config, module, attributes_number, indicators_number)
+    acceptance_result, conclusion = _cap_acceptance_for_confidence(
+        config=config,
+        module=module,
+        labels=labels,
+        acceptance_result=acceptance_result,
+        attributes_number=attributes_number,
+        indicators_number=indicators_number,
+    )
     score = module.base_score + sum(item.score for item in labels)
     return (
         BusinessModuleResult(
@@ -299,14 +334,26 @@ async def _evaluate_indicator_with_fallback(  # noqa: PLR0913
                 error=exc,
                 fallback="本地 evidence_hints 兜底判断",
             )
-        result = _fallback_indicator_result(
-            config=config,
-            module=module,
-            label=label,
-            indicator=indicator,
-            profile=profile,
-            indicator_evidence=_indicator_evidence(business_evidence, module, label, indicator),
-        )
+        indicator_evidence = _indicator_evidence(business_evidence, module, label, indicator)
+        if indicator.evaluator in ("llm", "llm_web", "hybrid") and use_llm:
+            result = _llm_failure_indicator_result(
+                config=config,
+                module=module,
+                label=label,
+                indicator=indicator,
+                profile=profile,
+                indicator_evidence=indicator_evidence,
+                exc=exc,
+            )
+        else:
+            result = _fallback_indicator_result(
+                config=config,
+                module=module,
+                label=label,
+                indicator=indicator,
+                profile=profile,
+                indicator_evidence=indicator_evidence,
+            )
         result = _with_actual_web_trace(result, web_trace_by_indicator, module, label, indicator)
         return result, f"{_indicator_key(module, label, indicator)}: {exception_summary(exc)}"
     else:
@@ -328,6 +375,15 @@ async def _evaluate_indicator(  # noqa: PLR0913
     semaphore: asyncio.Semaphore,
 ) -> BusinessIndicatorResult:
     indicator_evidence = _indicator_evidence(business_evidence, module, label, indicator)
+    if indicator.evaluator == "llm_web" and not _has_matched_web_evidence(indicator_evidence):
+        return _llm_web_missing_evidence_indicator_result(
+            config=config,
+            module=module,
+            label=label,
+            indicator=indicator,
+            company_name=company_name,
+            indicator_evidence=indicator_evidence,
+        )
     if indicator.evaluator == "rule":
         return _evaluate_rule_indicator(config, module, label, indicator, profile, indicator_evidence)
     if indicator.evaluator == "hybrid":
@@ -612,7 +668,8 @@ async def _evaluate_llm_indicator(  # noqa: PLR0913
         print_llm_start(title=f"业务指标:{key}", model=settings.llm_model, request=request_summary)
     started = perf_counter()
     try:
-        resp = await client.chat.completions.create(
+        resp = await create_json_chat_completion(
+            client,
             model=settings.llm_model,
             messages=[
                 {"role": "system", "content": system},
@@ -701,6 +758,10 @@ def _indicator_evidence(
     indicator: BusinessIndicatorConfig,
 ) -> list[dict[str, Any]]:
     return business_evidence.get(_indicator_key(module, label, indicator), [])
+
+
+def _has_matched_web_evidence(items: list[dict[str, Any]]) -> bool:
+    return any(item.get("source_type") == "web" and item.get("matched") and item.get("evidence") for item in items)
 
 
 def _web_trace_by_indicator(rows: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
@@ -809,6 +870,56 @@ def _fallback_indicator_result(  # noqa: PLR0913
     )
 
 
+def _llm_failure_indicator_result(  # noqa: PLR0913
+    *,
+    config: BusinessRecommendationConfig,
+    module: BusinessModuleConfig,
+    label: BusinessLabelConfig,
+    indicator: BusinessIndicatorConfig,
+    profile: dict[str, Any],
+    indicator_evidence: list[dict[str, Any]],
+    exc: Exception,
+) -> BusinessIndicatorResult:
+    return _indicator_result(
+        config=config,
+        module=module,
+        label=label,
+        indicator=indicator,
+        result="unknown",
+        confidence="低",
+        current_status=f"LLM 指标判断失败，已按证据不足处理：{exception_summary(exc)}",
+        evidence=[],
+        evidence_details=indicator_evidence,
+        web_search_trace=_render_web_search_trace(
+            company_name=str(profile.get("company_name") or ""),
+            indicator=indicator,
+        ),
+    )
+
+
+def _llm_web_missing_evidence_indicator_result(  # noqa: PLR0913
+    *,
+    config: BusinessRecommendationConfig,
+    module: BusinessModuleConfig,
+    label: BusinessLabelConfig,
+    indicator: BusinessIndicatorConfig,
+    company_name: str,
+    indicator_evidence: list[dict[str, Any]],
+) -> BusinessIndicatorResult:
+    return _indicator_result(
+        config=config,
+        module=module,
+        label=label,
+        indicator=indicator,
+        result="unknown",
+        confidence="低",
+        current_status="Web 证据不足，未调用 LLM，需进一步核实。",
+        evidence=[],
+        evidence_details=indicator_evidence,
+        web_search_trace=_render_web_search_trace(company_name=company_name, indicator=indicator),
+    )
+
+
 def _indicator_result(  # noqa: PLR0913
     *,
     config: BusinessRecommendationConfig,
@@ -859,6 +970,71 @@ def _acceptance(
     return selected.result, conclusion
 
 
+def _cap_acceptance_for_confidence(  # noqa: PLR0913
+    *,
+    config: BusinessRecommendationConfig,
+    module: BusinessModuleConfig,
+    labels: list[BusinessLabelResult],
+    acceptance_result: str,
+    attributes_number: int,
+    indicators_number: int,
+) -> tuple[str, str]:
+    if acceptance_result != "高" or _has_high_trust_matched_indicator(labels):
+        return acceptance_result, _acceptance_conclusion(
+            config=config,
+            module=module,
+            result=acceptance_result,
+            attributes_number=attributes_number,
+            indicators_number=indicators_number,
+        )
+    policy = module.acceptance_policy or config.acceptance_policy
+    capped = next((level.result for level in policy.levels if level.result == "中高"), acceptance_result)
+    if capped == acceptance_result:
+        return acceptance_result, _acceptance_conclusion(
+            config=config,
+            module=module,
+            result=acceptance_result,
+            attributes_number=attributes_number,
+            indicators_number=indicators_number,
+        )
+    return capped, _acceptance_conclusion(
+        config=config,
+        module=module,
+        result=capped,
+        attributes_number=attributes_number,
+        indicators_number=indicators_number,
+    )
+
+
+def _acceptance_conclusion(
+    *,
+    config: BusinessRecommendationConfig,
+    module: BusinessModuleConfig,
+    result: str,
+    attributes_number: int,
+    indicators_number: int,
+) -> str:
+    policy = module.acceptance_policy or config.acceptance_policy
+    level = next((item for item in policy.levels if item.result == result), None)
+    if level is None:
+        return f"企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为{result}。"
+    return level.conclusion.format(attributes_number=attributes_number, indicators_number=indicators_number)
+
+
+def _has_high_trust_matched_indicator(labels: list[BusinessLabelResult]) -> bool:
+    for label in labels:
+        for indicator in label.indicator_results:
+            if indicator.result != "matched":
+                continue
+            if indicator.confidence == "高":
+                return True
+            if indicator.evaluator == "rule" and any(
+                detail.get("source_type") != "web" and detail.get("matched") for detail in indicator.evidence_details
+            ):
+                return True
+    return False
+
+
 def _select_module(modules: list[BusinessModuleResult]) -> BusinessModuleResult | None:
     if not modules:
         return None
@@ -873,11 +1049,14 @@ def _key_indicator_verify(matched: int, possible: int) -> str:
     return "证据不足"
 
 
-def _compare(value: Any, op: str, expected: Any) -> bool:  # noqa: PLR0911
+def _compare(value: Any, op: str, expected: Any) -> bool:  # noqa: C901, PLR0911
     if op == "exists":
         return value not in (None, "", [], {})
     if op == "contains":
         return contains(value, expected)
+    if op == "contains_any":
+        values = expected if isinstance(expected, list) else [expected]
+        return any(contains(value, item) for item in values)
     if op == "contains_any":
         values = expected if isinstance(expected, list) else [expected]
         return any(contains(value, item) for item in values)

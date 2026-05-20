@@ -11,8 +11,9 @@ from pathlib import Path
 from typing import Any
 
 from openai import OpenAIError
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
+from xft.ai.chat_json import create_json_chat_completion
 from xft.ai.client import get_ai_client
 from xft.ai.json_extractor import extract_json
 from xft.core.search_models import SearchItem
@@ -31,6 +32,9 @@ from xft.web.config_loader import load_web_search_config
 from xft.web.models import WebProviderConfig
 from xft.web.providers import build_provider
 
+MIN_QUERY_TERM_LEN = 2
+MAX_QUERY_TERMS = 3
+
 
 @dataclass(frozen=True)
 class BusinessWebRunResult:
@@ -44,10 +48,21 @@ class BusinessWebRunResult:
 
 
 class _AutoQueryPayload(BaseModel):
-    queries: list[str]
+    queries: list[str] = Field(default_factory=list)
+
+    @field_validator("queries", mode="before")
+    @classmethod
+    def coerce_queries(cls, value: Any) -> list[str]:
+        if value in (None, ""):
+            return []
+        if isinstance(value, str):
+            return [value]
+        if isinstance(value, list):
+            return [str(item) for item in value if str(item).strip()]
+        return [str(value)]
 
 
-async def run_business_web_evidence(  # noqa: C901, PLR0913, PLR0915
+async def run_business_web_evidence(  # noqa: C901, PLR0912, PLR0913, PLR0915
     *,
     config: BusinessRecommendationConfig | None,
     company_name: str,
@@ -140,7 +155,8 @@ async def run_business_web_evidence(  # noqa: C901, PLR0913, PLR0915
                             query_rows.append(per_key_row)
                             result_rows.extend(cached_rows)
                             trace.append(_trace_row(per_key_row, cached_rows))
-                            evidence.setdefault(key, []).extend(_result_evidence(per_key_row, cached_rows))
+                            if result_evidence := _result_evidence(per_key_row, cached_rows):
+                                evidence.setdefault(key, []).extend(result_evidence)
                             continue
                         query_index += 1
                         query_id = f"bq_{query_index:04d}"
@@ -167,7 +183,8 @@ async def run_business_web_evidence(  # noqa: C901, PLR0913, PLR0915
                         query_rows.append(query_row)
                         result_rows.extend(rows)
                         trace.append(_trace_row(query_row, rows))
-                        evidence.setdefault(key, []).extend(_result_evidence(query_row, rows))
+                        if result_evidence := _result_evidence(query_row, rows):
+                            evidence.setdefault(key, []).extend(result_evidence)
     write_jsonl(queries_path, query_rows)
     write_jsonl(results_path, result_rows)
     write_json(trace_path, {"queries": query_rows, "trace": trace})
@@ -202,6 +219,7 @@ async def _run_one_query(  # noqa: PLR0913
     created_at = datetime.now(UTC)
     provider = provider_factory(provider_name, provider_cfg)
     response = await provider.search(query, dimension_id=dimension_id)
+    raw_result_count = len(response.items)
     query_row = {
         "query_id": query_id,
         "indicator_key": indicator_key,
@@ -219,38 +237,53 @@ async def _run_one_query(  # noqa: PLR0913
         "when": decision.when,
         "effect": decision.effect,
         "cache_key": _cache_key(profile=profile, indicator_key=indicator_key, query=query, provider=provider_name),
+        "raw_result_count": raw_result_count,
         "created_at": created_at,
     }
-    rows: list[dict[str, Any]] = []
-    for raw in response.items[:max_results]:
-        item = SearchItem.model_validate(raw)
-        rows.append(
-            {
-                "result_id": _result_id(query_id, item.id),
-                "query_id": query_id,
-                "indicator_key": indicator_key,
-                "module_id": module.module_id,
-                "label_id": label.label_id,
-                "indicator_id": indicator.indicator_id,
-                "credit_code": str_or_none(profile.get("credit_code")),
-                "company_name": str(profile.get("company_name") or company_name),
-                "provider": provider_name,
-                "title": item.title,
-                "url": item.url,
-                "snippet": item.snippet,
-                "full_text_preview": item.full_text[:500] if item.full_text else "",
-                "source": item.source,
-                "rank": item.rank,
-                "created_at": item.fetched_at,
-            }
+    raw_items = [
+        SearchItem.model_validate(raw)
+        for raw in response.items
+        if _is_company_relevant(raw, company_name=str(profile.get("company_name") or company_name), profile=profile)
+        and _is_indicator_relevant(
+            raw,
+            company_name=str(profile.get("company_name") or company_name),
+            indicator=indicator,
+            query=query,
         )
+    ][:max_results]
+    rows = [
+        {
+            "result_id": _result_id(query_id, item.id),
+            "query_id": query_id,
+            "indicator_key": indicator_key,
+            "module_id": module.module_id,
+            "label_id": label.label_id,
+            "indicator_id": indicator.indicator_id,
+            "credit_code": str_or_none(profile.get("credit_code")),
+            "company_name": str(profile.get("company_name") or company_name),
+            "provider": provider_name,
+            "title": item.title,
+            "url": item.url,
+            "snippet": item.snippet,
+            "full_text_preview": item.full_text[:500] if item.full_text else "",
+            "source": item.source,
+            "rank": item.rank,
+            "created_at": item.fetched_at,
+        }
+        for item in raw_items
+    ]
     return query_row, rows
 
 
 def _render_queries(*, company_name: str, indicator: BusinessIndicatorConfig) -> list[str]:
     if indicator.web_search is None:
         return []
-    return [query.format(company_name=company_name) for query in indicator.web_search.fixed_queries]
+    return _indicatorized_queries(
+        company_name=company_name,
+        indicator=indicator,
+        queries=[query.format(company_name=company_name) for query in indicator.web_search.fixed_queries],
+        max_queries=len(indicator.web_search.fixed_queries),
+    )
 
 
 async def _auto_queries(  # noqa: PLR0913
@@ -324,7 +357,8 @@ async def _plan_auto_queries_with_llm(  # noqa: PLR0913
     }
     client = get_ai_client()
     try:
-        resp = await client.chat.completions.create(
+        resp = await create_json_chat_completion(
+            client,
             model=settings.llm_model,
             messages=[
                 {"role": "system", "content": system},
@@ -337,7 +371,12 @@ async def _plan_auto_queries_with_llm(  # noqa: PLR0913
         parsed = _AutoQueryPayload.model_validate(json.loads(extract_json(raw)))
     except (OpenAIError, json.JSONDecodeError, ValidationError, OSError, RuntimeError, TypeError, ValueError):
         return []
-    return [query.strip() for query in parsed.queries if query.strip()][:max_queries]
+    return _indicatorized_queries(
+        company_name=company_name,
+        indicator=indicator,
+        queries=[query.strip() for query in parsed.queries if query.strip()],
+        max_queries=max_queries,
+    )
 
 
 def _result_evidence(query_row: dict[str, Any], rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -356,6 +395,105 @@ def _result_evidence(query_row: dict[str, Any], rows: list[dict[str, Any]]) -> l
         }
         for row in rows
     ]
+
+
+def _indicatorized_queries(
+    *,
+    company_name: str,
+    indicator: BusinessIndicatorConfig,
+    queries: list[str],
+    max_queries: int,
+) -> list[str]:
+    terms = _indicator_terms(indicator)
+    rendered: list[str] = []
+    for query in queries:
+        normalized = " ".join(str(query).split())
+        if not normalized:
+            continue
+        if company_name and company_name not in normalized:
+            normalized = f"{company_name} {normalized}"
+        if terms and _query_needs_indicator_terms(normalized, company_name):
+            normalized = f"{normalized} {terms[0]}"
+        if normalized not in rendered:
+            rendered.append(normalized)
+    return rendered[:max_queries]
+
+
+def _query_needs_indicator_terms(query: str, company_name: str) -> bool:
+    generic = {"官网", "新闻", "公司", "企业", "信息", "介绍", "招聘", "公开"}
+    remainder = query.replace(company_name, " ") if company_name else query
+    tokens = [token for token in remainder.split() if token]
+    return not tokens or all(token in generic for token in tokens)
+
+
+def _indicator_terms(indicator: BusinessIndicatorConfig) -> list[str]:
+    chunks = [indicator.indicator_name, indicator.indicator_id, indicator.standard, indicator.prompt or ""]
+    chunks.extend(indicator.evidence_hints)
+    ignored = {"官网", "新闻", "公司", "企业", "信息", "公开", "判断", "是否", "满足", "指标"}
+    terms: list[str] = []
+    for chunk in chunks:
+        cleaned = (
+            str(chunk)
+            .replace("_", " ")
+            .replace("/", " ")
+            .replace("：", " ")
+            .replace(":", " ")
+            .replace("（", " ")
+            .replace("）", " ")
+            .replace("(", " ")
+            .replace(")", " ")
+        )
+        for part in cleaned.split():
+            term = part.strip("，。、；;,. ")
+            if len(term) >= MIN_QUERY_TERM_LEN and term not in ignored and term not in terms:
+                terms.append(term)
+            if len(terms) >= MAX_QUERY_TERMS:
+                return terms
+    return terms
+
+
+def _is_company_relevant(raw: Any, *, company_name: str, profile: dict[str, Any]) -> bool:
+    item = SearchItem.model_validate(raw)
+    haystack = "\n".join(
+        [
+            item.title or "",
+            item.snippet or "",
+            item.full_text[:1000] if item.full_text else "",
+            item.url or "",
+        ]
+    )
+    names = [company_name, str(profile.get("company_name") or "")]
+    credit_code = str(profile.get("credit_code") or "")
+    if credit_code and credit_code in haystack:
+        return True
+    return any(name and name in haystack for name in names)
+
+
+def _is_indicator_relevant(raw: Any, *, company_name: str, indicator: BusinessIndicatorConfig, query: str) -> bool:
+    terms = [*_indicator_terms(indicator), *_query_terms(query=query, company_name=company_name)]
+    if not terms:
+        return True
+    item = SearchItem.model_validate(raw)
+    haystack = "\n".join(
+        [
+            item.title or "",
+            item.snippet or "",
+            item.full_text[:1000] if item.full_text else "",
+        ]
+    )
+    remainder = haystack.replace(company_name, " ") if company_name else haystack
+    return any(term and term in remainder for term in terms)
+
+
+def _query_terms(*, query: str, company_name: str) -> list[str]:
+    generic = {"官网", "新闻", "公司", "企业", "信息", "介绍", "招聘", "公开"}
+    remainder = query.replace(company_name, " ") if company_name else query
+    terms: list[str] = []
+    for token in remainder.split():
+        term = token.strip("，。、；;,. ")
+        if len(term) >= MIN_QUERY_TERM_LEN and term not in generic and term not in terms:
+            terms.append(term)
+    return terms[:MAX_QUERY_TERMS]
 
 
 def _evidence_from_rows(
@@ -391,6 +529,7 @@ def _trace_row(query_row: dict[str, Any], rows: list[dict[str, Any]]) -> dict[st
         "when": query_row.get("when"),
         "effect": query_row.get("effect"),
         "result_count": len(rows),
+        "filtered_result_count": max(0, int(query_row.get("raw_result_count") or 0) - len(rows)),
         "results": [
             {"title": row.get("title"), "url": row.get("url"), "snippet": row.get("snippet")} for row in rows[:5]
         ],
