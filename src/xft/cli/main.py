@@ -5,13 +5,12 @@ from __future__ import annotations
 import sys
 from collections.abc import Callable
 
-from xft.cli import cache, calibrate, diligence, recommend, runs, scenario, warehouse
+from xft.cli import cache, calibrate, recommend, runs, scenario, warehouse
 
 Command = Callable[[list[str] | None], int]
 
 COMMANDS: dict[str, Command] = {
     "recommend": recommend.main,
-    "diligence": diligence.main,
     "calibrate": calibrate.main,
     "warehouse": warehouse.main,
     "scenario": scenario.main,
@@ -27,8 +26,7 @@ def _print_help() -> None:
                 "usage: xft <command> [options]",
                 "",
                 "commands:",
-                "  recommend    run product recommendation",
-                "  diligence    run enterprise due diligence",
+                "  recommend    run business recommendation",
                 "  calibrate    run recommendation calibration",
                 "  warehouse    build DuckDB warehouse",
                 "  scenario     inspect or validate scenario bundles",
@@ -37,12 +35,11 @@ def _print_help() -> None:
                 "",
                 "examples:",
                 '  xft recommend "企业名称"',
-                '  xft diligence "企业名称" --dry-run',
-                "  xft recommend --company-list company.txt --scenario config/recommend/sales_recommendation",
-                "  xft runs inspect --output recommendation_runs_summary.csv",
+                "  xft recommend --company-list company.txt --scenario config/recommender/xft",
+                "  xft runs inspect --output outputs/recommender/xft/runs_summary.csv",
                 "  xft calibrate --company-list company.txt --labels calibration_labels.csv",
                 "  xft warehouse build --input data --output cache/company_warehouse.duckdb",
-                "  xft scenario validate config/recommend/sales_recommendation",
+                "  xft scenario validate config/recommender/xft",
                 "",
             ]
         )

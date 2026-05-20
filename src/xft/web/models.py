@@ -28,6 +28,16 @@ class WebExecutionConfig(BaseModel):
     max_results_per_query: int = Field(default=5, ge=1)
 
 
+class WebFetchConfig(BaseModel):
+    """crawl4ai page fetch config for enriching search results with full page text."""
+
+    enabled: bool = False
+    timeout_seconds: int = Field(default=25, ge=1)
+    concurrency: int = Field(default=2, ge=1, le=10)
+    max_chars: int = Field(default=6900, ge=100)
+    blocked_domains: list[str] = Field(default_factory=list)
+
+
 class WebSearchConfig(BaseModel):
     """Root Web search config."""
 
@@ -37,6 +47,7 @@ class WebSearchConfig(BaseModel):
     default_providers: list[str] = Field(default_factory=list)
     providers: dict[str, WebProviderConfig]
     execution: WebExecutionConfig = Field(default_factory=WebExecutionConfig)
+    fetch: WebFetchConfig = Field(default_factory=WebFetchConfig)
 
     @model_validator(mode="after")
     def validate_default_providers(self) -> WebSearchConfig:

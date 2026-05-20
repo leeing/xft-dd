@@ -61,7 +61,7 @@ class CalibrationReport(BaseModel):
 
     batch_id: str
     use_llm: bool = False
-    with_business_web: bool = False
+    with_web: bool = False
     company_count: int
     status_counts: dict[str, int] = Field(default_factory=dict)
     top_module_distribution: list[dict[str, Any]] = Field(default_factory=list)
@@ -76,8 +76,8 @@ class CalibrationReport(BaseModel):
     top1_accuracy: float = 0
     acceptable_accuracy: float = 0
     label_mismatches: list[dict[str, Any]] = Field(default_factory=list)
-    business_web_evidence_coverage: float = 0
-    business_web_evidence_zero_companies: list[dict[str, Any]] = Field(default_factory=list)
+    web_evidence_coverage: float = 0
+    web_evidence_zero_companies: list[dict[str, Any]] = Field(default_factory=list)
     llm_fallback_suspected_companies: list[dict[str, Any]] = Field(default_factory=list)
     issues: list[CalibrationIssue] = Field(default_factory=list)
 
@@ -86,15 +86,15 @@ async def run_recommendation_calibration(  # noqa: PLR0913
     *,
     company_names: list[str],
     warehouse_db: str,
-    scenario_path: str = "config/recommend/sales_recommendation",
+    scenario_path: str = "config/recommender/xft",
     batch_id: str | None = None,
     batch_output: str | None = None,
     limit: int | None = None,
     use_llm: bool = False,
-    with_business_web: bool = False,
-    refresh_business_web: bool = False,
+    with_web: bool = False,
+    refresh_web: bool = False,
     web_config_path: str | None = None,
-    business_web_providers: list[str] | None = None,
+    web_providers: list[str] | None = None,
     labels_path: str | Path | None = None,
 ) -> tuple[BatchRunResult, CalibrationReport, Path, Path, Path]:
     """Run a recommendation batch and write calibration JSON/Markdown reports."""
@@ -111,9 +111,9 @@ async def run_recommendation_calibration(  # noqa: PLR0913
             scenario_path=scenario_path,
             use_llm=use_llm,
             web_config_path=web_config_path,
-            with_business_web=with_business_web,
-            refresh_business_web=refresh_business_web,
-            business_web_providers=business_web_providers,
+            with_web=with_web,
+            refresh_web=refresh_web,
+            web_providers=web_providers,
             continue_on_error=True,
         ),
     )
@@ -123,15 +123,15 @@ async def run_recommendation_calibration(  # noqa: PLR0913
         batch.rows,
         labels=labels,
         use_llm=use_llm,
-        with_business_web=with_business_web,
+        with_web=with_web,
     )
     batch_dir = Path(batch.batch_dir)
     json_path = batch_dir / "calibration_report.json"
     md_path = batch_dir / "calibration_report.md"
-    review_path = batch_dir / "business_web_review_samples.csv"
+    review_path = batch_dir / "web_review_samples.csv"
     json_path.write_text(report.model_dump_json(indent=2), encoding="utf-8")
     md_path.write_text(render_calibration_report(report), encoding="utf-8")
-    write_business_web_review_samples(review_path, batch.rows)
+    write_web_review_samples(review_path, batch.rows)
     return batch, report, json_path, md_path, review_path
 
 
@@ -164,7 +164,7 @@ def build_calibration_report(  # noqa: PLR0913
     *,
     labels: list[CalibrationLabel] | None = None,
     use_llm: bool = False,
-    with_business_web: bool = False,
+    with_web: bool = False,
 ) -> CalibrationReport:
     """Build a calibration report from recommendation batch summary rows."""
     status_counts = Counter(str(row.get("status") or "") for row in rows)
@@ -199,7 +199,7 @@ def build_calibration_report(  # noqa: PLR0913
     report = CalibrationReport(
         batch_id=batch_id,
         use_llm=use_llm,
-        with_business_web=with_business_web,
+        with_web=with_web,
         company_count=len(rows),
         status_counts=dict(status_counts),
         top_module_distribution=top_distribution,
@@ -208,11 +208,11 @@ def build_calibration_report(  # noqa: PLR0913
         no_recommendation_companies=no_recommendation,
         low_completeness_companies=low_completeness,
         high_conflict_companies=high_conflict,
-        business_web_evidence_coverage=_web_evidence_coverage(rows),
-        business_web_evidence_zero_companies=[
+        web_evidence_coverage=_web_evidence_coverage(rows),
+        web_evidence_zero_companies=[
             _company_metric(row, "web_evidence_count")
             for row in rows
-            if with_business_web and row.get("status") != "failed" and _int(row.get("web_evidence_count")) == 0
+            if with_web and row.get("status") != "failed" and _int(row.get("web_evidence_count")) == 0
         ],
         llm_fallback_suspected_companies=[
             _company_metric(row, "top_module_id")
@@ -235,7 +235,7 @@ def render_calibration_report(report: CalibrationReport) -> str:
         f"- 批次 ID：{report.batch_id}",
         f"- 企业数：{report.company_count}",
         f"- LLM 推荐：{'启用' if report.use_llm else '未启用'}",
-        f"- 业务 Web 证据：{'启用' if report.with_business_web else '未启用'}",
+        f"- 业务 Web 证据：{'启用' if report.with_web else '未启用'}",
         f"- 状态分布：{json.dumps(report.status_counts, ensure_ascii=False)}",
         f"- 平均 Top 推荐分：{report.average_top_score:.1f}",
         "",
@@ -257,17 +257,17 @@ def render_calibration_report(report: CalibrationReport) -> str:
     lines.extend(_metric_section("低画像完整度企业", report.low_completeness_companies, "profile_completeness"))
     lines.extend(_metric_section("高冲突企业", report.high_conflict_companies, "conflict_count"))
     lines.extend(["", "## 业务 Web 校准", ""])
-    if report.with_business_web:
+    if report.with_web:
         lines.extend(
             [
-                f"- 业务 Web 证据覆盖率：{report.business_web_evidence_coverage:.1%}",
+                f"- 业务 Web 证据覆盖率：{report.web_evidence_coverage:.1%}",
                 "",
             ]
         )
         lines.extend(
             _metric_section(
                 "未形成业务 Web 证据企业",
-                report.business_web_evidence_zero_companies,
+                report.web_evidence_zero_companies,
                 "web_evidence_count",
             )
         )
@@ -311,7 +311,7 @@ def render_calibration_report(report: CalibrationReport) -> str:
     return "\n".join(lines)
 
 
-def write_business_web_review_samples(path: str | Path, rows: list[dict[str, Any]]) -> Path:
+def write_web_review_samples(path: str | Path, rows: list[dict[str, Any]]) -> Path:
     """Write a small CSV that helps humans inspect business Web evidence quality."""
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -376,7 +376,7 @@ def _detect_issues(report: CalibrationReport) -> list[CalibrationIssue]:
                 severity="medium",
                 title="Top1 产品集中度偏高",
                 detail=f"{top['module_id']} 占比 {top['ratio']:.1%}",
-                recommendation="检查 business_modules.yaml 的 base_score、标签门槛和指标规则是否过于宽松。",
+                recommendation="检查 modules.yaml 的 base_score、标签门槛和指标规则是否过于宽松。",
             )
         )
     if report.average_top_score and report.average_top_score < LOW_TOP_SCORE_THRESHOLD:
@@ -385,7 +385,7 @@ def _detect_issues(report: CalibrationReport) -> list[CalibrationIssue]:
                 severity="high",
                 title="平均推荐分偏低",
                 detail=f"平均 Top 分 {report.average_top_score:.1f}",
-                recommendation="检查 business_modules.d 的指标规则是否过严，或为高价值本地字段补充业务指标规则。",
+                recommendation="检查 modules.d 的指标规则是否过严，或为高价值本地字段补充业务指标规则。",
             )
         )
     if report.low_completeness_companies:
@@ -412,7 +412,7 @@ def _detect_issues(report: CalibrationReport) -> list[CalibrationIssue]:
                 severity="high",
                 title="存在无推荐企业",
                 detail=f"{len(report.no_recommendation_companies)} 家企业无推荐",
-                recommendation="检查 business_modules.yaml 的模块、标签、指标规则覆盖面。",
+                recommendation="检查 modules.yaml 的模块、标签、指标规则覆盖面。",
             )
         )
     if report.labeled_count and report.acceptable_accuracy < LOW_ACCEPTABLE_ACCURACY_THRESHOLD:
@@ -421,16 +421,16 @@ def _detect_issues(report: CalibrationReport) -> list[CalibrationIssue]:
                 severity="high",
                 title="业务标注命中率偏低",
                 detail=f"可接受命中率 {report.acceptable_accuracy:.1%}",
-                recommendation="复查 business_modules.yaml 的指标标准、rule/llm/hybrid 配置和业务标注样本。",
+                recommendation="复查 modules.yaml 的指标标准、rule/llm/hybrid 配置和业务标注样本。",
             )
         )
-    if report.with_business_web and report.business_web_evidence_coverage < BUSINESS_WEB_EVIDENCE_COVERAGE_THRESHOLD:
+    if report.with_web and report.web_evidence_coverage < BUSINESS_WEB_EVIDENCE_COVERAGE_THRESHOLD:
         issues.append(
             CalibrationIssue(
                 severity="medium",
                 title="业务 Web 证据覆盖率偏低",
-                detail=f"业务 Web 证据覆盖率 {report.business_web_evidence_coverage:.1%}",
-                recommendation="检查 business_modules.d 中 llm_web 指标的 fixed_queries 和 provider 可用性。",
+                detail=f"业务 Web 证据覆盖率 {report.web_evidence_coverage:.1%}",
+                recommendation="检查 modules.d 中 llm_web 指标的 fixed_queries 和 provider 可用性。",
             )
         )
     return issues

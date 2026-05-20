@@ -26,8 +26,10 @@ from typing import Any
 
 import httpx
 import structlog
+from sqlalchemy.exc import SQLAlchemyError
 
 from xft.core.search_models import SearchItem, make_item_id
+from xft.settings import settings
 
 log = structlog.get_logger(__name__)
 
@@ -263,6 +265,51 @@ def make_metaso_search_item(wp: dict[str, Any], query: str, dimension_id: str, r
     )
 
 
+async def _read_metaso_search_cache(
+    query: str, cache_params: dict[str, Any], dimension_id: str, *, enabled: bool
+) -> list[SearchItem] | None:
+    """Try to read metaso search results from L1 cache. Returns None on miss, disabled, or error."""
+    if not enabled:
+        return None
+    try:
+        from xft.cache.db import ensure_tables
+        from xft.cache.repository import SearchCacheKey, SearchCacheRepo
+
+        await ensure_tables()
+        key = SearchCacheKey(provider="metaso", query_text=query, params=cache_params)
+        return await SearchCacheRepo().get_items(key, dimension_id=dimension_id)
+    except SQLAlchemyError as exc:
+        log.warning("metaso_search_cache_read_failed", query=query[:40], error=str(exc))
+        return None
+
+
+async def _write_metaso_search_cache(
+    query: str, cache_params: dict[str, Any], webpages: list[dict[str, Any]], credits: int, *, enabled: bool
+) -> None:
+    """Write metaso search results to L1 cache. No-op when disabled; failures logged, not raised."""
+    if not enabled:
+        return
+    try:
+        from xft.cache.repository import SearchCacheKey, SearchCacheRepo
+
+        key = SearchCacheKey(provider="metaso", query_text=query, params=cache_params)
+        organic_for_cache = [
+            {
+                "link": wp.get("link"),
+                "title": wp.get("title", ""),
+                "snippet": wp.get("summary") or wp.get("snippet", ""),
+            }
+            for wp in webpages
+        ]
+        await SearchCacheRepo().put_success(
+            key,
+            raw_response={"webpages": webpages, "credits": credits},
+            organic=organic_for_cache,
+        )
+    except SQLAlchemyError as exc:
+        log.warning("metaso_search_cache_write_failed", query=query[:40], error=str(exc))
+
+
 async def fetch_metaso_search_items(  # noqa: PLR0913
     dimension_id: str,
     queries: list[str],
@@ -282,10 +329,18 @@ async def fetch_metaso_search_items(  # noqa: PLR0913
     if not api_key or not queries:
         return [], 0, 0, 0
 
+    cache_enabled = settings.cache_enabled is True and settings.search_cache_enabled is True
+    cache_params: dict[str, Any] = {"size": size, "include_raw_content": include_raw_content}
+
     semaphore = asyncio.Semaphore(concurrency)
 
     async def fetch_one(query: str) -> tuple[list[SearchItem], int, bool]:
         async with semaphore:
+            cached = await _read_metaso_search_cache(query, cache_params, dimension_id, enabled=cache_enabled)
+            if cached is not None:
+                log.debug("metaso_search_cache_hit", query=query[:40], items=len(cached))
+                return cached, 0, True
+
             try:
                 webpages, credits = await asyncio.wait_for(
                     query_metaso_search(
@@ -301,13 +356,16 @@ async def fetch_metaso_search_items(  # noqa: PLR0913
             except (TimeoutError, OSError, httpx.HTTPError, ValueError) as exc:
                 log.warning("metaso_search_failed", query=query[:60], error=str(exc))
                 return [], 0, False
-            else:
-                if not webpages:
-                    log.warning("metaso_search_empty", query=query[:60])
-                    return [], credits, False
-                items = [make_metaso_search_item(wp, query, dimension_id, rank=i) for i, wp in enumerate(webpages)]
-                log.debug("metaso_search_ok", query=query[:60], results=len(items))
-                return items, credits, True
+
+            if not webpages:
+                log.warning("metaso_search_empty", query=query[:60])
+                return [], credits, False
+
+            items = [make_metaso_search_item(wp, query, dimension_id, rank=i) for i, wp in enumerate(webpages)]
+            log.debug("metaso_search_ok", query=query[:60], results=len(items))
+
+            await _write_metaso_search_cache(query, cache_params, webpages, credits, enabled=cache_enabled)
+            return items, credits, True
 
     raw_results = await asyncio.gather(*[fetch_one(q) for q in queries])
 

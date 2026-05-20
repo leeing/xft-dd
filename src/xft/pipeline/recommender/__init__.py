@@ -1,4 +1,4 @@
-"""Configurable product recommendation pipeline."""
+"""Configurable business recommendation pipeline."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""CLI for product recommendation runs."""
+"""CLI for business recommendation runs."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from xft.pipeline.recommender.batch import BatchOptions, run_recommendation_batc
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="run product recommendation from DuckDB company_profile")
+    parser = argparse.ArgumentParser(description="run business recommendation from DuckDB company_profile")
     parser.add_argument("company_name", nargs="?")
     parser.add_argument("--company-list", help="text file with one company name per line")
     parser.add_argument("--warehouse", default=DEFAULT_WAREHOUSE)
@@ -37,12 +37,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--web-config", help="advanced override for web search config")
     parser.add_argument(
-        "--with-business-web",
+        "--with-web",
         action="store_true",
         help="run indicator-level Web search declared by business web_search policies",
     )
-    parser.add_argument("--business-web-refresh", action="store_true", help="refresh indicator-level Web search cache")
-    parser.add_argument("--business-web-provider", help="comma-separated business Web provider names")
+    parser.add_argument("--web-refresh", action="store_true", help="refresh indicator-level Web search cache")
+    parser.add_argument("--web-provider", help="comma-separated business Web provider names")
     parser.add_argument("--llm-debug", action="store_true", help="print LLM call timing, errors, and response previews")
     parser.add_argument(
         "--llm-concurrency",
@@ -100,9 +100,9 @@ async def _main_async(argv: list[str] | None = None) -> int:  # noqa: C901
                 scenario_path=args.scenario,
                 use_llm=not args.no_llm,
                 web_config_path=args.web_config,
-                with_business_web=args.with_business_web,
-                refresh_business_web=args.business_web_refresh,
-                business_web_providers=csv(args.business_web_provider),
+                with_web=args.with_web,
+                refresh_web=args.web_refresh,
+                web_providers=csv(args.web_provider),
                 llm_debug=args.llm_debug,
                 llm_concurrency=args.llm_concurrency,
                 continue_on_error=args.continue_on_error,
@@ -131,9 +131,9 @@ async def _main_async(argv: list[str] | None = None) -> int:  # noqa: C901
             output_dir=args.output_dir,
             use_llm=not args.no_llm,
             web_config_path=args.web_config,
-            with_business_web=args.with_business_web,
-            refresh_business_web=args.business_web_refresh,
-            business_web_providers=csv(args.business_web_provider),
+            with_web=args.with_web,
+            refresh_web=args.web_refresh,
+            web_providers=csv(args.web_provider),
             llm_debug=args.llm_debug,
             llm_concurrency=args.llm_concurrency,
         )

@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 from xft.core.scenario import load_scenario
-from xft.pipeline.recommender.business_config_loader import load_business_recommendation_config
+from xft.pipeline.recommender.config_loader import load_recommendation_config
 from xft.web.config_loader import load_web_search_config
 
 
@@ -47,7 +47,7 @@ def _validate(args: argparse.Namespace) -> int:
             sys.stderr.write(f"error: scenario not found: {args.scenario}\n")
             return 2
         web_search = load_web_search_config(args.scenario)
-        business = load_business_recommendation_config(args.scenario)
+        business = load_recommendation_config(args.scenario)
     except (OSError, TypeError, ValueError) as exc:
         sys.stderr.write(f"invalid scenario: {exc}\n")
         return 1
@@ -56,7 +56,7 @@ def _validate(args: argparse.Namespace) -> int:
         "scenario_name": scenario.config.name,
         "root": str(Path(args.scenario)),
         "web_enabled": web_search.enabled,
-        "business_modules": len(business.modules) if business else 0,
+        "modules": len(business.modules) if business else 0,
     }
     sys.stdout.write(json.dumps(payload, ensure_ascii=False, indent=2))
     sys.stdout.write("\n")

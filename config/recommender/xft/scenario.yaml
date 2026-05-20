@@ -1,0 +1,10 @@
+version: "1.0"
+id: sales_recommendation
+name: 销售产品推荐
+description: 面向企业软件销售线索的产品模块推荐场景
+
+web_search_config: web_search.yaml
+modules_config: modules.yaml
+
+output_dir: ../../../outputs/recommender/xft
+web_cache_root: ../../../data/web/recommender/xft

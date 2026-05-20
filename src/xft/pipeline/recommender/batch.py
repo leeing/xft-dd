@@ -1,4 +1,4 @@
-"""Batch runner and delivery artifacts for product recommendations."""
+"""Batch runner and delivery artifacts for business recommendations."""
 
 from __future__ import annotations
 
@@ -6,10 +6,11 @@ import csv
 import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from time import perf_counter
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, Field
 
@@ -24,7 +25,9 @@ from xft.runtime.artifacts import (
 )
 from xft.utils.file_io import read_json, write_json
 
-DEFAULT_BATCH_OUTPUT = "recommendation_runs/batches"
+DEFAULT_BATCH_OUTPUT = "outputs/recommender/xft/batches"
+
+TZ = ZoneInfo("Asia/Shanghai")
 SUMMARY_FIELDS = [
     "company_name",
     "status",
@@ -84,9 +87,9 @@ class BatchOptions:
     scenario_path: str | None = None
     use_llm: bool = True
     web_config_path: str | None = None
-    with_business_web: bool = False
-    refresh_business_web: bool = False
-    business_web_providers: list[str] | None = None
+    with_web: bool = False
+    refresh_web: bool = False
+    web_providers: list[str] | None = None
     llm_debug: bool = False
     llm_concurrency: int = 4
     continue_on_error: bool = True
@@ -128,7 +131,7 @@ __all__ = [
 
 def make_batch_id() -> str:
     """Return a stable human-readable batch id."""
-    return datetime.now(UTC).strftime("batch_%Y%m%d_%H%M%S")
+    return datetime.now(TZ).strftime("batch_%Y%m%d_%H%M%S")
 
 
 async def run_recommendation_batch(  # noqa: PLR0913
@@ -141,7 +144,7 @@ async def run_recommendation_batch(  # noqa: PLR0913
     skip_existing: bool = False,
     runner: RecommendationRunner | None = None,
 ) -> BatchRunResult:
-    """Run product recommendations for many companies and write delivery artifacts."""
+    """Run business recommendations for many companies and write delivery artifacts."""
     from xft.pipeline.recommender import run_recommendation
 
     runner = runner or run_recommendation
@@ -151,7 +154,7 @@ async def run_recommendation_batch(  # noqa: PLR0913
     runs_root = batch_dir / "runs"
     batch_dir.mkdir(parents=True, exist_ok=True)
     runs_root.mkdir(parents=True, exist_ok=True)
-    started_at = datetime.now(UTC)
+    started_at = datetime.now(TZ)
     manifest = BatchManifest(
         batch_id=bid,
         company_count=len(selected),
@@ -182,9 +185,9 @@ async def run_recommendation_batch(  # noqa: PLR0913
                 run_id=run_id,
                 use_llm=options.use_llm,
                 web_config_path=options.web_config_path,
-                with_business_web=options.with_business_web,
-                refresh_business_web=options.refresh_business_web,
-                business_web_providers=options.business_web_providers,
+                with_web=options.with_web,
+                refresh_web=options.refresh_web,
+                web_providers=options.web_providers,
                 llm_debug=options.llm_debug,
                 llm_concurrency=options.llm_concurrency,
             )
@@ -198,7 +201,7 @@ async def run_recommendation_batch(  # noqa: PLR0913
         rows.append(row)
 
     status = batch_status(rows)
-    manifest = manifest.model_copy(update={"finished_at": datetime.now(UTC), "status": status})
+    manifest = manifest.model_copy(update={"finished_at": datetime.now(TZ), "status": status})
     write_json(batch_dir / "batch_manifest.json", manifest.model_dump(mode="json"))
     summary_json, summary_csv = write_batch_summary(batch_dir, rows)
     failed_path = write_failed_companies(batch_dir, rows)
@@ -237,11 +240,11 @@ def summarize_run(result: RecommendationRunResult) -> dict[str, Any]:
     """Build one standardized summary row from a completed recommendation run."""
     output_dir = Path(result.output_dir)
     profile = read_json(output_dir / "profile.json")
-    business_payload = read_json(output_dir / "result.json")
-    business_label = read_json(output_dir / "business_label_result.json")
-    selected = business_label.get("selected_module")
+    payload = read_json(output_dir / "result.json")
+    label_result = read_json(output_dir / "label_result.json")
+    selected = label_result.get("selected_module")
     selected_module: dict[str, Any] = selected if isinstance(selected, dict) else {}
-    modules = business_label.get("modules")
+    modules = label_result.get("modules")
     module_count = len(modules) if isinstance(modules, list) else 0
     evidence_summary = _evidence_counts(output_dir)
     return _ordered_row(
@@ -255,7 +258,7 @@ def summarize_run(result: RecommendationRunResult) -> dict[str, Any]:
             "scenario": "",
             "scenario_name": "",
             "top_module_id": selected_module.get("module_id", ""),
-            "top_module_name": business_payload.get("Module") or selected_module.get("module_name", ""),
+            "top_module_name": payload.get("Module") or selected_module.get("module_name", ""),
             "top_score": selected_module.get("score", ""),
             "recommendation_count": module_count,
             "profile_completeness": profile.get("profile_completeness", ""),
@@ -264,9 +267,9 @@ def summarize_run(result: RecommendationRunResult) -> dict[str, Any]:
             "web_evidence_count": evidence_summary.get("web_evidence_count", 0),
             "conflict_count": evidence_summary.get("conflict_count", 0),
             "missing_evidence_count": evidence_summary.get("missing_evidence_count", 0),
-            "matched_attributes": selected_module.get("attributes_number", business_payload.get("AttributesNumber", 0)),
-            "matched_indicators": selected_module.get("indicators_number", business_payload.get("IndicatorsNumber", 0)),
-            "acceptance_result": selected_module.get("acceptance_result", business_payload.get("AcceptanceResult", "")),
+            "matched_attributes": selected_module.get("attributes_number", payload.get("AttributesNumber", 0)),
+            "matched_indicators": selected_module.get("indicators_number", payload.get("IndicatorsNumber", 0)),
+            "acceptance_result": selected_module.get("acceptance_result", payload.get("AcceptanceResult", "")),
             **_web_metrics(output_dir),
             **_llm_metrics(output_dir),
             "error": result.error or "",
@@ -352,8 +355,8 @@ def _llm_metrics(output_dir: Path) -> dict[str, Any]:
 
 
 def _evidence_counts(output_dir: Path) -> dict[str, int]:
-    """Summarize evidence counts from business_indicator_evidence.json."""
-    path = output_dir / "business_indicator_evidence.json"
+    """Summarize evidence counts from indicator_evidence.json."""
+    path = output_dir / "indicator_evidence.json"
     if not path.exists():
         return {
             "local_evidence_count": 0,
@@ -420,9 +423,9 @@ def _options_payload(options: BatchOptions, *, limit: int | None, skip_existing:
         "scenario_path": options.scenario_path,
         "use_llm": options.use_llm,
         "web_config_path": options.web_config_path,
-        "with_business_web": options.with_business_web,
-        "refresh_business_web": options.refresh_business_web,
-        "business_web_providers": options.business_web_providers,
+        "with_web": options.with_web,
+        "refresh_web": options.refresh_web,
+        "web_providers": options.web_providers,
         "llm_debug": options.llm_debug,
         "llm_concurrency": options.llm_concurrency,
         "continue_on_error": options.continue_on_error,

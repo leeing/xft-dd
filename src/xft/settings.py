@@ -72,7 +72,7 @@ class Settings(BaseSettings):
     # Supports sqlite+aiosqlite:///... for local development and
     # postgresql+asyncpg://... for shared remote caches.
     cache_enabled: bool = Field(default=False)
-    cache_database_url: str = Field(default="sqlite+aiosqlite:///cache/diligence_cache.db")
+    cache_database_url: str = Field(default="sqlite+aiosqlite:///cache/xft_cache.db")
     cache_create_tables: bool = Field(default=True)
     cache_policy_version: str = Field(default="v1-202605")
     cache_worker_id: str = Field(default="local-dev")

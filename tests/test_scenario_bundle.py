@@ -7,12 +7,12 @@ import pytest
 
 from xft.core.scenario import load_scenario
 from xft.pipeline.recommender.graph import run_recommendation
-from xft.pipeline.recommender.business_config_loader import load_business_recommendation_config
+from xft.pipeline.recommender.config_loader import load_recommendation_config
 from xft.web.config_loader import load_web_search_config
 from xft.warehouse.prophet_loader import load_prophet_data
 
 
-SCENARIO_DIR = Path("config/recommend/sales_recommendation")
+SCENARIO_DIR = Path("config/recommender/xft")
 
 
 def _write_json(path: Path, value: object) -> None:
@@ -64,8 +64,8 @@ def test_load_scenario_resolves_bundle_paths() -> None:
 
     assert scenario is not None
     assert scenario.config.id == "sales_recommendation"
-    assert scenario.business_modules_path is not None
-    assert scenario.business_modules_path.endswith("config/recommend/sales_recommendation/business_modules.yaml")
+    assert scenario.modules_path is not None
+    assert scenario.modules_path.endswith("config/recommender/xft/modules.yaml")
 
 
 def test_scenario_extends_and_writes_resolved_config(tmp_path: Path) -> None:
@@ -115,9 +115,9 @@ overrides:
 
 def test_config_loaders_accept_scenario_directory() -> None:
     web_config = load_web_search_config(SCENARIO_DIR)
-    business = load_business_recommendation_config(SCENARIO_DIR)
+    business = load_recommendation_config(SCENARIO_DIR)
 
-    assert web_config.cache_root.endswith("data/web_business/sales_recommendation")
+    assert web_config.cache_root.endswith("data/web/recommender/xft")
     assert len(business.modules) == 7
 
 
@@ -156,6 +156,6 @@ async def test_run_recommendation_accepts_scenario_bundle(
     assert manifest["scenario_id"] == "sales_recommendation"
     assert "products" not in manifest["files"]
     assert "scoring_policy" not in manifest["files"]
-    assert "business_module:假勤管理" in manifest["files"]
+    assert "module:假勤管理" in manifest["files"]
     assert "dimensions" not in manifest["effective_hashes"]
-    assert len(manifest["effective_hashes"]["business_modules"]) == 64
+    assert len(manifest["effective_hashes"]["modules"]) == 64

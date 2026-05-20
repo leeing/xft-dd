@@ -4,7 +4,7 @@ Date: 2026-05-16
 
 ## Goal
 
-Build a local DuckDB warehouse from Prophet enterprise JSON packages in `data/`, then expose a compact `company_profile` Gold layer for product recommendation and later due-diligence scenarios.
+Build a local DuckDB warehouse from Prophet enterprise JSON packages in `data/`, then expose a compact `company_profile` Gold layer for product recommendation scenarios.
 
 The design is based on reading the current JSON contents directly. Files are incomplete by design: a rich enterprise package currently has up to 42 JSON files, while the expected upper bound is about 45. Missing JSON files must not fail the import.
 
@@ -578,7 +578,7 @@ Use Python for parsing, not ad hoc SQL JSON path extraction. The JSON shapes are
 Suggested modules:
 
 ```text
-src/diligence/warehouse/
+src/xft/warehouse/
   duckdb_client.py
   schema.py
   prophet_loader.py
@@ -637,4 +637,3 @@ company_changes
 annual_reports
 social_insurance
 ```
-

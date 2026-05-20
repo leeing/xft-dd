@@ -19,11 +19,11 @@ async def _fake_runner(**kwargs: Any) -> RecommendationRunResult:
         json.dumps({"profile_completeness": 0.8}, ensure_ascii=False),
         encoding="utf-8",
     )
-    (output_dir / "business_indicator_evidence.json").write_text(
+    (output_dir / "indicator_evidence.json").write_text(
         json.dumps({"module.label.indicator": [{"source_type": "web", "evidence": "Web证据"}]}, ensure_ascii=False),
         encoding="utf-8",
     )
-    (output_dir / "business_label_result.json").write_text(
+    (output_dir / "label_result.json").write_text(
         json.dumps(
             {
                 "company_name": company_name,

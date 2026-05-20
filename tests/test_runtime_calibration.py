@@ -11,7 +11,7 @@ from xft.runtime.calibration import (
     load_calibration_labels,
     render_calibration_report,
     run_recommendation_calibration,
-    write_business_web_review_samples,
+    write_web_review_samples,
 )
 
 
@@ -185,7 +185,7 @@ def test_render_calibration_report_with_business_labels() -> None:
     assert "公司A：实际 finance_tax，期望 crm_channel" in rendered
 
 
-def test_build_calibration_report_with_business_web_metrics() -> None:
+def test_build_calibration_report_with_web_metrics() -> None:
     report = build_calibration_report(
         "web-cal",
         [
@@ -223,20 +223,20 @@ def test_build_calibration_report_with_business_web_metrics() -> None:
             },
         ],
         use_llm=True,
-        with_business_web=True,
+        with_web=True,
     )
 
     assert report.use_llm is True
-    assert report.with_business_web is True
-    assert report.business_web_evidence_coverage == 0.5
-    assert report.business_web_evidence_zero_companies[0]["company_name"] == "公司B"
+    assert report.with_web is True
+    assert report.web_evidence_coverage == 0.5
+    assert report.web_evidence_zero_companies[0]["company_name"] == "公司B"
     assert any(issue.title == "业务 Web 证据覆盖率偏低" for issue in report.issues)
     rendered = render_calibration_report(report)
     assert "业务 Web 校准" in rendered
     assert "业务 Web 证据覆盖率：50.0%" in rendered
 
 
-def test_write_business_web_review_samples_reads_web_evidence_trace(tmp_path: Path) -> None:
+def test_write_web_review_samples_reads_web_evidence_trace(tmp_path: Path) -> None:
     result_path = tmp_path / "result.json"
     result_path.write_text(
         """
@@ -264,7 +264,7 @@ def test_write_business_web_review_samples_reads_web_evidence_trace(tmp_path: Pa
     )
     out = tmp_path / "review.csv"
 
-    write_business_web_review_samples(
+    write_web_review_samples(
         out,
         [
             {
@@ -322,20 +322,20 @@ async def test_run_recommendation_calibration_passes_business_web_options(
         warehouse_db="warehouse.duckdb",
         batch_output=str(tmp_path),
         use_llm=True,
-        with_business_web=True,
-        refresh_business_web=True,
+        with_web=True,
+        refresh_web=True,
         web_config_path="web.yaml",
-        business_web_providers=["minimax_search"],
+        web_providers=["minimax_search"],
     )
 
     assert batch.status == "success"
-    assert report.with_business_web is True
+    assert report.with_web is True
     assert json_path.exists()
     assert md_path.exists()
     assert review_path.exists()
     options = captured["options"]
     assert options.use_llm is True
-    assert options.with_business_web is True
-    assert options.refresh_business_web is True
+    assert options.with_web is True
+    assert options.refresh_web is True
     assert options.web_config_path == "web.yaml"
-    assert options.business_web_providers == ["minimax_search"]
+    assert options.web_providers == ["minimax_search"]

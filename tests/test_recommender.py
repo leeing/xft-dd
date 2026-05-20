@@ -62,7 +62,7 @@ async def test_run_recommendation_business_first_without_llm(monkeypatch: pytest
     result = await run_recommendation(
         company_name="广东德美精细化工集团股份有限公司",
         warehouse_db=str(warehouse),
-        scenario_path="config/recommend/sales_recommendation",
+        scenario_path="config/recommender/xft",
         output_dir=str(tmp_path / "runs"),
         run_id="test-run",
         use_llm=False,
@@ -74,8 +74,8 @@ async def test_run_recommendation_business_first_without_llm(monkeypatch: pytest
     assert not (output_dir / "dimension_analysis.json").exists()
     assert not (output_dir / "match_results.json").exists()
     assert not (output_dir / "internal_result.json").exists()
-    assert (output_dir / "business_label_result.json").exists()
-    assert (output_dir / "business_indicator_evidence.json").exists()
+    assert (output_dir / "label_result.json").exists()
+    assert (output_dir / "indicator_evidence.json").exists()
     assert (output_dir / "result.json").exists()
     assert (output_dir / "report.md").exists()
     payload = json.loads((output_dir / "result.json").read_text(encoding="utf-8"))

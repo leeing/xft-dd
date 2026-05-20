@@ -1,0 +1,25 @@
+version: '1.0'
+scenario: sales_recommendation
+scoring:
+  indicator_scores:
+    matched: 10
+    possible: 5
+    unknown: 0
+    not_matched: 0
+  label_scores:
+    matched: 30
+    possible: 15
+    unknown: 0
+    not_matched: 0
+acceptance_policy:
+  levels:
+  - result: 高
+    min_matched_labels: 3
+    conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为高。
+  - result: 中高
+    min_matched_labels: 2
+    conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为中高。
+  - result: 低
+    min_matched_labels: 0
+    conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为低。
+modules_dir: modules.d

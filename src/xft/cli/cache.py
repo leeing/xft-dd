@@ -21,7 +21,7 @@ from dotenv import load_dotenv
 log = structlog.get_logger(__name__)
 
 PG_URL_PARTS = 2
-DEFAULT_LOCAL_DUCKDB_PATH = Path("cache/diligence_local.duckdb")
+DEFAULT_LOCAL_DUCKDB_PATH = Path("cache/xft_cache.duckdb")
 
 
 class PgConnectionInfo(NamedTuple):

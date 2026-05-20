@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from xft.pipeline.recommender.business_models import BusinessIndicatorResult, BusinessModuleResult
+from xft.pipeline.recommender.models import IndicatorResult, ModuleResult
 from xft.pipeline.recommender.state import RecommenderState
 from xft.utils.misc import result_text
 
@@ -13,7 +13,7 @@ def render_report(state: RecommenderState) -> str:
         [
             *_render_profile_summary(state),
             *_render_business_result(state),
-            *_render_business_modules(state),
+            *_render_modules(state),
             *_render_indicator_evidence_summary(state),
             *_render_next_steps(state),
         ]
@@ -37,7 +37,7 @@ def _render_profile_summary(state: RecommenderState) -> list[str]:
 
 
 def _render_indicator_evidence_summary(state: RecommenderState) -> list[str]:
-    business = state.get("business_recommendation")
+    business = state.get("recommendation")
     if business is None:
         return []
     indicators = [
@@ -73,7 +73,7 @@ def _render_indicator_evidence_summary(state: RecommenderState) -> list[str]:
 
 
 def _render_business_result(state: RecommenderState) -> list[str]:
-    business = state.get("business_recommendation")
+    business = state.get("recommendation")
     if business is None or business.selected_module is None:
         return []
     selected = business.selected_module
@@ -97,8 +97,8 @@ def _render_business_result(state: RecommenderState) -> list[str]:
     return lines
 
 
-def _render_business_modules(state: RecommenderState) -> list[str]:
-    business = state.get("business_recommendation")
+def _render_modules(state: RecommenderState) -> list[str]:
+    business = state.get("recommendation")
     lines = ["## 推荐模块总览", ""]
     if business is None:
         lines.append("业务推荐结果生成失败。")
@@ -120,7 +120,7 @@ def _render_business_modules(state: RecommenderState) -> list[str]:
     return lines
 
 
-def _render_business_module_detail(rank: int, module: BusinessModuleResult) -> list[str]:
+def _render_business_module_detail(rank: int, module: ModuleResult) -> list[str]:
     lines = [
         f"### {rank}. {module.module_name}",
         "",
@@ -146,7 +146,7 @@ def _render_business_module_detail(rank: int, module: BusinessModuleResult) -> l
     return lines
 
 
-def _indicator_text(indicator: BusinessIndicatorResult) -> str:
+def _indicator_text(indicator: IndicatorResult) -> str:
     evidence = "；".join(indicator.evidence[:2]) or indicator.current_status
     return (
         f"{indicator.indicator_name}：{result_text(indicator.result)}，"
@@ -155,7 +155,7 @@ def _indicator_text(indicator: BusinessIndicatorResult) -> str:
 
 
 def _render_next_steps(state: RecommenderState) -> list[str]:
-    business = state.get("business_recommendation")
+    business = state.get("recommendation")
     lines = ["## 下一步核实清单", ""]
     gaps: list[str] = []
     if business:
