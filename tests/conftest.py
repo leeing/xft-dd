@@ -5,16 +5,16 @@ from __future__ import annotations
 from collections.abc import Generator
 
 import pytest
-import xft.pipeline.diligence.nodes.summarize_node as sn
+from xft.ai.client import reset_ai_client
 from xft.settings import settings
 
 
 @pytest.fixture(autouse=True)
 def reset_openai_client() -> Generator[None, None, None]:
     """Reset the AsyncOpenAI singleton before and after each test for isolation."""
-    sn._ai_client = None
+    reset_ai_client()
     yield
-    sn._ai_client = None
+    reset_ai_client()
 
 
 @pytest.fixture(autouse=True)

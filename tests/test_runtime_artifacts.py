@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
 from pathlib import Path
 
 from xft.runtime.artifacts import (
@@ -11,41 +10,6 @@ from xft.runtime.artifacts import (
     write_failed_companies,
     write_quality_report,
 )
-
-
-def test_diligence_batch_summary_writes_runtime_artifacts(tmp_path: Path) -> None:
-    from xft.pipeline.diligence.batch import _write_summary
-    from xft.pipeline.diligence.models import CompanyRunResult
-
-    results = [
-        CompanyRunResult(
-            index=1,
-            target="公司A",
-            run_id="dd_a",
-            status="success",
-            report_path=str(tmp_path / "companies" / "001" / "final_report.md"),
-            artifacts_dir=str(tmp_path / "companies" / "001"),
-        ),
-        CompanyRunResult(index=2, target="公司B", status="failed", error="boom"),
-    ]
-
-    _write_summary(
-        tmp_path,
-        "batch-dd",
-        results,
-        ["公司A", "公司B"],
-        started_at=datetime.now(UTC),
-        config_path="config",
-        input_file="companies.txt",
-    )
-
-    assert (tmp_path / "batch_quality_report.json").exists()
-    assert (tmp_path / "batch_quality_report.md").exists()
-    assert (tmp_path / "delivery_manifest.json").exists()
-    assert (tmp_path / "failed_companies.txt").read_text(encoding="utf-8") == "公司B\n"
-    delivery = json.loads((tmp_path / "delivery_manifest.json").read_text(encoding="utf-8"))
-    assert any(item["type"] == "summary_md" for item in delivery["files"])
-    assert any(item["type"] == "batch_errors" for item in delivery["files"])
 
 
 def test_build_quality_report_common_metrics() -> None:

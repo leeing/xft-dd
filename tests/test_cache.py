@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from xft.pipeline.diligence.config import AppConfig, Dimension
 from xft.cache.db import reset_engine_for_tests
 from xft.cache.db import _normalise_asyncpg_url
 from xft.cache.hashing import content_hash, normalize_markdown
@@ -157,70 +156,3 @@ async def test_enrich_items_uses_l2_fetch_cache(monkeypatch: pytest.MonkeyPatch,
     mock_fetch.assert_not_called()
     assert result[0].full_text.startswith("cached full text")
 
-
-async def test_crawler_mode_requires_cache(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
-    from xft.pipeline.diligence.crawler_mode import run_crawler_mode
-
-    monkeypatch.setattr(settings, "cache_enabled", False)
-    cfg = AppConfig(
-        merge_prompt="x",
-        dimensions=[
-            Dimension(id="basic_info", name="工商", order=10, minimax_queries=["{target} 工商"], summary_prompt="p")
-        ],
-    )
-    assert await run_crawler_mode("某公司", cfg, only=None, skip=None) == 1
-
-
-async def test_crawler_mode_l1_hit_skips_search_and_fetch(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
-    from xft.pipeline.diligence.crawler_mode import run_crawler_mode
-
-    await _enable_cache(monkeypatch, tmp_path)
-    cfg = AppConfig(
-        merge_prompt="x",
-        dimensions=[
-            Dimension(id="basic_info", name="工商", order=10, minimax_queries=["{target} 工商"], summary_prompt="p")
-        ],
-    )
-    query = "某公司 工商"
-    key = SearchCacheKey(
-        provider="minimax",
-        query_text=query,
-        params={"endpoint": "https://api.minimax.io/v1/coding_plan/search", "max_results": 0},
-    )
-    await SearchCacheRepo().put_success(key, raw_response={"organic": []}, organic=[])
-
-    with patch("xft.pipeline.diligence.crawler_mode.run_search", new=AsyncMock()) as mock_search:
-        with patch("xft.pipeline.diligence.crawler_mode.enrich_items", new=AsyncMock()) as mock_enrich:
-            exit_code = await run_crawler_mode("某公司", cfg, only=None, skip=None)
-
-    assert exit_code == 0
-    mock_search.assert_not_called()
-    mock_enrich.assert_not_called()
-
-
-async def test_crawler_mode_l1_miss_searches_and_fetches(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
-    from xft.pipeline.diligence.crawler_mode import run_crawler_mode_for_target
-
-    await _enable_cache(monkeypatch, tmp_path)
-    cfg = AppConfig(
-        merge_prompt="x",
-        dimensions=[
-            Dimension(id="basic_info", name="工商", order=10, minimax_queries=["{target} 工商"], summary_prompt="p")
-        ],
-    )
-    item = _item("https://example.com/a")
-    enriched = item.model_copy(update={"full_text": "full text " * 20})
-
-    search_mock = AsyncMock(return_value=[item])
-    enrich_mock = AsyncMock(return_value=[enriched])
-    with (
-        patch("xft.pipeline.diligence.crawler_mode.run_search", new=search_mock) as mock_search,
-        patch("xft.pipeline.diligence.crawler_mode.enrich_items", new=enrich_mock) as mock_enrich,
-    ):
-        stats = await run_crawler_mode_for_target("某公司", cfg)
-
-    mock_search.assert_awaited_once()
-    mock_enrich.assert_awaited_once()
-    assert stats.l1_misses == 1
-    assert stats.l1_hits == 0
-    assert stats.full_text_items == 1

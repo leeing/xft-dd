@@ -21,8 +21,8 @@ def test_web_does_not_import_recommender() -> None:
     assert offenders == []
 
 
-def test_web_cache_utils_do_not_import_diligence_models() -> None:
-    forbidden = "xft.pipeline.diligence.models"
+def test_web_cache_utils_do_not_import_recommender() -> None:
+    forbidden = "xft.pipeline.recommender"
     offenders: list[str] = []
     for path in [*_python_files("src/xft/web"), *_python_files("src/xft/cache"), *_python_files("src/xft/utils")]:
         text = path.read_text(encoding="utf-8")
