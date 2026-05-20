@@ -27,3 +27,10 @@ providers:
 
 execution:
   max_results_per_query: 5
+
+fetch:
+  enabled: true
+  timeout_seconds: 25
+  concurrency: 2
+  max_chars: 6900
+  blocked_domains: []
