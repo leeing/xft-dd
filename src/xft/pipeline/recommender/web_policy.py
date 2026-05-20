@@ -46,8 +46,10 @@ def should_search_indicator(  # noqa: PLR0911
         reason = "llm_web_web_first" if indicator.evaluator == "llm_web" else "always"
         return WebSearchDecision(enabled=True, when=when, effect=effect, reason=reason)
     if when == "rule_not_matched":
-        if rule_result in ("not_matched", "unknown", None):
+        if rule_result in ("not_matched", "unknown"):
             return WebSearchDecision(enabled=True, when=when, effect=effect, reason="rule_not_matched")
+        if rule_result is None:
+            return WebSearchDecision(enabled=False, when=when, effect=effect, reason="rule_result_required")
         return WebSearchDecision(enabled=False, when=when, effect=effect, reason="rule_already_matched")
     if _is_insufficient(local_evidence):
         return WebSearchDecision(enabled=True, when=when, effect=effect, reason="local_evidence_insufficient")

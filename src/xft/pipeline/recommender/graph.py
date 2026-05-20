@@ -17,7 +17,6 @@ from xft.pipeline.recommender.models import RecommendationRunResult
 from xft.pipeline.recommender.nodes.data_gather_node import data_gather_node
 from xft.pipeline.recommender.nodes.recommend_node import recommend_node
 from xft.pipeline.recommender.nodes.save_node import save_node
-from xft.pipeline.recommender.nodes.web_evidence_node import web_evidence_node
 from xft.pipeline.recommender.state import RecommenderState
 from xft.progress import display
 from xft.runtime.config_manifest import ConfigManifest, file_ref, model_hash, write_config_manifest
@@ -31,12 +30,10 @@ def _get_graph() -> Any:
     if "graph" not in _cache:
         graph = StateGraph(RecommenderState)
         graph.add_node("data_gather", data_gather_node)
-        graph.add_node("web_evidence", web_evidence_node)
         graph.add_node("recommend", recommend_node)
         graph.add_node("save", save_node)
         graph.add_edge(START, "data_gather")
-        graph.add_edge("data_gather", "web_evidence")
-        graph.add_edge("web_evidence", "recommend")
+        graph.add_edge("data_gather", "recommend")
         graph.add_edge("recommend", "save")
         graph.add_edge("save", END)
         _cache["graph"] = graph.compile()
