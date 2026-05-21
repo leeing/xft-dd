@@ -352,10 +352,16 @@ def _web_lines(
         reason = row.get("trigger_reason") or row.get("reason") or ""
         result_count = row.get("result_count")
         filtered_count = row.get("filtered_result_count")
+        fetch_filtered = row.get("fetch_relevance_filtered_count")
         query_text = _short(query)
         lines.append(
             f"  - query={query_text}; status={status}; reason={reason}; "
-            f"result_count={result_count}; filtered={filtered_count}"
+            f"result_count={result_count}; filtered={filtered_count}; fetch_filtered={fetch_filtered}"
+        )
+        lines.extend(
+            f"    - fetch filtered: {item.get('reason')} | {_short(item.get('title'))} | {_short(item.get('url'))}"
+            for item in _list(row.get("fetch_relevance_filtered"))
+            if isinstance(item, dict)
         )
         lines.extend(
             f"    - {_short(result.get('title'))} | {_short(result.get('url'))} | {_short(result.get('snippet'))}"

@@ -52,6 +52,7 @@ label_result.json
 - `无证据指标`
 - `Web 未搜索`
 - `Web 零结果`
+- `Web 全文复核过滤`
 - `LLM 失败`
 
 ## evaluator 选择
@@ -106,3 +107,10 @@ fixed_queries:
 - `rule_result_required`：规则尚未运行，不应提前搜索
 
 如果 log 显示 `Web 零结果`，优先改 `fixed_queries`，不要先改代码。
+
+如果 log 显示 `fetch_filtered` 大于 0，说明搜索摘要通过了初筛，但 crawl4ai 抓到的正文没有通过二次相关性复核。常见原因：
+
+- `full_text_missing_company`：正文没有公司名或统一社会信用代码。
+- `full_text_missing_indicator_terms`：正文没有指标词或查询词。
+
+这种情况通常优先调整搜索词，让结果直接落到更具体的页面，而不是官网首页、列表页或泛新闻页。

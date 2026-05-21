@@ -1,0 +1,980 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>XFT — 企业软件销售线索推荐工具</title>
+<style>
+  /* ── Reset & Variables ── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --ink: #1a1a1a;
+    --paper: #fafaf8;
+    --muted: #6b6b6b;
+    --accent: #d97706;
+    --accent-subtle: #fef3c7;
+    --navy: #0f172a;
+    --navy-light: #1e293b;
+    --border: #e5e0d8;
+    --code-bg: #f5f2ed;
+    --radius: 6px;
+    --font-body: "Noto Serif SC", "Source Han Serif SC", "Songti SC", Georgia, serif;
+    --font-mono: "JetBrains Mono", "Cascadia Code", "SF Mono", Menlo, monospace;
+    --font-sans: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+  }
+
+  html { scroll-behavior: smooth; font-size: 17px; }
+  body {
+    font-family: var(--font-body);
+    color: var(--ink);
+    background: var(--paper);
+    line-height: 1.75;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── Hero ── */
+  .hero {
+    background: var(--navy);
+    color: #e2e8f0;
+    padding: 6rem 2rem 5rem;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at 50% 100%, rgba(217,119,6,0.12) 0%, transparent 60%);
+    pointer-events: none;
+  }
+  .hero h1 {
+    font-family: var(--font-sans);
+    font-size: 2.8rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: #fff;
+    position: relative;
+    z-index: 1;
+  }
+  .hero .tagline {
+    font-size: 1.15rem;
+    color: #94a3b8;
+    margin-top: 0.8rem;
+    position: relative;
+    z-index: 1;
+  }
+  .hero .badge-row {
+    margin-top: 1.5rem;
+    display: flex;
+    gap: 0.6rem;
+    justify-content: center;
+    flex-wrap: wrap;
+    position: relative;
+    z-index: 1;
+  }
+  .badge {
+    display: inline-block;
+    padding: 0.2em 0.7em;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    border-radius: 99px;
+    background: rgba(255,255,255,0.08);
+    color: #cbd5e1;
+    border: 1px solid rgba(255,255,255,0.1);
+  }
+
+  /* ── Nav ── */
+  .toc {
+    background: #fff;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .toc-inner {
+    max-width: 960px;
+    margin: 0 auto;
+    display: flex;
+    gap: 0;
+    padding: 0 2rem;
+  }
+  .toc a {
+    display: block;
+    padding: 0.75rem 1rem;
+    font-family: var(--font-sans);
+    font-size: 0.82rem;
+    color: var(--muted);
+    text-decoration: none;
+    white-space: nowrap;
+    border-bottom: 2px solid transparent;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .toc a:hover { color: var(--ink); border-bottom-color: var(--accent); }
+
+  /* ── Sections ── */
+  .container { max-width: 960px; margin: 0 auto; padding: 0 2rem; }
+
+  section { padding: 4rem 0; }
+  section + section { border-top: 1px solid var(--border); }
+
+  h2 {
+    font-family: var(--font-sans);
+    font-size: 1.55rem;
+    font-weight: 700;
+    color: var(--navy);
+    margin-bottom: 1.2rem;
+    letter-spacing: -0.01em;
+  }
+  h3 {
+    font-family: var(--font-sans);
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: var(--navy-light);
+    margin: 2rem 0 0.8rem;
+  }
+  h4 {
+    font-family: var(--font-sans);
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin: 1.5rem 0 0.5rem;
+  }
+  p { margin-bottom: 0.9rem; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* ── Flow Diagram ── */
+  .flow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 1.5rem 0;
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+  }
+  .flow-node {
+    padding: 0.45em 0.9em;
+    border-radius: var(--radius);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .flow-node.src { background: #e0e7ff; color: #3730a3; }
+  .flow-node.proc { background: #fef3c7; color: #92400e; }
+  .flow-node.out { background: #d1fae5; color: #065f46; }
+  .flow-node.web { background: #fce7f3; color: #9d174d; }
+  .flow-arrow { color: var(--muted); font-size: 1.1rem; }
+
+  /* ── Tables ── */
+  .table-wrap {
+    overflow-x: auto;
+    margin: 1rem 0 1.8rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--font-sans);
+    font-size: 0.88rem;
+  }
+  th, td {
+    padding: 0.55em 0.9em;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  th {
+    background: #fafaf9;
+    font-weight: 600;
+    color: var(--navy-light);
+    white-space: nowrap;
+  }
+  tr:last-child td { border-bottom: none; }
+  code {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    background: var(--code-bg);
+    padding: 0.15em 0.4em;
+    border-radius: 3px;
+    color: #b45309;
+  }
+
+  /* ── Code Blocks ── */
+  pre {
+    background: var(--navy);
+    color: #e2e8f0;
+    padding: 1.2rem 1.4rem;
+    border-radius: var(--radius);
+    overflow-x: auto;
+    margin: 1rem 0 1.5rem;
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    line-height: 1.6;
+    position: relative;
+  }
+  pre .lang-tag {
+    position: absolute;
+    top: 0;
+    right: 0;
+    padding: 0.15em 0.6em;
+    font-size: 0.7rem;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    background: rgba(255,255,255,0.06);
+    border-radius: 0 var(--radius) 0 var(--radius);
+  }
+
+  /* ── Callouts ── */
+  .callout {
+    border-left: 3px solid var(--accent);
+    background: var(--accent-subtle);
+    padding: 0.8rem 1.1rem;
+    border-radius: 0 var(--radius) var(--radius) 0;
+    margin: 1.2rem 0;
+    font-size: 0.9rem;
+  }
+  .callout strong { color: #92400e; }
+
+  /* ── Card Grid ── */
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 1rem;
+    margin: 1.2rem 0 1.8rem;
+  }
+  .card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.2rem 1.3rem;
+    background: #fff;
+  }
+  .card h4 { margin-top: 0; }
+
+  /* ── Step List ── */
+  .step-list { list-style: none; counter-reset: step; }
+  .step-list li {
+    counter-increment: step;
+    padding-left: 2.2rem;
+    position: relative;
+    margin-bottom: 0.7rem;
+  }
+  .step-list li::before {
+    content: counter(step);
+    position: absolute;
+    left: 0;
+    top: 0.1em;
+    width: 1.5rem;
+    height: 1.5rem;
+    background: var(--navy);
+    color: #fff;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 700;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* ── Footer ── */
+  footer {
+    background: var(--navy);
+    color: #64748b;
+    text-align: center;
+    padding: 2.5rem 2rem;
+    font-family: var(--font-sans);
+    font-size: 0.82rem;
+  }
+
+  /* ── Print ── */
+  @media print {
+    .toc { display: none; }
+    .hero { background: #fff; color: var(--ink); padding: 1rem 0; }
+    .hero h1 { color: var(--ink); }
+    .hero .tagline { color: var(--muted); }
+    .badge { border-color: var(--border); color: var(--muted); background: none; }
+    pre { background: var(--code-bg); color: var(--ink); border: 1px solid var(--border); }
+    body { font-size: 12pt; }
+  }
+
+  @media (max-width: 640px) {
+    .hero h1 { font-size: 1.8rem; }
+    .flow { flex-direction: column; }
+    .flow-arrow { transform: rotate(90deg); }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════ HERO ═══════════════ -->
+<header class="hero">
+  <h1>XFT 企业推荐工具</h1>
+  <p class="tagline">本地企业画像 + 业务规则 + LLM 推理 + 可选 Web 补证 → 产品模块推荐</p>
+  <div class="badge-row">
+    <span class="badge">Python 3.12</span>
+    <span class="badge">LangGraph</span>
+    <span class="badge">DuckDB</span>
+    <span class="badge">Pydantic v2</span>
+    <span class="badge">structlog</span>
+    <span class="badge">crawl4ai</span>
+  </div>
+</header>
+
+<!-- ═══════════════ NAV ═══════════════ -->
+<nav class="toc">
+  <div class="toc-inner">
+    <a href="#overview">项目概述</a>
+    <a href="#principle">核心原理</a>
+    <a href="#architecture">架构总览</a>
+    <a href="#dataflow">数据流</a>
+    <a href="#config">配置体系</a>
+    <a href="#evaluators">四种评估器</a>
+    <a href="#outputs">运行产物</a>
+    <a href="#commands">常用命令</a>
+    <a href="#tuning">调优流程</a>
+  </div>
+</nav>
+
+<!-- ═══════════════ 1. 项目概述 ═══════════════ -->
+<section id="overview">
+  <div class="container">
+    <h2>项目概述</h2>
+
+    <p>XFT 是一个命令行工具，为 <strong>企业软件销售团队</strong> 生成产品模块推荐。给定一家中国企业的名称，系统会：</p>
+
+    <ol class="step-list">
+      <li>从 <strong>DuckDB 企业画像库</strong> 读取该公司的结构化档案（行业、规模、招聘、分支机构、资质等）</li>
+      <li>加载 <strong>YAML 场景配置</strong>，其中定义了 7 个可推荐的产品模块和每个模块下的判断指标</li>
+      <li>对每个指标，按配置的评估策略进行判断——可能是确定性规则、LLM 推理、或两者混合</li>
+      <li>在证据不足时，<strong>按需触发 Web 搜索</strong> 补证（非预先搜索所有指标）</li>
+      <li>汇总得分，选出最优推荐模块，输出 <code>result.json</code> 和 <code>report.md</code></li>
+    </ol>
+
+    <div class="callout">
+      <strong>设计理念：</strong>配置驱动、证据优先、懒加载 Web。业务人员改 YAML 即可调优推荐逻辑，无需动代码。
+    </div>
+
+    <h3>当前场景</h3>
+    <p>默认场景 <code>config/recommender/xft</code> 包含 <strong>7 个产品模块</strong>：</p>
+
+    <div class="card-grid">
+      <div class="card"><h4>个税管理</h4><p style="color:var(--muted);font-size:0.85rem;">企业薪酬规模与个税申报需求</p></div>
+      <div class="card"><h4>假勤管理</h4><p style="color:var(--muted);font-size:0.85rem;">考勤、排班、假期管理需求</p></div>
+      <div class="card"><h4>对公报账</h4><p style="color:var(--muted);font-size:0.85rem;">企业对公费用报销流程</p></div>
+      <div class="card"><h4>差旅报销</h4><p style="color:var(--muted);font-size:0.85rem;">差旅、商旅管理制度与报销</p></div>
+      <div class="card"><h4>日常报销</h4><p style="color:var(--muted);font-size:0.85rem;">日常费用报销与审批流程</p></div>
+      <div class="card"><h4>进项发票</h4><p style="color:var(--muted);font-size:0.85rem;">采购进项发票管理</p></div>
+      <div class="card"><h4>销项发票</h4><p style="color:var(--muted);font-size:0.85rem;">销售销项发票开具与管理</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ 2. 核心原理 ═══════════════ -->
+<section id="principle">
+  <div class="container">
+    <h2>核心原理</h2>
+
+    <h3>推荐流水线</h3>
+    <p>推荐引擎是一个三阶段的有向无环图（DAG），由 <strong>LangGraph StateGraph</strong> 编排：</p>
+
+    <div class="flow">
+      <span class="flow-node src">data_gather</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-node proc">recommend</span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-node out">save</span>
+    </div>
+
+    <table>
+      <tr><th>节点</th><th>职责</th><th>关键文件</th></tr>
+      <tr>
+        <td><strong>data_gather</strong></td>
+        <td>从 DuckDB 读取企业画像，根据指标 <code>data_sources</code> 加载本地证据</td>
+        <td style="font-family:var(--font-mono);font-size:0.78rem;">nodes/data_gather_node.py</td>
+      </tr>
+      <tr>
+        <td><strong>recommend</strong></td>
+        <td>评估每个模块→标签→指标；开启 Web 时创建 lazy resolver，指标需要补证时才搜索</td>
+        <td style="font-family:var(--font-mono);font-size:0.78rem;">evaluator.py + web_resolver.py</td>
+      </tr>
+      <tr>
+        <td><strong>save</strong></td>
+        <td>写入 result.json、report.md、调试日志、LLM trace、Web trace 等全部产物</td>
+        <td style="font-family:var(--font-mono);font-size:0.78rem;">nodes/save_node.py</td>
+      </tr>
+    </table>
+
+    <h3>结果层级</h3>
+    <p>推荐结果的层级结构：</p>
+
+    <div class="flow">
+      <span class="flow-node src">Module<br><small>推荐模块</small></span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-node proc">Label<br><small>业务标签</small></span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-node web">Indicator<br><small>判断指标</small></span>
+      <span class="flow-arrow">→</span>
+      <span class="flow-node out">Score<br><small>分数 & 接受度</small></span>
+    </div>
+
+    <h3>评分机制</h3>
+    <p>每个指标的判断结果有四种：<code>matched</code>（命中）、<code>possible</code>（可能）、<code>unknown</code>（未知）、<code>not_matched</code>（未命中）。指标得分汇聚到标签，标签汇聚到模块，最终按 <code>(-score, -attributes_number, module_id)</code> 选出得分最高的模块，再根据 <code>acceptance_policy</code> 门槛判定接受度（高 / 中高 / 低）。</p>
+
+    <div class="table-wrap">
+      <table>
+        <tr><th>结果值</th><th>默认指标分</th><th>默认标签分</th><th>含义</th></tr>
+        <tr><td><code>matched</code></td><td style="text-align:center;">10</td><td style="text-align:center;">30</td><td>证据足够，判断命中</td></tr>
+        <tr><td><code>possible</code></td><td style="text-align:center;">5</td><td style="text-align:center;">15</td><td>有线索但证据不足</td></tr>
+        <tr><td><code>unknown</code></td><td style="text-align:center;">0</td><td style="text-align:center;">0</td><td>证据不足，无法判断</td></tr>
+        <tr><td><code>not_matched</code></td><td style="text-align:center;">0</td><td style="text-align:center;">0</td><td>证据显示不命中</td></tr>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ 3. 架构总览 ═══════════════ -->
+<section id="architecture">
+  <div class="container">
+    <h2>架构总览</h2>
+
+    <h3>包结构</h3>
+
+    <div class="table-wrap">
+      <table>
+        <tr><th>子包</th><th>目录</th><th>职责</th></tr>
+        <tr><td><strong>cli</strong></td><td style="font-family:var(--font-mono);font-size:0.78rem;">src/xft/cli/</td><td>CLI 入口（6 个命令：recommend / calibrate / warehouse / scenario / runs / cache）</td></tr>
+        <tr><td><strong>core</strong></td><td style="font-family:var(--font-mono);font-size:0.78rem;">src/xft/core/</td><td>场景加载、配置模型（Pydantic）、搜索数据模型</td></tr>
+        <tr><td><strong>pipeline</strong></td><td style="font-family:var(--font-mono);font-size:0.78rem;">src/xft/pipeline/recommender/</td><td>LangGraph 执行引擎：评估器、证据加载、Web 补证、渲染器、批处理</td></tr>
+        <tr><td><strong>warehouse</strong></td><td style="font-family:var(--font-mono);font-size:0.78rem;">src/xft/warehouse/</td><td>DuckDB ETL：Prophet JSON → 规范表结构</td></tr>
+        <tr><td><strong>web</strong></td><td style="font-family:var(--font-mono);font-size:0.78rem;">src/xft/web/</td><td>搜索 provider 适配器（MiniMax Search / Metaso AI Search）</td></tr>
+        <tr><td><strong>ai</strong></td><td style="font-family:var(--font-mono);font-size:0.78rem;">src/xft/ai/</td><td>LLM 客户端工厂、JSON 提取、调用追踪</td></tr>
+        <tr><td><strong>cache</strong></td><td style="font-family:var(--font-mono);font-size:0.78rem;">src/xft/cache/</td><td>搜索/抓取结果缓存（SQLite/PostgreSQL）</td></tr>
+        <tr><td><strong>runtime</strong></td><td style="font-family:var(--font-mono);font-size:0.78rem;">src/xft/runtime/</td><td>批量质量报告、校准逻辑、配置清单审计</td></tr>
+        <tr><td><strong>utils</strong></td><td style="font-family:var(--font-mono);font-size:0.78rem;">src/xft/utils/</td><td>HTTP 客户端、crawl4ai 抓取、URL 来源分类、文件 IO</td></tr>
+      </table>
+    </div>
+
+    <h3>技术栈</h3>
+
+    <div class="table-wrap">
+      <table>
+        <tr><th>层次</th><th>技术选型</th><th>说明</th></tr>
+        <tr><td>语言</td><td>Python 3.12</td><td>async/await、新式类型语法</td></tr>
+        <tr><td>包管理</td><td>uv (Astral)</td><td>替代 pip/venv/pyenv，速度更快</td></tr>
+        <tr><td>CLI</td><td>argparse</td><td>标准库，无额外依赖</td></tr>
+        <tr><td>流水线编排</td><td>LangGraph</td><td>StateGraph 三节点 DAG</td></tr>
+        <tr><td>数据仓库</td><td>DuckDB</td><td>嵌入式列存数据库，零配置</td></tr>
+        <tr><td>LLM 客户端</td><td>OpenAI SDK</td><td>兼容 MiniMax、DeepSeek 等</td></tr>
+        <tr><td>Web 搜索</td><td>MiniMax Search / Metaso</td><td>可插拔 provider 适配器</td></tr>
+        <tr><td>Web 抓取</td><td>crawl4ai</td><td>Playwright 内核，异步页面抓取</td></tr>
+        <tr><td>数据校验</td><td>Pydantic v2 + pydantic-settings</td><td>strict 模式，SM4 密钥解密</td></tr>
+        <tr><td>缓存</td><td>SQLite / PostgreSQL</td><td>两层 TTL 缓存（搜索 + 抓取）</td></tr>
+        <tr><td>日志</td><td>structlog</td><td>结构化日志，键值对输出</td></tr>
+        <tr><td>质量门禁</td><td>Ruff + MyPy (strict) + pytest</td><td>CI 自动检查</td></tr>
+        <tr><td>容器化</td><td>Docker</td><td>多阶段构建，Playwright + Chromium</td></tr>
+      </table>
+    </div>
+
+    <h3>关键设计决策</h3>
+
+    <div class="card-grid">
+      <div class="card">
+        <h4>手动 DI，无框架</h4>
+        <p style="font-size:0.85rem;">组件直接实例化依赖，通过工厂函数（<code>get_ai_client()</code>、<code>build_provider()</code>）支持测试替换。LangGraph 是唯一编排点。</p>
+      </div>
+      <div class="card">
+        <h4>Lazy Web 补证</h4>
+        <p style="font-size:0.85rem;">Web 搜索不出现在图节点中，而是在每个指标计算时按需触发。避免不必要的搜索，减少成本和噪声。</p>
+      </div>
+      <div class="card">
+        <h4>配置审计追踪</h4>
+        <p style="font-size:0.85rem;">每次运行写入 <code>config_manifest.json</code>，记录每个配置文件的路径和 SHA256 哈希，确保输出可完整复现。</p>
+      </div>
+      <div class="card">
+        <h4>单例模式</h4>
+        <p style="font-size:0.85rem;"><code>settings</code>、<code>_ai_client</code>、<code>_engine</code>、<code>display</code> 为进程级单例，适合 CLI 短期生命周期。</p>
+      </div>
+    </div>
+
+    <h3>包边界</h3>
+    <pre>src/xft/web/        ← 不依赖 pipeline
+src/xft/cache/      ← 不依赖 pipeline
+src/xft/utils/      ← 不依赖 pipeline
+src/xft/warehouse/  ← 不依赖 pipeline
+src/xft/ai/         ← 不依赖 pipeline
+src/xft/pipeline/   ← 消费以上所有包</pre>
+  </div>
+</section>
+
+<!-- ═══════════════ 4. 数据流 ═══════════════ -->
+<section id="dataflow">
+  <div class="container">
+    <h2>数据流</h2>
+
+    <h3>端到端流程</h3>
+
+    <pre>Prophet JSON 目录                          YAML 场景配置
+  data/{credit_code}_{name}/*.json    config/recommender/xft/*.yaml
+         │                                        │
+         ▼                                        │
+  ┌──────────────┐                                │
+  │ warehouse    │  DuckDB ETL                    │
+  │ build        │  12 张 raw_* 表                │
+  │              │  1 张 company_profile 表        │
+  └──────┬───────┘                                │
+         │                                        │
+         ▼                                        ▼
+  ┌──────────────────────────────────────────────────┐
+  │              LangGraph Pipeline                   │
+  │                                                  │
+  │  data_gather ──→ recommend ──→ save              │
+  │      │               │            │               │
+  │   DuckDB 查询    rule/llm/    写入 13 个产物     │
+  │   本地证据加载    hybrid/     result.json        │
+  │                  llm_web     report.md           │
+  │                     │        logs/*.log           │
+  │              ┌──────┴──────┐  llm_calls.jsonl     │
+  │              │ WebResolver │  web_trace.json      │
+  │              │ (lazy)      │  ...                 │
+  │              └──────┬──────┘                      │
+  │                     │                             │
+  │          MiniMax Search / Metaso                  │
+  │              ┌──────┴──────┐                      │
+  │              │  crawl4ai   │                      │
+  │              │  页面抓取    │                      │
+  │              └─────────────┘                      │
+  └──────────────────────────────────────────────────┘
+         │
+         ▼
+  outputs/recommender/xft/{run_id}/
+    result.json  report.md  logs/  label_result.json  ...
+</pre>
+
+    <h3>DuckDB 数据模型</h3>
+    <p>企业画像库的核心是 <code>company_profile</code> 表（Gold 层），推荐主线还会读取 5 张明细表作为指标本地证据：</p>
+
+    <div class="table-wrap">
+      <table>
+        <tr><th>表</th><th>来源 JSON</th><th>推荐用途</th></tr>
+        <tr><td><code>company_profile</code></td><td>info.json + 多源聚合</td><td>企业基本信息、行业、标签、经营范围</td></tr>
+        <tr><td><code>recruitments</code></td><td>recruit_message.json</td><td>招聘岗位标题、城市、来源</td></tr>
+        <tr><td><code>branches</code></td><td>branch.json</td><td>分支机构分布</td></tr>
+        <tr><td><code>qualifications</code></td><td>query_qualification.json</td><td>企业资质</td></tr>
+        <tr><td><code>outbound_investments</code></td><td>investor_info.json</td><td>对外投资</td></tr>
+        <tr><td><code>key_personnel</code></td><td>info.json + staff.json</td><td>关键人员</td></tr>
+      </table>
+    </div>
+
+    <h3>Web 补证数据流（lazy）</h3>
+    <p>Web 搜索不再作为独立图节点，而是在 <code>recommend</code> 阶段按指标延迟触发：</p>
+
+    <ol class="step-list">
+      <li>读取场景 <code>web_search.yaml</code>，过滤启用的 provider</li>
+      <li>当前指标计算时，先取得本地证据；<code>rule</code> / <code>hybrid</code> 先跑规则</li>
+      <li>根据 <code>web_search.when</code> 判断是否搜索（<code>always</code> / <code>insufficient</code> / <code>rule_not_matched</code> / <code>never</code>）</li>
+      <li>只对需要补证的指标执行固定查询和可选自动查询</li>
+      <li>同一轮运行内复用重复查询的 provider 结果，但按指标分别落 trace</li>
+      <li>过滤非目标公司或非指标相关的结果</li>
+      <li>可选：通过 crawl4ai 抓取搜索结果页面的完整 Markdown 正文</li>
+    </ol>
+
+    <div class="callout">
+      <strong>关键约束：</strong><code>llm_web</code> 无实际 Web 证据时直接返回 <code>unknown</code>，不会在空证据下调用 LLM，防止模型编造。
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ 5. 配置体系 ═══════════════ -->
+<section id="config">
+  <div class="container">
+    <h2>配置体系</h2>
+
+    <p>系统有五层配置，从上到下逐步细化：</p>
+
+    <div class="table-wrap">
+      <table>
+        <tr><th>层级</th><th>位置</th><th>作用</th></tr>
+        <tr><td>1. 环境变量</td><td><code>.env</code> → <code>settings.py</code></td><td>API 密钥、LLM 模型名、缓存 URL。支持 SM4 加密</td></tr>
+        <tr><td>2. 场景入口</td><td><code>scenario.yaml</code></td><td>场景 ID、名称、引用模块和 Web 配置路径</td></tr>
+        <tr><td>3. 全局评分</td><td><code>modules.yaml</code></td><td>indicator/label 分值、接受度门槛、模块目录引用</td></tr>
+        <tr><td>4. 模块定义</td><td><code>modules.d/*.yaml</code>（7 个文件）</td><td>每个模块的标签、指标、规则、prompt、Web 策略</td></tr>
+        <tr><td>5. Web provider</td><td><code>web_search.yaml</code></td><td>搜索 provider 列表、超时、结果数量限制</td></tr>
+      </table>
+    </div>
+
+    <h3>模块配置 DSL</h3>
+    <p>一个完整的模块 YAML 示例：</p>
+
+<pre><span class="lang-tag">modules.d/个税管理.yaml</span>module_id: 个税管理
+module_name: 个税管理
+priority: 40
+base_score: 0
+labels:
+  - label_id: 薪酬规模
+    label_name: 薪酬规模
+    min_matched_indicators: 1
+    indicators:
+      - indicator_id: 个税相关招聘
+        indicator_name: 个税相关招聘
+        evaluator: rule
+        standard: 招聘标题包含社保、个税或薪酬
+        data_sources:
+          - type: table
+            table: recruitments
+            field: title
+            op: text_contains
+            keywords:
+              - 社保
+              - 个税
+              - 薪酬
+      - indicator_id: 财报合并范围
+        indicator_name: 财报合并范围
+        evaluator: llm
+        standard: 企业存在多法人主体或合并报表需求
+        prompt: 判断企业是否可能存在多法人主体集团化管理需求
+        evidence_hints:
+          - 分支机构数量
+          - 对外投资企业
+          - 股东结构
+        web_search:
+          when: insufficient
+          effect: llm_evidence
+          fixed_queries:
+            - "{company_name} 集团 分子公司"
+          auto:
+            enabled: true
+            max_queries: 2
+            intent: 判断企业是否为多法人集团</pre>
+
+    <h3>唯一性约束</h3>
+    <div class="callout">
+      <code>module_id</code> 全局唯一 · 同一模块下 <code>label_id</code> 唯一 · 同一标签下 <code>indicator_id</code> 唯一
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ 6. 四种评估器 ═══════════════ -->
+<section id="evaluators">
+  <div class="container">
+    <h2>四种评估器</h2>
+
+    <p>每个指标通过 <code>evaluator</code> 字段指定判断策略：</p>
+
+    <div class="table-wrap">
+      <table>
+        <tr><th>evaluator</th><th>触发条件</th><th>调用 LLM？</th><th>Web 角色</th></tr>
+        <tr>
+          <td><strong>rule</strong></td>
+          <td>结构化字段明确，例如招聘标题、资质、分支机构</td>
+          <td style="text-align:center;">否</td>
+          <td>可选，最多补到 <code>possible</code></td>
+        </tr>
+        <tr>
+          <td><strong>llm</strong></td>
+          <td>需要综合文本和证据推理</td>
+          <td style="text-align:center;">是</td>
+          <td>可选，通常证据不足时补证</td>
+        </tr>
+        <tr>
+          <td><strong>hybrid</strong></td>
+          <td>先用规则判断硬证据，再让 LLM 处理模糊判断</td>
+          <td style="text-align:center;">可选</td>
+          <td>可选，推荐的增强方式</td>
+        </tr>
+        <tr>
+          <td><strong>llm_web</strong></td>
+          <td>必须依赖公开网页才能判断</td>
+          <td style="text-align:center;">是</td>
+          <td>必须，Web-first</td>
+        </tr>
+      </table>
+    </div>
+
+    <h3>Rule — 确定性规则</h3>
+    <p>直接从 <code>company_profile</code> 字段读取：</p>
+
+<pre>evaluator: rule
+standard: 企业标签包含高新技术企业
+rule:
+  source_field: labels
+  op: contains
+  value: 高新技术企业</pre>
+
+    <p>从 DuckDB 明细表取证据：</p>
+
+<pre>evaluator: rule
+standard: 招聘标题包含销售或渠道
+data_sources:
+  - type: table
+    table: recruitments
+    field: title
+    op: text_contains
+    keywords:
+      - 销售
+      - 渠道</pre>
+
+    <div class="table-wrap">
+      <table>
+        <tr><th>操作符</th><th>含义</th></tr>
+        <tr><td><code>exists</code></td><td>字段存在且非空</td></tr>
+        <tr><td><code>contains</code></td><td>字符串或列表包含某个值</td></tr>
+        <tr><td><code>contains_any</code></td><td>包含列表中的任一值</td></tr>
+        <tr><td><code>==</code> / <code>!=</code></td><td>等于 / 不等于</td></tr>
+        <tr><td><code>&gt;</code> / <code>&gt;=</code> / <code>&lt;</code> / <code>&lt;=</code></td><td>数值比较</td></tr>
+      </table>
+    </div>
+
+    <h3>Hybrid — 规则优先 + LLM 补充</h3>
+    <p>推荐用于"本地证据优先，LLM 补充判断"的指标：</p>
+
+<pre>evaluator: hybrid
+merge_policy: rule_first
+standard: 企业具备高新技术企业、专精特新、科技型中小企业等资质
+rule:
+  source_field: labels
+  op: contains_any
+  value: [高新技术企业, 专精特新, 科技型中小企业]
+prompt: 判断企业是否具备科技型企业资质。</pre>
+
+    <div class="table-wrap">
+      <table>
+        <tr><th>merge_policy</th><th>逻辑</th></tr>
+        <tr><td><code>rule_first</code></td><td>规则命中直接 <code>matched</code>，不调用 LLM；规则未命中再调用 LLM</td></tr>
+        <tr><td><code>llm_confirm</code></td><td>规则给候选信号，LLM 确认；如 LLM 否定则降级</td></tr>
+        <tr><td><code>require_both</code></td><td>规则和 LLM 都命中才 <code>matched</code></td></tr>
+      </table>
+    </div>
+
+    <h3>LLM Web — 必须依赖公开网页</h3>
+
+<pre>evaluator: llm_web
+standard: 企业公开信息显示存在海外客户、海外业务或跨境服务
+prompt: 请判断企业是否存在海外业务，只能基于证据判断，不得编造。
+web_search:
+  when: always
+  effect: llm_evidence
+  fixed_queries:
+    - "{company_name} 海外业务"
+    - "{company_name} 海外客户"
+  auto: false
+  max_results: 5</pre>
+
+    <div class="callout">
+      <strong>约束：</strong><code>llm_web</code> 必须配置 <code>web_search</code>。没有实际 Web 证据时直接返回 <code>unknown</code>，不会在空证据下调用 LLM。
+    </div>
+
+    <h3>选择顺序</h3>
+    <ol class="step-list">
+      <li>能用本地字段或明细表判断 → <strong>rule</strong></li>
+      <li>有本地信号但需要解释或补证 → <strong>hybrid</strong></li>
+      <li>有本地证据，需要综合推理 → <strong>llm</strong></li>
+      <li>只有公开网页才可能判断 → <strong>llm_web</strong></li>
+    </ol>
+  </div>
+</section>
+
+<!-- ═══════════════ 7. 运行产物 ═══════════════ -->
+<section id="outputs">
+  <div class="container">
+    <h2>运行产物</h2>
+
+    <p>每次推荐在 <code>outputs/recommender/xft/{run_id}/</code> 下生成 13 个文件：</p>
+
+    <div class="table-wrap">
+      <table>
+        <tr><th>文件</th><th>格式</th><th>用途</th></tr>
+        <tr><td><code>result.json</code></td><td>JSON</td><td>最终推荐交付结果，业务系统优先读取</td></tr>
+        <tr><td><code>report.md</code></td><td>Markdown</td><td>人类可读报告，适合人工检查</td></tr>
+        <tr><td><code>logs/{run_id}.log</code></td><td>文本</td><td>人类可读调试日志，按模块/标签/指标展开每个决策点</td></tr>
+        <tr><td><code>label_result.json</code></td><td>JSON</td><td>模块、标签、指标的完整判断明细</td></tr>
+        <tr><td><code>indicator_evidence.json</code></td><td>JSON</td><td>每个指标使用的本地证据和 Web 证据</td></tr>
+        <tr><td><code>profile.json</code></td><td>JSON</td><td>本次读取到的企业画像</td></tr>
+        <tr><td><code>decision_trace.json</code></td><td>JSON</td><td>规则、Web、LLM 的完整决策追踪</td></tr>
+        <tr><td><code>llm_calls.jsonl</code></td><td>JSONL</td><td>LLM 调用请求/响应明细</td></tr>
+        <tr><td><code>llm_metrics.json</code></td><td>JSON</td><td>LLM 调用统计（总数/成功/失败/耗时）</td></tr>
+        <tr><td><code>web_queries.jsonl</code></td><td>JSONL</td><td>Web 查询记录（仅 --with-web）</td></tr>
+        <tr><td><code>web_results.jsonl</code></td><td>JSONL</td><td>Web 搜索结果（仅 --with-web）</td></tr>
+        <tr><td><code>web_trace.json</code></td><td>JSON</td><td>Web 补证完整 trace（仅 --with-web）</td></tr>
+        <tr><td><code>config_manifest.json</code></td><td>JSON</td><td>参与本次运行的配置文件和 SHA256 哈希</td></tr>
+      </table>
+    </div>
+
+    <h3>判断推荐是否可用</h3>
+    <ol class="step-list">
+      <li><code>result.json</code> 的 <code>Module</code>、<code>AcceptanceResult</code>、<code>Conclusion</code></li>
+      <li><code>logs/{run_id}.log</code> 是否能解释每个指标为什么命中、未命中或调用 Web/LLM</li>
+      <li><code>report.md</code> 是否能解释推荐理由</li>
+      <li><code>indicator_evidence.json</code> 是否有足够证据支撑命中指标</li>
+      <li>如启用 LLM，检查 <code>llm_metrics.json</code> 是否有失败调用</li>
+      <li>如启用 Web，检查 <code>web_trace.json</code> 中查询词和结果是否与指标相关</li>
+    </ol>
+  </div>
+</section>
+
+<!-- ═══════════════ 8. 常用命令 ═══════════════ -->
+<section id="commands">
+  <div class="container">
+    <h2>常用命令</h2>
+
+    <h3>CLI 命令一览</h3>
+
+    <div class="table-wrap">
+      <table>
+        <tr><th>命令</th><th>用途</th></tr>
+        <tr><td><code>xft recommend</code></td><td>单家或批量推荐（主命令）</td></tr>
+        <tr><td><code>xft calibrate</code></td><td>用人工标注样本校准推荐效果</td></tr>
+        <tr><td><code>xft warehouse build</code></td><td>从 data/ 企业 JSON 构建 DuckDB</td></tr>
+        <tr><td><code>xft scenario validate</code></td><td>校验场景 YAML 配置包</td></tr>
+        <tr><td><code>xft scenario audit</code></td><td>审计模块配置，输出调优建议</td></tr>
+        <tr><td><code>xft runs inspect</code></td><td>查看历史运行产物</td></tr>
+        <tr><td><code>xft cache</code></td><td>管理搜索/抓取缓存</td></tr>
+      </table>
+    </div>
+
+    <h3>推荐常用参数</h3>
+
+    <div class="table-wrap">
+      <table>
+        <tr><th>参数</th><th>用途</th></tr>
+        <tr><td><code>--no-llm</code></td><td>关闭 LLM，只跑规则和兜底判断</td></tr>
+        <tr><td><code>--with-web</code></td><td>启用指标级 Web 补证</td></tr>
+        <tr><td><code>--web-refresh</code></td><td>忽略已有 Web 缓存，重新搜索</td></tr>
+        <tr><td><code>--llm-debug</code></td><td>打印 LLM 调用耗时、错误和响应预览</td></tr>
+        <tr><td><code>--llm-concurrency N</code></td><td>设置 LLM 并发数，默认 4</td></tr>
+        <tr><td><code>--module ID</code></td><td>只评估指定 module_id，可重复传入</td></tr>
+        <tr><td><code>--indicator ID</code></td><td>只评估指定 indicator_id，可重复传入</td></tr>
+        <tr><td><code>--company-list FILE</code></td><td>批量读取企业名单</td></tr>
+        <tr><td><code>--limit N</code></td><td>只跑名单前 N 家</td></tr>
+        <tr><td><code>--skip-existing</code></td><td>已有 result.json 的企业跳过</td></tr>
+      </table>
+    </div>
+
+    <h3>典型使用流程</h3>
+
+<pre><span class="lang-tag">shell</span># 1. 构建企业画像库
+uv run xft warehouse build --input data --output cache/company_warehouse.duckdb
+
+# 2. 验证配置
+uv run xft scenario validate config/recommender/xft
+
+# 3. 审计配置（可选，推荐）
+uv run xft scenario audit config/recommender/xft
+
+# 4. 离线冒烟
+uv run xft recommend --no-llm "企业名称"
+
+# 5. 启用 LLM
+uv run xft recommend --llm-debug "企业名称"
+
+# 6. 启用 Web 补证
+uv run xft recommend --with-web --llm-debug "企业名称"
+
+# 7. 调试单个模块
+uv run xft recommend --with-web --llm-debug --module 个税管理 "企业名称"
+
+# 8. 精调单个指标
+uv run xft recommend --with-web --llm-debug --module 个税管理 --indicator 个税相关招聘 "企业名称"
+
+# 9. 批量推荐
+uv run xft recommend --company-list company.txt --with-web --limit 10
+
+# 10. 校准
+uv run xft calibrate --company-list company.txt --labels calibration_labels.csv --limit 10</pre>
+
+    <h3>质量门禁</h3>
+
+<pre><span class="lang-tag">shell</span>uv run ruff format .          # 格式化
+uv run ruff check src tests    # Lint
+uv run mypy src                # 类型检查
+uv run pytest -q               # 测试</pre>
+  </div>
+</section>
+
+<!-- ═══════════════ 9. 调优流程 ═══════════════ -->
+<section id="tuning">
+  <div class="container">
+    <h2>调优流程</h2>
+
+    <h3>模块调优顺序</h3>
+
+    <ol class="step-list">
+      <li>先审计配置：<code>uv run xft scenario audit config/recommender/xft</code></li>
+      <li>只跑目标模块，关闭 LLM 和 Web，先验证本地规则：<code>--no-llm --module 个税管理</code></li>
+      <li>开启 Web，观察哪些指标真的需要补证：<code>--with-web --module 个税管理</code></li>
+      <li>开启 LLM debug，检查 prompt 和证据是否足够：<code>--with-web --llm-debug --module 个税管理</code></li>
+      <li>精调单个指标：<code>--with-web --llm-debug --module 个税管理 --indicator 个税相关招聘</code></li>
+    </ol>
+
+    <h3>优先看哪些文件</h3>
+
+    <pre>logs/{run_id}.log           ← 开头有"调优建议摘要"
+indicator_evidence.json     ← 证据是否支撑指标
+web_trace.json              ← 查询词和搜索结果是否相关
+llm_calls.jsonl             ← LLM 推理过程
+label_result.json           ← 全部判断明细</pre>
+
+    <h3>日志中需要优先处理的告警</h3>
+
+    <div class="table-wrap">
+      <table>
+        <tr><th>告警</th><th>含义</th><th>处理</th></tr>
+        <tr><td><code>unknown 指标</code></td><td>证据不足，无法判断</td><td>检查 data_sources 或添加 Web 补证</td></tr>
+        <tr><td><code>无证据指标</code></td><td>完全没有本地证据</td><td>确认 data_sources 配置正确</td></tr>
+        <tr><td><code>Web 未搜索</code></td><td>需要补证但未触发</td><td>检查 --with-web 和 web_search.when</td></tr>
+        <tr><td><code>Web 零结果</code></td><td>搜索无结果</td><td>调整 fixed_queries 查询词</td></tr>
+        <tr><td><code>全文复核过滤</code></td><td>crawl4ai 抓取正文不相关</td><td>优化查询词，指向更具体页面</td></tr>
+        <tr><td><code>LLM 失败</code></td><td>LLM 调用出错</td><td>检查 API key、网络、超时</td></tr>
+      </table>
+    </div>
+
+    <h3>常见问题治理</h3>
+
+    <div class="card-grid">
+      <div class="card">
+        <h4>推荐结果不准</h4>
+        <p style="font-size:0.85rem;">先看 <code>label_result.json</code> 定位误命中指标，再看 <code>indicator_evidence.json</code> 确认证据来源。优先调整 <code>data_sources.keywords</code> 或 <code>rule</code>。</p>
+      </div>
+      <div class="card">
+        <h4>Web 证据噪声大</h4>
+        <p style="font-size:0.85rem;">固定查询词必须包含指标词。检查哪些指标配了 <code>when: always</code>。抽查 <code>web_trace.json</code>。</p>
+      </div>
+      <div class="card">
+        <h4>LLM 成本过高</h4>
+        <p style="font-size:0.85rem;">冒烟用 <code>--no-llm</code>。能写成 <code>rule</code> 的指标不要写成 <code>llm</code>。<code>hybrid</code> 用 <code>rule_first</code> 可跳过 LLM。</p>
+      </div>
+      <div class="card">
+        <h4>接受度过高/过低</h4>
+        <p style="font-size:0.85rem;">调整 <code>modules.yaml</code> 的 <code>acceptance_policy.levels</code> 门槛和结论文案。</p>
+      </div>
+    </div>
+
+    <h3>搜索词原则</h3>
+
+    <p>好的查询词 = <code>{company_name}</code> + 指标词 + 业务场景词：</p>
+
+<pre><span class="lang-tag">yaml (推荐)</span>fixed_queries:
+  - "{company_name} 个税 薪酬 招聘"
+  - "{company_name} 社保 个税 管理"</pre>
+
+<pre><span class="lang-tag">yaml (避免)</span>fixed_queries:
+  - "{company_name} 官网"
+  - "{company_name} 新闻"</pre>
+  </div>
+</section>
+
+<!-- ═══════════════ FOOTER ═══════════════ -->
+<footer>
+  <p>XFT · 企业软件销售线索推荐工具 · Python 3.12 · LangGraph + DuckDB + Pydantic v2</p>
+  <p style="margin-top:0.3rem;font-size:0.75rem;">xft-dd-craw4ai &copy; 2026</p>
+</footer>
+
+</body>
+</html>

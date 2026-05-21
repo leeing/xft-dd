@@ -185,7 +185,7 @@ class WebResolver:
         for spec in specs:
             query_row, rows = await self._execute_spec(spec)
             if self.web_config.fetch.enabled and rows:
-                await self._enrich_rows(rows)
+                rows = await self._enrich_rows(spec, query_row, rows)
             self._append_rows(key=key, query_row=query_row, rows=rows)
             resolved.extend(_result_evidence(query_row, rows))
         return resolved
@@ -275,16 +275,48 @@ class WebResolver:
         self.acc.query_cache[cache_key] = (query_row, rows)
         return query_row, rows
 
-    async def _enrich_rows(self, rows: list[dict[str, Any]]) -> None:
+    async def _enrich_rows(
+        self,
+        spec: WebQuerySpec,
+        query_row: dict[str, Any],
+        rows: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
         url_text_map = await _enrich_result_rows(
             rows,
             company_name=self.ctx.company_name,
             fetch_config=self.web_config.fetch,
         )
+        filtered_rows: list[dict[str, Any]] = []
+        filtered_count = 0
+        filtered_reasons: list[dict[str, str]] = []
         for row in rows:
             url = str(row.get("url") or "")
             if url in url_text_map:
                 row["full_text_preview"] = url_text_map[url][:500]
+                row["full_text_chars"] = len(url_text_map[url])
+                reason = _fetch_relevance_failure_reason(
+                    full_text=url_text_map[url],
+                    company_name=self.ctx.resolved_company_name,
+                    profile=self.ctx.profile,
+                    indicator=spec.indicator,
+                    query=spec.query,
+                )
+                if reason:
+                    filtered_count += 1
+                    filtered_reasons.append(
+                        {
+                            "title": str(row.get("title") or "")[:120],
+                            "url": str(row.get("url") or ""),
+                            "reason": reason,
+                        }
+                    )
+                    continue
+                row["fetch_relevance_verified"] = True
+            filtered_rows.append(row)
+        if filtered_count:
+            query_row["fetch_relevance_filtered_count"] = filtered_count
+            query_row["fetch_relevance_filtered"] = filtered_reasons[:5]
+        return filtered_rows
 
     def _append_rows(self, *, key: str, query_row: dict[str, Any], rows: list[dict[str, Any]]) -> None:
         self.acc.query_rows.append(query_row)
@@ -700,6 +732,43 @@ def _is_indicator_relevant(raw: Any, *, company_name: str, indicator: IndicatorC
     return any(term and term in remainder for term in terms)
 
 
+def _fetch_relevance_failure_reason(  # noqa: PLR0913
+    *,
+    full_text: str,
+    company_name: str,
+    profile: dict[str, Any],
+    indicator: IndicatorConfig,
+    query: str,
+) -> str | None:
+    if not _text_has_company(full_text, company_name=company_name, profile=profile):
+        return "full_text_missing_company"
+    if not _text_has_indicator_terms(full_text, company_name=company_name, indicator=indicator, query=query):
+        return "full_text_missing_indicator_terms"
+    return None
+
+
+def _text_has_company(text: str, *, company_name: str, profile: dict[str, Any]) -> bool:
+    credit_code = str(profile.get("credit_code") or "")
+    if credit_code and credit_code in text:
+        return True
+    names = [company_name, str(profile.get("company_name") or "")]
+    return any(name and name in text for name in names)
+
+
+def _text_has_indicator_terms(
+    text: str,
+    *,
+    company_name: str,
+    indicator: IndicatorConfig,
+    query: str,
+) -> bool:
+    terms = [*_indicator_terms(indicator), *_query_terms(query=query, company_name=company_name)]
+    if not terms:
+        return True
+    remainder = text.replace(company_name, " ") if company_name else text
+    return any(term and term in remainder for term in terms)
+
+
 def _query_terms(*, query: str, company_name: str) -> list[str]:
     generic = {"官网", "新闻", "公司", "企业", "信息", "介绍", "招聘", "公开"}
     remainder = query.replace(company_name, " ") if company_name else query
@@ -745,6 +814,8 @@ def _trace_row(query_row: dict[str, Any], rows: list[dict[str, Any]]) -> dict[st
         "effect": query_row.get("effect"),
         "result_count": len(rows),
         "filtered_result_count": max(0, int(query_row.get("raw_result_count") or 0) - len(rows)),
+        "fetch_relevance_filtered_count": int(query_row.get("fetch_relevance_filtered_count") or 0),
+        "fetch_relevance_filtered": query_row.get("fetch_relevance_filtered") or [],
         "results": [
             {"title": row.get("title"), "url": row.get("url"), "snippet": row.get("snippet")} for row in rows[:5]
         ],

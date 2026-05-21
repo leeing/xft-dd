@@ -155,6 +155,52 @@ class _QueryEchoBusinessProvider:
         )
 
 
+class _FetchRelevantBusinessProvider:
+    name = "fake_search"
+
+    async def search(self, query: str, *, dimension_id: str) -> ProviderSearchResponse:
+        items = [
+            SearchItem(
+                id=make_item_id(
+                    url="https://example.com/irrelevant",
+                    title="测试公司研发中心",
+                    snippet="测试公司研发中心公开信息。",
+                ),
+                title="测试公司研发中心",
+                url="https://example.com/irrelevant",
+                snippet="测试公司研发中心公开信息。",
+                query=query,
+                dimension_id=dimension_id,
+                source="minimax",
+                rank=0,
+                fetched_at=datetime.now(UTC),
+            ),
+            SearchItem(
+                id=make_item_id(
+                    url="https://example.com/relevant",
+                    title="测试公司研发中心",
+                    snippet="测试公司研发中心公开信息。",
+                ),
+                title="测试公司研发中心",
+                url="https://example.com/relevant",
+                snippet="测试公司研发中心公开信息。",
+                query=query,
+                dimension_id=dimension_id,
+                source="minimax",
+                rank=1,
+                fetched_at=datetime.now(UTC),
+            ),
+        ]
+        return ProviderSearchResponse(
+            provider=self.name,
+            provider_type="minimax",
+            query=query,
+            dimension_id=dimension_id,
+            status="success",
+            items=[item.model_dump() for item in items],
+        )
+
+
 def _write_web_config(tmp_path: Path) -> Path:
     path = tmp_path / "web_search.yaml"
     path.write_text(
@@ -181,19 +227,34 @@ def _write_web_config(tmp_path: Path) -> Path:
     return path
 
 
+def _write_fetch_web_config(tmp_path: Path) -> Path:
+    path = _write_web_config(tmp_path)
+    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    payload["fetch"] = {
+        "enabled": True,
+        "timeout_seconds": 3,
+        "concurrency": 2,
+        "max_chars": 1000,
+        "blocked_domains": [],
+    }
+    path.write_text(yaml.safe_dump(payload, allow_unicode=True), encoding="utf-8")
+    return path
+
+
 async def _resolve_all_web(  # noqa: PLR0913
     *,
     config: RecommendationConfig,
     tmp_path: Path,
     provider_factory: Any,
     profile: dict[str, Any] | None = None,
+    web_config_path: Path | None = None,
     query_planner: Any | None = None,
     refresh: bool = False,
 ) -> Any:
     resolver = WebResolver(
         company_name="测试公司",
         profile=profile or {"company_name": "测试公司"},
-        web_config_path=str(_write_web_config(tmp_path)),
+        web_config_path=str(web_config_path or _write_web_config(tmp_path)),
         output_dir=tmp_path / "out",
         provider_factory=provider_factory,
         query_planner=query_planner,
@@ -1112,6 +1173,74 @@ async def test_web_evidence_filters_company_only_indicator_noise(tmp_path: Path)
     assert result.trace[0]["filtered_result_count"] == 1
 
 
+async def test_web_evidence_filters_fetched_full_text_irrelevant_to_indicator(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = RecommendationConfig.model_validate(
+        {
+            "acceptance_policy": {"levels": [{"result": "低", "min_matched_labels": 0, "conclusion": "低"}]},
+            "modules": [
+                {
+                    "module_id": "m",
+                    "module_name": "模块",
+                    "labels": [
+                        {
+                            "label_id": "l",
+                            "label_name": "标签",
+                            "indicators": [
+                                {
+                                    "indicator_id": "rd",
+                                    "indicator_name": "研发中心",
+                                    "evaluator": "llm_web",
+                                    "standard": "公开信息显示有研发中心",
+                                    "web_search": {"fixed_queries": ["{company_name} 研发中心"]},
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+    async def fake_enrich_items(items: list[SearchItem], *_args: object, **_kwargs: object) -> list[SearchItem]:
+        enriched: list[SearchItem] = []
+        for item in items:
+            if item.url.endswith("/irrelevant"):
+                enriched.append(
+                    item.model_copy(update={"full_text": "测试公司官网首页，欢迎访问。", "snippet": "测试公司官网首页"})
+                )
+            else:
+                enriched.append(
+                    item.model_copy(
+                        update={
+                            "full_text": "测试公司建设研发中心，负责产品研发和技术创新。",
+                            "snippet": "测试公司建设研发中心",
+                        }
+                    )
+                )
+        return enriched
+
+    monkeypatch.setattr("xft.utils.fetch.enrich_items", fake_enrich_items)
+
+    result = await _resolve_all_web(
+        config=config,
+        tmp_path=tmp_path,
+        profile={"company_name": "测试公司", "credit_code": "91440000MA5UW5Y08T"},
+        web_config_path=_write_fetch_web_config(tmp_path),
+        provider_factory=lambda _name, _config: _FetchRelevantBusinessProvider(),
+        refresh=True,
+    )
+
+    key = "m.l.rd"
+    assert result.results == 1
+    assert len(result.evidence[key]) == 1
+    assert result.evidence[key][0]["url"] == "https://example.com/relevant"
+    assert result.trace[0]["fetch_relevance_filtered_count"] == 1
+    assert result.trace[0]["fetch_relevance_filtered"][0]["reason"] == "full_text_missing_indicator_terms"
+
+
 async def test_web_evidence_feeds_indicator_result() -> None:
     config = RecommendationConfig.model_validate(
         {
@@ -1666,7 +1795,7 @@ async def test_run_recommendation_business_first_ignores_dimension_outputs(tmp_p
                                         "evaluator": "rule",
                                         "standard": "存在行业",
                                         "rule": {"source_field": "industry", "op": "exists"},
-                                    }
+                                    },
                                 ],
                             }
                         ],
