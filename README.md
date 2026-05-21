@@ -121,7 +121,7 @@ uv run xft recommend --module 个税管理 --module 差旅报销 "企业名称"
 只测试单个指标：
 
 ```bash
-uv run xft recommend --module 个税管理 --indicator 个税相关招聘 --with-web "企业名称"
+uv run xft recommend --module 个税管理 --label 多分支机构_集团化制造企业 --indicator 招聘信息 --with-web "企业名称"
 ```
 
 审计当前场景配置：
@@ -137,7 +137,8 @@ uv run xft scenario audit config/recommender/xft
 | `--warehouse` | 指定 DuckDB 文件，默认 `cache/company_warehouse.duckdb` | 有多份企业画像库时 |
 | `--scenario` | 指定场景目录，默认 `config/recommender/xft` | 跑非默认场景时 |
 | `--module` | 只评估指定 `module_id`，可重复传入 | 调试单个模块的规则、LLM、Web 搜索词时 |
-| `--indicator` | 只评估指定 `indicator_id`，可重复传入 | 精调单个指标、搜索词、prompt 时 |
+| `--label` | 只评估指定 `label_id`，可重复传入，必须同时指定 `--module` | 调试模块下某一类业务属性时 |
+| `--indicator` | 只评估指定 `indicator_id`，可重复传入，必须同时指定 `--module` 和 `--label` | 精调单个指标、搜索词、prompt 时 |
 | `--output-dir` | 指定输出目录，默认来自 `scenario.yaml` | 临时试跑或隔离结果时 |
 | `--no-llm` | 关闭 LLM，只跑规则和兜底判断 | 快速冒烟、排查规则配置时 |
 | `--with-web` | 启用指标级 Web 补证 | 需要公开网页证据时 |
@@ -156,6 +157,19 @@ uv run xft recommend \
   --company-list company.txt \
   --with-web \
   --limit 10
+```
+
+三层调试示例：
+
+```bash
+# 只看一个模块
+uv run xft recommend --module 假勤管理 "企业名称"
+
+# 只看模块下某个标签，保留该标签下所有指标
+uv run xft recommend --module 假勤管理 --label 科技属性 "企业名称"
+
+# 只看某个指标，必须给出完整 module + label 语境
+uv run xft recommend --module 假勤管理 --label 科技属性 --indicator 细分行业 "企业名称"
 ```
 
 ## 运行结果怎么看
@@ -280,6 +294,52 @@ modules_dir: modules.d
 | `acceptance_policy.levels` | 控制“高 / 中高 / 低”的门槛和结论文案 |
 | `modules_dir` | 指定模块文件目录 |
 
+### `company_profile` 是什么
+
+`company_profile` 是推荐流水线读取的企业画像主表，由 `xft warehouse build` 从 `data/` 下的企业 JSON 聚合生成。它是 `rule.source_field` 的主要来源：当指标里写 `rule.source_field: industry`、`rule.source_field: labels`、`rule.source_field: ip_counts.patent` 时，系统就是从当前企业的 `company_profile` 里取值判断。
+
+常用字段：
+
+| 字段 | 类型 / 示例 | 适合判断什么 |
+| --- | --- | --- |
+| `company_name` / `credit_code` | 企业名称 / 统一社会信用代码 | 运行定位、Web 结果归属校验 |
+| `industry` / `industry_big` / `industry_mid` / `industry_small` | 制造业、软件和信息技术服务业等 | 行业、细分行业、制造业属性 |
+| `business_scope` | 经营范围文本 | 主营业务、产品、服务类型 |
+| `employee_count` | 员工人数 | 企业规模、用工规模 |
+| `registered_capital` / `registered_location` / `province` / `county` | 注册资本、地区 | 区域、规模、注册地 |
+| `labels` | JSON 列表，如高新技术企业、专精特新 | 企业标签、科技资质、银行标签 |
+| `ip_counts.patent` / `ip_counts.software` | 专利数、软著数 | 知识产权、研发属性 |
+| `recent_recruitment_titles` / `recruitment_count` | 近期招聘标题、招聘数量 | 岗位需求、组织能力、招聘信号 |
+| `branch_count` | 分支机构数量 | 多区域经营、集团化管理 |
+| `qualification_count` | 资质数量 | 资质丰富度、科技/行业认证 |
+| `outbound_investment_count` | 对外投资数量 | 多法人主体、集团化经营 |
+| `cross_border_flags` | 跨境相关标记 | 出口、跨境、海外业务线索 |
+| `profile_completeness` | 0-1 | 判断画像是否足够完整 |
+
+字段规则示例：
+
+```yaml
+evaluator: rule
+standard: 企业属于制造业
+rule:
+  source_field: industry
+  op: contains
+  value: 制造
+```
+
+嵌套字段可以用点号：
+
+```yaml
+evaluator: rule
+standard: 企业存在专利
+rule:
+  source_field: ip_counts.patent
+  op: ">"
+  value: 0
+```
+
+如果要读取明细表，不要写 `rule.source_field`，而是写 `data_sources`。当前常用明细表包括 `recruitments`、`branches`、`qualifications`、`outbound_investments`、`key_personnel`。
+
 ### `modules.d/*.yaml`
 
 一个模块一个文件。新增模块就是新增 YAML 文件；删除模块就是删除文件。
@@ -324,18 +384,28 @@ labels:
 
 ### evaluator 怎么选
 
-| evaluator | 适合场景 | 是否需要 LLM | Web 角色 |
-| --- | --- | ---: | --- |
-| `rule` | 结构化字段明确，例如招聘标题、资质、分支机构 | 否 | 可选，最多补到 `possible` |
-| `llm` | 需要综合文本和证据推理 | 是 | 可选，通常证据不足时补证 |
-| `hybrid` | 先用规则判断硬证据，再让 LLM 处理模糊判断 | 可选 | 可选，推荐的增强方式 |
-| `llm_web` | 必须依赖公开网页才能判断 | 是 | 必须，Web-first |
+| 你手里的证据形态 | 推荐 evaluator | 典型例子 | Web 角色 |
+| --- | --- | --- | --- |
+| `company_profile` 字段或明细表能直接判断 | `rule` | 行业包含制造、标签包含高新技术企业、分支机构数 > 0、招聘标题包含关键词 | 可选；通常只在规则未命中时补线索，最多补到 `possible` |
+| 有本地证据，但要判断语义、归类或业务含义 | `llm` | 根据经营范围判断是否属于科技制造，根据多段证据判断是否有集团化管理需求 | 可选；常用 `when: insufficient` |
+| 先用规则抓硬信号，规则不够时再让 LLM 判断 | `hybrid` | 标签命中则直接通过；未命中时结合资质、经营范围、Web 证据判断 | 推荐；适合调试阶段的大多数复杂指标 |
+| 本地没有可靠数据，只能靠公开网页 | `llm_web` | 官网/新闻披露研发投入、海外客户、验厂、具体业务模式 | 必须；没有实际 Web 证据时返回 `unknown` |
 
 推荐顺序：
 
-1. 能用本地字段或明细表判断，优先 `rule`。
-2. 有本地信号但需要解释或补证，优先 `hybrid`。
-3. 只有公开网页才可能判断，才用 `llm_web`。
+1. 能 `rule` 就不要 `llm`。
+2. 有硬规则但还需要解释，优先 `hybrid`。
+3. 本地证据足够但需要语义判断，才用 `llm`。
+4. 只有公开网页才可能判断，才用 `llm_web`。
+
+快速判断：
+
+```text
+能从 company_profile / 明细表直接比较字段？  -> rule
+有本地证据，但需要读懂文本含义？              -> llm
+有硬规则可先挡一层，剩下交给 LLM？            -> hybrid
+本地数据没有，只能公开搜索？                  -> llm_web
+```
 
 ### 本地证据怎么配
 
@@ -463,9 +533,51 @@ python -m xft.keys encode <plaintext_key>
 4. 如果 Web 噪声误导，调整对应指标的 `fixed_queries`、`when`、`effect`。
 5. 如果接受度过高或过低，调整 `modules.yaml` 的 `acceptance_policy`。
 
-调试单个模块时先加 `--module <module_id>`，缩小输出和 LLM/Web 调用范围。精调某个指标时再加 `--indicator <indicator_id>`。确认该模块稳定后，再去掉过滤参数做全场景对比。
+调试单个模块时先加 `--module <module_id>`，缩小输出和 LLM/Web 调用范围。调试某类业务属性时加 `--label <label_id>`；精调某个指标时使用完整三层参数：`--module <module_id> --label <label_id> --indicator <indicator_id>`。确认该模块稳定后，再去掉过滤参数做全场景对比。
 
 每次运行都会生成 `logs/<run_id>.log`。调配置时优先读这个文件，它会先给出调优建议摘要，再按模块、标签、指标展开 Rule、Data sources、Web policy、Web 查询、LLM 调用和最终采纳证据。
+
+### 让 LLM 帮你配置指标
+
+不建议长期手改大段 YAML。调试阶段可以直接用自然语言描述目标，让 LLM 帮你改 `modules.d/*.yaml`、跑审计和单指标验证。
+
+推荐这样提需求：
+
+```text
+帮我配置一个推荐指标：
+module: 假勤管理
+label: 科技属性
+indicator: 研发投入
+
+业务含义:
+企业公开材料中有研发投入、研发项目、研发中心、研发费用等证据，就认为具备研发投入属性。
+
+希望策略:
+优先使用本地 company_profile 和明细表；本地证据不足时再 Web 搜索；Web 有证据后让 LLM 判断。
+
+可接受证据:
+- company_profile.labels 中的高新技术企业、专精特新、科技型中小企业
+- ip_counts.patent 或 ip_counts.software 大于 0
+- 官网、新闻、年报、招股书中明确提到研发投入/研发项目/研发中心
+
+搜索词倾向:
+{company_name} 研发投入
+{company_name} 研发中心
+{company_name} 研发项目
+
+请你选择 evaluator，修改配置，运行 scenario audit，并用：
+uv run xft recommend --module 假勤管理 --label 科技属性 --indicator 研发投入 --with-web --llm-debug "企业名称"
+做一次验证。
+```
+
+LLM 配置时应交付：
+
+1. 说明为什么选 `rule` / `llm` / `hybrid` / `llm_web`。
+2. 修改对应 `config/recommender/xft/modules.d/<module>.yaml`。
+3. 更新必要文档。
+4. 运行 `uv run xft scenario audit config/recommender/xft`。
+5. 用 `--module --label --indicator` 跑单指标验证。
+6. 汇总命中、未命中、Web 查询词、LLM 判断和下一步调参建议。
 
 ### LLM 成本或速度有问题
 

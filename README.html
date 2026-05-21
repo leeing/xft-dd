@@ -340,6 +340,7 @@
     <a href="#outputs">运行产物</a>
     <a href="#commands">常用命令</a>
     <a href="#tuning">调优流程</a>
+    <a href="#config-assistant">配置助手</a>
   </div>
 </nav>
 
@@ -658,6 +659,38 @@ labels:
     <div class="callout">
       <code>module_id</code> 全局唯一 · 同一模块下 <code>label_id</code> 唯一 · 同一标签下 <code>indicator_id</code> 唯一
     </div>
+
+    <h3>company_profile 字段</h3>
+    <p><code>company_profile</code> 是推荐流水线读取的企业画像主表，由 <code>xft warehouse build</code> 从 <code>data/</code> 下的企业 JSON 聚合生成。指标里的 <code>rule.source_field</code> 主要读取这张表，例如 <code>industry</code>、<code>labels</code>、<code>ip_counts.patent</code>。</p>
+
+    <div class="table-wrap">
+      <table>
+        <tr><th>字段</th><th>示例</th><th>适合判断什么</th></tr>
+        <tr><td><code>company_name</code> / <code>credit_code</code></td><td>企业名称 / 统一社会信用代码</td><td>运行定位、Web 结果归属校验</td></tr>
+        <tr><td><code>industry</code> / <code>industry_big</code> / <code>industry_mid</code> / <code>industry_small</code></td><td>制造业、软件和信息技术服务业</td><td>行业、细分行业、制造业属性</td></tr>
+        <tr><td><code>business_scope</code></td><td>经营范围文本</td><td>主营业务、产品、服务类型</td></tr>
+        <tr><td><code>employee_count</code></td><td>员工人数</td><td>企业规模、用工规模</td></tr>
+        <tr><td><code>labels</code></td><td>高新技术企业、专精特新</td><td>企业标签、科技资质、银行标签</td></tr>
+        <tr><td><code>ip_counts.patent</code> / <code>ip_counts.software</code></td><td>专利数、软著数</td><td>知识产权、研发属性</td></tr>
+        <tr><td><code>recent_recruitment_titles</code> / <code>recruitment_count</code></td><td>近期招聘标题、招聘数量</td><td>岗位需求、招聘信号</td></tr>
+        <tr><td><code>branch_count</code></td><td>分支机构数量</td><td>多区域经营、集团化管理</td></tr>
+        <tr><td><code>qualification_count</code></td><td>资质数量</td><td>资质丰富度、科技/行业认证</td></tr>
+        <tr><td><code>outbound_investment_count</code></td><td>对外投资数量</td><td>多法人主体、集团化经营</td></tr>
+        <tr><td><code>cross_border_flags</code></td><td>跨境相关标记</td><td>出口、跨境、海外业务线索</td></tr>
+        <tr><td><code>profile_completeness</code></td><td>0-1</td><td>判断画像是否足够完整</td></tr>
+      </table>
+    </div>
+
+<pre>evaluator: rule
+standard: 企业存在专利
+rule:
+  source_field: ip_counts.patent
+  op: "&gt;"
+  value: 0</pre>
+
+    <div class="callout">
+      <strong>使用边界：</strong>读取 <code>company_profile</code> 字段用 <code>rule.source_field</code>；读取招聘、分支、资质、对外投资、关键人员等明细表时用 <code>data_sources</code>。
+    </div>
   </div>
 </section>
 
@@ -670,30 +703,30 @@ labels:
 
     <div class="table-wrap">
       <table>
-        <tr><th>evaluator</th><th>触发条件</th><th>调用 LLM？</th><th>Web 角色</th></tr>
+        <tr><th>证据形态</th><th>推荐 evaluator</th><th>典型例子</th><th>Web 角色</th></tr>
         <tr>
+          <td><code>company_profile</code> 字段或明细表能直接判断</td>
           <td><strong>rule</strong></td>
-          <td>结构化字段明确，例如招聘标题、资质、分支机构</td>
-          <td style="text-align:center;">否</td>
-          <td>可选，最多补到 <code>possible</code></td>
+          <td>行业包含制造、标签包含高新技术企业、分支机构数 &gt; 0、招聘标题包含关键词</td>
+          <td>可选；规则未命中时最多补到 <code>possible</code></td>
         </tr>
         <tr>
+          <td>有本地证据，但要判断语义、归类或业务含义</td>
           <td><strong>llm</strong></td>
-          <td>需要综合文本和证据推理</td>
-          <td style="text-align:center;">是</td>
-          <td>可选，通常证据不足时补证</td>
+          <td>根据经营范围判断是否属于科技制造，根据多段证据判断是否有集团化管理需求</td>
+          <td>可选；常用 <code>when: insufficient</code></td>
         </tr>
         <tr>
+          <td>先用规则抓硬信号，规则不够时再让 LLM 判断</td>
           <td><strong>hybrid</strong></td>
-          <td>先用规则判断硬证据，再让 LLM 处理模糊判断</td>
-          <td style="text-align:center;">可选</td>
-          <td>可选，推荐的增强方式</td>
+          <td>标签命中则直接通过；未命中时结合资质、经营范围、Web 证据判断</td>
+          <td>推荐；适合调试阶段的大多数复杂指标</td>
         </tr>
         <tr>
+          <td>本地没有可靠数据，只能靠公开网页</td>
           <td><strong>llm_web</strong></td>
-          <td>必须依赖公开网页才能判断</td>
-          <td style="text-align:center;">是</td>
-          <td>必须，Web-first</td>
+          <td>官网/新闻披露研发投入、海外客户、验厂、具体业务模式</td>
+          <td>必须；没有实际 Web 证据时返回 <code>unknown</code></td>
         </tr>
       </table>
     </div>
@@ -773,11 +806,16 @@ web_search:
 
     <h3>选择顺序</h3>
     <ol class="step-list">
-      <li>能用本地字段或明细表判断 → <strong>rule</strong></li>
-      <li>有本地信号但需要解释或补证 → <strong>hybrid</strong></li>
-      <li>有本地证据，需要综合推理 → <strong>llm</strong></li>
+      <li>能 <strong>rule</strong> 就不要 <strong>llm</strong></li>
+      <li>有硬规则但还需要解释 → <strong>hybrid</strong></li>
+      <li>本地证据足够但需要语义判断 → <strong>llm</strong></li>
       <li>只有公开网页才可能判断 → <strong>llm_web</strong></li>
     </ol>
+
+<pre>能从 company_profile / 明细表直接比较字段？  -> rule
+有本地证据，但需要读懂文本含义？              -> llm
+有硬规则可先挡一层，剩下交给 LLM？            -> hybrid
+本地数据没有，只能公开搜索？                  -> llm_web</pre>
   </div>
 </section>
 
@@ -850,7 +888,8 @@ web_search:
         <tr><td><code>--llm-debug</code></td><td>打印 LLM 调用耗时、错误和响应预览</td></tr>
         <tr><td><code>--llm-concurrency N</code></td><td>设置 LLM 并发数，默认 4</td></tr>
         <tr><td><code>--module ID</code></td><td>只评估指定 module_id，可重复传入</td></tr>
-        <tr><td><code>--indicator ID</code></td><td>只评估指定 indicator_id，可重复传入</td></tr>
+        <tr><td><code>--label ID</code></td><td>只评估指定 label_id，必须配合 <code>--module</code></td></tr>
+        <tr><td><code>--indicator ID</code></td><td>只评估指定 indicator_id，必须配合 <code>--module</code> 和 <code>--label</code></td></tr>
         <tr><td><code>--company-list FILE</code></td><td>批量读取企业名单</td></tr>
         <tr><td><code>--limit N</code></td><td>只跑名单前 N 家</td></tr>
         <tr><td><code>--skip-existing</code></td><td>已有 result.json 的企业跳过</td></tr>
@@ -880,13 +919,16 @@ uv run xft recommend --with-web --llm-debug "企业名称"
 # 7. 调试单个模块
 uv run xft recommend --with-web --llm-debug --module 个税管理 "企业名称"
 
-# 8. 精调单个指标
-uv run xft recommend --with-web --llm-debug --module 个税管理 --indicator 个税相关招聘 "企业名称"
+# 8. 精调单个标签
+uv run xft recommend --with-web --llm-debug --module 个税管理 --label 多分支机构_集团化制造企业 "企业名称"
 
-# 9. 批量推荐
+# 9. 精调单个指标
+uv run xft recommend --with-web --llm-debug --module 个税管理 --label 多分支机构_集团化制造企业 --indicator 招聘信息 "企业名称"
+
+# 10. 批量推荐
 uv run xft recommend --company-list company.txt --with-web --limit 10
 
-# 10. 校准
+# 11. 校准
 uv run xft calibrate --company-list company.txt --labels calibration_labels.csv --limit 10</pre>
 
     <h3>质量门禁</h3>
@@ -910,7 +952,8 @@ uv run pytest -q               # 测试</pre>
       <li>只跑目标模块，关闭 LLM 和 Web，先验证本地规则：<code>--no-llm --module 个税管理</code></li>
       <li>开启 Web，观察哪些指标真的需要补证：<code>--with-web --module 个税管理</code></li>
       <li>开启 LLM debug，检查 prompt 和证据是否足够：<code>--with-web --llm-debug --module 个税管理</code></li>
-      <li>精调单个指标：<code>--with-web --llm-debug --module 个税管理 --indicator 个税相关招聘</code></li>
+      <li>精调单个标签：<code>--with-web --llm-debug --module 个税管理 --label 多分支机构_集团化制造企业</code></li>
+      <li>精调单个指标：<code>--with-web --llm-debug --module 个税管理 --label 多分支机构_集团化制造企业 --indicator 招聘信息</code></li>
     </ol>
 
     <h3>优先看哪些文件</h3>
@@ -967,6 +1010,50 @@ label_result.json           ← 全部判断明细</pre>
 <pre><span class="lang-tag">yaml (避免)</span>fixed_queries:
   - "{company_name} 官网"
   - "{company_name} 新闻"</pre>
+  </div>
+</section>
+
+<!-- ═══════════════ 10. 配置助手 ═══════════════ -->
+<section id="config-assistant">
+  <div class="container">
+    <h2>让 LLM 帮你配置指标</h2>
+
+    <p>调试阶段不建议长期手改大段 YAML。可以直接用自然语言描述目标，让 LLM 帮你选择 evaluator、修改 <code>modules.d/*.yaml</code>、运行审计和单指标验证。</p>
+
+<pre>帮我配置一个推荐指标：
+module: 假勤管理
+label: 科技属性
+indicator: 研发投入
+
+业务含义:
+企业公开材料中有研发投入、研发项目、研发中心、研发费用等证据，就认为具备研发投入属性。
+
+希望策略:
+优先使用本地 company_profile 和明细表；本地证据不足时再 Web 搜索；Web 有证据后让 LLM 判断。
+
+可接受证据:
+- company_profile.labels 中的高新技术企业、专精特新、科技型中小企业
+- ip_counts.patent 或 ip_counts.software 大于 0
+- 官网、新闻、年报、招股书中明确提到研发投入/研发项目/研发中心
+
+搜索词倾向:
+{company_name} 研发投入
+{company_name} 研发中心
+{company_name} 研发项目
+
+请你选择 evaluator，修改配置，运行 scenario audit，并用：
+uv run xft recommend --module 假勤管理 --label 科技属性 --indicator 研发投入 --with-web --llm-debug "企业名称"
+做一次验证。</pre>
+
+    <h3>LLM 应交付什么</h3>
+    <ol class="step-list">
+      <li>说明为什么选 <code>rule</code> / <code>llm</code> / <code>hybrid</code> / <code>llm_web</code></li>
+      <li>修改对应 <code>config/recommender/xft/modules.d/&lt;module&gt;.yaml</code></li>
+      <li>更新必要文档</li>
+      <li>运行 <code>uv run xft scenario audit config/recommender/xft</code></li>
+      <li>用 <code>--module --label --indicator</code> 跑单指标验证</li>
+      <li>汇总命中、未命中、Web 查询词、LLM 判断和下一步调参建议</li>
+    </ol>
   </div>
 </section>
 
