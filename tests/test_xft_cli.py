@@ -96,6 +96,8 @@ def test_recommend_smoke_command_uses_offline_no_llm(monkeypatch: pytest.MonkeyP
                 "个税管理",
                 "--module",
                 "差旅报销",
+                "--label",
+                "多法人主体的企业集团",
                 "--indicator",
                 "社保个税岗位",
                 "烟测公司",
@@ -111,7 +113,20 @@ def test_recommend_smoke_command_uses_offline_no_llm(monkeypatch: pytest.MonkeyP
     assert captured["refresh_web"] is True
     assert captured["web_providers"] == ["fake_search"]
     assert captured["module_ids"] == ["个税管理", "差旅报销"]
+    assert captured["label_ids"] == ["多法人主体的企业集团"]
     assert captured["indicator_ids"] == ["社保个税岗位"]
+
+
+def test_recommend_label_requires_module(capsys: pytest.CaptureFixture[str]) -> None:
+    assert xft_main(["recommend", "--label", "科技属性", "烟测公司"]) == 2
+    captured = capsys.readouterr()
+    assert "--label requires --module" in captured.err
+
+
+def test_recommend_indicator_requires_module_and_label(capsys: pytest.CaptureFixture[str]) -> None:
+    assert xft_main(["recommend", "--module", "假勤管理", "--indicator", "细分行业", "烟测公司"]) == 2
+    captured = capsys.readouterr()
+    assert "--indicator requires --module and --label" in captured.err
 
 
 def test_xft_scenario_audit_outputs_human_report(capsys: pytest.CaptureFixture[str]) -> None:

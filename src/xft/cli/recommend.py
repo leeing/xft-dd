@@ -30,10 +30,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="limit recommendation to one module_id; repeat to test multiple modules",
     )
     parser.add_argument(
+        "--label",
+        dest="label_ids",
+        action="append",
+        help="limit recommendation to one label_id inside selected modules; requires --module",
+    )
+    parser.add_argument(
         "--indicator",
         dest="indicator_ids",
         action="append",
-        help="limit recommendation to one indicator_id; repeat to test multiple indicators",
+        help="limit recommendation to one indicator_id inside selected labels; requires --module and --label",
     )
     parser.add_argument("--output-dir")
     parser.add_argument("--batch-id", help="batch id for --company-list runs")
@@ -82,7 +88,12 @@ def _load_company_names(args: argparse.Namespace) -> list[str]:
 
 async def _main_async(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0912
     load_dotenv()
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.label_ids and not args.module_ids:
+        parser.error("--label requires --module")
+    if args.indicator_ids and (not args.module_ids or not args.label_ids):
+        parser.error("--indicator requires --module and --label")
 
     if not args.verbose:
         logging.basicConfig(level=logging.CRITICAL)
@@ -116,6 +127,7 @@ async def _main_async(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0
                 refresh_web=args.web_refresh,
                 web_providers=csv(args.web_provider),
                 module_ids=args.module_ids,
+                label_ids=args.label_ids,
                 indicator_ids=args.indicator_ids,
                 llm_debug=args.llm_debug,
                 llm_concurrency=args.llm_concurrency,
@@ -149,6 +161,7 @@ async def _main_async(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0
             refresh_web=args.web_refresh,
             web_providers=csv(args.web_provider),
             module_ids=args.module_ids,
+            label_ids=args.label_ids,
             indicator_ids=args.indicator_ids,
             llm_debug=args.llm_debug,
             llm_concurrency=args.llm_concurrency,

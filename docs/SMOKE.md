@@ -83,13 +83,14 @@ uv run xft recommend --no-llm \
   "企业名称"
 ```
 
-只验收单个指标时再加 `--indicator`：
+只验收单个指标时给出完整 `module -> label -> indicator` 语境：
 
 ```bash
 uv run xft recommend --no-llm \
   --scenario config/recommender/xft \
   --module 个税管理 \
-  --indicator 个税相关招聘 \
+  --label 多分支机构_集团化制造企业 \
+  --indicator 招聘信息 \
   "企业名称"
 ```
 
@@ -108,8 +109,9 @@ uv run xft scenario audit config/recommender/xft --json
 预期：
 
 - 只评估指定 `module_id`。
-- `config_manifest.json` 的 `mode.module_ids` 记录本次过滤条件。
-- 指定不存在的模块时，命令返回失败并提示可用 `module_id`。
+- `--label` 必须配合 `--module`；`--indicator` 必须配合 `--module` 和 `--label`。
+- `config_manifest.json` 的 `mode.module_ids`、`mode.label_ids` 和 `mode.indicator_ids` 记录本次过滤条件。
+- 指定不存在的模块、标签或指标时，命令返回失败并提示当前范围内可用的 id。
 
 ## 3. LLM 验收
 

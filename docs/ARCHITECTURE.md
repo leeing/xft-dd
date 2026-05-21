@@ -50,7 +50,7 @@ CLI 入口：
 src/xft/cli/recommend.py
 ```
 
-`xft recommend --module <module_id>` 和 `--indicator <indicator_id>` 会在配置加载后、进入 graph 前过滤 `modules_config.modules`。两个参数都可重复传入，用于调试单个或少量模块/指标；过滤条件写入 `config_manifest.json` 的 `mode.module_ids` 和 `mode.indicator_ids`。
+`xft recommend --module <module_id>`、`--label <label_id>` 和 `--indicator <indicator_id>` 会在配置加载后、进入 graph 前按 `module -> label -> indicator` 顺序过滤 `modules_config.modules`。三个参数都可重复传入；`--label` 必须同时指定 `--module`，`--indicator` 必须同时指定 `--module` 和 `--label`，避免跨模块或跨标签误匹配。过滤条件写入 `config_manifest.json` 的 `mode.module_ids`、`mode.label_ids` 和 `mode.indicator_ids`。
 
 `xft scenario audit <scenario>` 会审计模块配置，输出 evaluator 分布、模块概览和常见配置告警，例如泛查询词、`text_contains` 缺关键词、LLM 指标缺少证据来源等。
 

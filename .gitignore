@@ -27,3 +27,4 @@ enquery.xlsx
 /data/
 /cache/*.db
 recommendation_runs/
+cache/company_warehouse.duckdb

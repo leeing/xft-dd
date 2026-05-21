@@ -1835,6 +1835,7 @@ async def test_run_recommendation_business_first_ignores_dimension_outputs(tmp_p
         run_id="business-first",
         use_llm=False,
         module_ids=["attendance"],
+        label_ids=["manufacturing"],
         indicator_ids=["industry"],
     )
 
@@ -1844,6 +1845,7 @@ async def test_run_recommendation_business_first_ignores_dimension_outputs(tmp_p
     manifest = json.loads((output_dir / "config_manifest.json").read_text(encoding="utf-8"))
     assert payload["Module"] == "假勤管理"
     assert manifest["mode"]["module_ids"] == ["attendance"]
+    assert manifest["mode"]["label_ids"] == ["manufacturing"]
     assert manifest["mode"]["indicator_ids"] == ["industry"]
     assert [item["indicator_id"] for item in label_payload["indicator_results"]] == ["industry"]
     assert result.log_path == str(output_dir / "logs" / "business-first.log")
@@ -1851,6 +1853,8 @@ async def test_run_recommendation_business_first_ignores_dimension_outputs(tmp_p
     assert "# 推荐运行日志：广东泰琪丰电子有限公司" in log_text
     assert "## 企业画像摘要" in log_text
     assert "## 调优建议摘要" in log_text
+    assert "- 参与标签: manufacturing" in log_text
+    assert "- 指标数: 1" in log_text
     assert "## 模块：假勤管理 (attendance)" in log_text
     assert "#### 指标：行业 (industry)" in log_text
     assert "- Rule 决策点:" in log_text
@@ -1862,6 +1866,24 @@ async def test_run_recommendation_business_first_ignores_dimension_outputs(tmp_p
     report = (output_dir / "report.md").read_text(encoding="utf-8")
     assert "业务推荐结果" in report
     assert "维度分析摘要" not in report
+
+    label_only = await run_recommendation(
+        company_name="广东泰琪丰电子有限公司",
+        warehouse_db=str(db),
+        scenario_path=str(scenario_dir),
+        output_dir=str(tmp_path / "runs"),
+        run_id="label-only",
+        use_llm=False,
+        module_ids=["attendance"],
+        label_ids=["manufacturing"],
+    )
+    label_only_dir = Path(label_only.output_dir)
+    label_only_payload = json.loads((label_only_dir / "label_result.json").read_text(encoding="utf-8"))
+    label_only_manifest = json.loads((label_only_dir / "config_manifest.json").read_text(encoding="utf-8"))
+    assert label_only_manifest["mode"]["module_ids"] == ["attendance"]
+    assert label_only_manifest["mode"]["label_ids"] == ["manufacturing"]
+    assert label_only_manifest["mode"]["indicator_ids"] == []
+    assert [item["indicator_id"] for item in label_only_payload["indicator_results"]] == ["industry", "unused"]
 
 
 async def test_run_recommendation_unknown_module_returns_clear_failure(tmp_path: Path) -> None:
@@ -1919,6 +1941,7 @@ async def test_run_recommendation_unknown_module_returns_clear_failure(tmp_path:
         run_id="bad-module",
         use_llm=False,
         module_ids=["missing"],
+        label_ids=["l"],
         indicator_ids=["industry"],
     )
 
@@ -1928,3 +1951,145 @@ async def test_run_recommendation_unknown_module_returns_clear_failure(tmp_path:
     assert result.error is not None
     assert "unknown module_id: missing" in result.error
     assert "available module_ids: attendance" in result.error
+
+
+async def test_run_recommendation_unknown_label_returns_clear_failure(tmp_path: Path) -> None:
+    scenario_dir = tmp_path / "scenario"
+    scenario_dir.mkdir()
+    (scenario_dir / "scenario.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "extends": str(Path("config/recommender/xft/scenario.yaml").resolve()),
+                "id": "test",
+                "name": "test",
+                "modules_config": "modules.yaml",
+                "output_dir": str(tmp_path / "runs"),
+            },
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+    (scenario_dir / "modules.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "acceptance_policy": {"levels": [{"result": "低", "min_matched_labels": 0, "conclusion": "低"}]},
+                "modules": [
+                    {
+                        "module_id": "attendance",
+                        "module_name": "假勤管理",
+                        "labels": [
+                            {
+                                "label_id": "manufacturing",
+                                "label_name": "制造业",
+                                "indicators": [
+                                    {
+                                        "indicator_id": "industry",
+                                        "indicator_name": "行业",
+                                        "evaluator": "rule",
+                                        "standard": "存在",
+                                        "rule": {"source_field": "industry", "op": "exists"},
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            },
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+
+    result = await run_recommendation(
+        company_name="测试公司",
+        warehouse_db=str(tmp_path / "missing.duckdb"),
+        scenario_path=str(scenario_dir),
+        output_dir=str(tmp_path / "runs"),
+        run_id="bad-label",
+        use_llm=False,
+        module_ids=["attendance"],
+        label_ids=["missing"],
+    )
+
+    assert result.status == "failed"
+    assert result.error is not None
+    assert "unknown label_id: missing" in result.error
+    assert "available label_ids: manufacturing" in result.error
+
+
+async def test_run_recommendation_unknown_indicator_is_scoped_to_selected_label(tmp_path: Path) -> None:
+    scenario_dir = tmp_path / "scenario"
+    scenario_dir.mkdir()
+    (scenario_dir / "scenario.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "extends": str(Path("config/recommender/xft/scenario.yaml").resolve()),
+                "id": "test",
+                "name": "test",
+                "modules_config": "modules.yaml",
+                "output_dir": str(tmp_path / "runs"),
+            },
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+    (scenario_dir / "modules.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "acceptance_policy": {"levels": [{"result": "低", "min_matched_labels": 0, "conclusion": "低"}]},
+                "modules": [
+                    {
+                        "module_id": "attendance",
+                        "module_name": "假勤管理",
+                        "labels": [
+                            {
+                                "label_id": "manufacturing",
+                                "label_name": "制造业",
+                                "indicators": [
+                                    {
+                                        "indicator_id": "industry",
+                                        "indicator_name": "行业",
+                                        "evaluator": "rule",
+                                        "standard": "存在",
+                                        "rule": {"source_field": "industry", "op": "exists"},
+                                    }
+                                ],
+                            },
+                            {
+                                "label_id": "other",
+                                "label_name": "其他",
+                                "indicators": [
+                                    {
+                                        "indicator_id": "other_indicator",
+                                        "indicator_name": "其他指标",
+                                        "evaluator": "rule",
+                                        "standard": "存在",
+                                        "rule": {"source_field": "industry", "op": "exists"},
+                                    }
+                                ],
+                            },
+                        ],
+                    }
+                ],
+            },
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+
+    result = await run_recommendation(
+        company_name="测试公司",
+        warehouse_db=str(tmp_path / "missing.duckdb"),
+        scenario_path=str(scenario_dir),
+        output_dir=str(tmp_path / "runs"),
+        run_id="bad-indicator",
+        use_llm=False,
+        module_ids=["attendance"],
+        label_ids=["manufacturing"],
+        indicator_ids=["other_indicator"],
+    )
+
+    assert result.status == "failed"
+    assert result.error is not None
+    assert "unknown indicator_id: other_indicator" in result.error
+    assert "available indicator_ids: industry" in result.error
