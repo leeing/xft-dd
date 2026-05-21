@@ -62,6 +62,7 @@ async def run_recommendation(  # noqa: PLR0913
     refresh_web: bool = False,
     web_providers: list[str] | None = None,
     module_ids: list[str] | None = None,
+    label_ids: list[str] | None = None,
     indicator_ids: list[str] | None = None,
     llm_debug: bool = False,
     llm_concurrency: int = 4,
@@ -78,7 +79,7 @@ async def run_recommendation(  # noqa: PLR0913
     root = output_dir or scenario.output_dir or "outputs/recommender/xft"
     rid = run_id or make_recommendation_run_id(company_name)
     try:
-        modules_config = _filter_modules_config(modules_config, module_ids, indicator_ids)
+        modules_config = _filter_modules_config(modules_config, module_ids, label_ids, indicator_ids)
     except ValueError as exc:
         log_path = write_failure_log(
             out_dir=Path(root) / rid,
@@ -88,6 +89,7 @@ async def run_recommendation(  # noqa: PLR0913
             context={
                 "scenario": scenario.config.id,
                 "requested_module_ids": module_ids or [],
+                "requested_label_ids": label_ids or [],
                 "requested_indicator_ids": indicator_ids or [],
             },
         )
@@ -118,6 +120,7 @@ async def run_recommendation(  # noqa: PLR0913
         with_web=with_web,
         refresh_web=refresh_web,
         module_ids=module_ids,
+        label_ids=label_ids,
         indicator_ids=indicator_ids,
         llm_debug=llm_debug,
         llm_concurrency=llm_concurrency,
@@ -206,6 +209,7 @@ def _write_config_manifest(  # noqa: PLR0913
     with_web: bool,
     refresh_web: bool,
     module_ids: list[str] | None,
+    label_ids: list[str] | None,
     indicator_ids: list[str] | None,
     llm_debug: bool,
     llm_concurrency: int,
@@ -233,6 +237,7 @@ def _write_config_manifest(  # noqa: PLR0913
             "with_web": with_web,
             "refresh_web": refresh_web,
             "module_ids": module_ids or [],
+            "label_ids": label_ids or [],
             "indicator_ids": indicator_ids or [],
             "llm_debug": llm_debug,
             "llm_concurrency": llm_concurrency,
@@ -248,13 +253,21 @@ def _write_config_manifest(  # noqa: PLR0913
 def _filter_modules_config(
     config: RecommendationConfig | None,
     module_ids: list[str] | None,
+    label_ids: list[str] | None,
     indicator_ids: list[str] | None,
 ) -> RecommendationConfig | None:
     if config is None:
         return config
     requested = [module_id.strip() for module_id in module_ids or [] if module_id.strip()]
+    requested_labels = [label_id.strip() for label_id in label_ids or [] if label_id.strip()]
     requested_indicators = [indicator_id.strip() for indicator_id in indicator_ids or [] if indicator_id.strip()]
-    if not requested and not requested_indicators:
+    if requested_labels and not requested:
+        msg = "--label requires --module"
+        raise ValueError(msg)
+    if requested_indicators and (not requested or not requested_labels):
+        msg = "--indicator requires --module and --label"
+        raise ValueError(msg)
+    if not requested and not requested_labels and not requested_indicators:
         return config
     available = {module.module_id: module for module in config.modules}
     missing = [module_id for module_id in requested if module_id not in available]
@@ -262,9 +275,28 @@ def _filter_modules_config(
         msg = f"unknown module_id: {', '.join(missing)}; available module_ids: {', '.join(sorted(available))}"
         raise ValueError(msg)
     selected = [available[module_id] for module_id in requested] if requested else list(config.modules)
+    if requested_labels:
+        selected = _filter_labels(selected, requested_labels)
     if requested_indicators:
         selected = _filter_indicators(selected, requested_indicators)
     return config.model_copy(update={"modules": selected})
+
+
+def _filter_labels(modules: list[Any], label_ids: list[str]) -> list[Any]:
+    available = {label.label_id for module in modules for label in module.labels}
+    missing = [label_id for label_id in label_ids if label_id not in available]
+    if missing:
+        msg = f"unknown label_id: {', '.join(missing)}; available label_ids: {', '.join(sorted(available))}"
+        raise ValueError(msg)
+    return [
+        module.model_copy(
+            update={
+                "labels": [label for label in module.labels if label.label_id in label_ids],
+            }
+        )
+        for module in modules
+        if any(label.label_id in label_ids for label in module.labels)
+    ]
 
 
 def _filter_indicators(modules: list[Any], indicator_ids: list[str]) -> list[Any]:

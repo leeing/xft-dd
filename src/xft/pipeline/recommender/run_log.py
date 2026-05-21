@@ -170,6 +170,8 @@ def _config_section(config: Any) -> list[str]:
     if config is None:
         return ["", "## 推荐配置", "未加载 modules.yaml。"]
     module_ids = [module.module_id for module in config.modules]
+    label_ids = [label.label_id for module in config.modules for label in module.labels]
+    indicator_count = sum(len(label.indicators) for module in config.modules for label in module.labels)
     evaluator_counts: dict[str, int] = {}
     for module in config.modules:
         for label in module.labels:
@@ -180,6 +182,9 @@ def _config_section(config: Any) -> list[str]:
         "## 推荐配置",
         f"- 参与模块: {'、'.join(module_ids)}",
         f"- 模块数: {len(config.modules)}",
+        f"- 参与标签: {'、'.join(label_ids)}",
+        f"- 标签数: {len(label_ids)}",
+        f"- 指标数: {indicator_count}",
         f"- evaluator 分布: {_short(evaluator_counts)}",
     ]
 
