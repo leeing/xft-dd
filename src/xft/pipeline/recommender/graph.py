@@ -269,10 +269,7 @@ def _filter_modules_config(
 
 def _filter_indicators(modules: list[Any], indicator_ids: list[str]) -> list[Any]:
     available = {
-        indicator.indicator_id
-        for module in modules
-        for label in module.labels
-        for indicator in label.indicators
+        indicator.indicator_id for module in modules for label in module.labels for indicator in label.indicators
     }
     missing = [indicator_id for indicator_id in indicator_ids if indicator_id not in available]
     if missing:
