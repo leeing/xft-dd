@@ -10,7 +10,6 @@ from datetime import datetime
 from pathlib import Path
 from time import perf_counter
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, Field
 
@@ -24,10 +23,11 @@ from xft.runtime.artifacts import (
     write_quality_report,
 )
 from xft.utils.file_io import read_json, write_json
+from xft.utils.timezone import shanghai_tz
 
 DEFAULT_BATCH_OUTPUT = "outputs/recommender/xft/batches"
 
-TZ = ZoneInfo("Asia/Shanghai")
+TZ = shanghai_tz()
 SUMMARY_FIELDS = [
     "company_name",
     "status",
