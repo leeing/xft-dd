@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo
 
 import structlog
 from langgraph.graph import END, START, StateGraph
@@ -21,6 +20,7 @@ from xft.pipeline.recommender.run_log import write_failure_log
 from xft.pipeline.recommender.state import RecommenderState
 from xft.progress import display
 from xft.runtime.config_manifest import ConfigManifest, file_ref, model_hash, write_config_manifest
+from xft.utils.timezone import shanghai_tz
 
 log = structlog.get_logger(__name__)
 
@@ -41,7 +41,7 @@ def _get_graph() -> Any:
     return _cache["graph"]
 
 
-TZ = ZoneInfo("Asia/Shanghai")
+TZ = shanghai_tz()
 
 
 def make_recommendation_run_id(company_name: str) -> str:
