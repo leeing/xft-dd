@@ -67,6 +67,9 @@ class Settings(BaseSettings):
     llm_api_key: str = Field(default="")
     llm_base_url: str = Field(default="https://api.minimax.io/v1")
     llm_model: str = Field(default="MiniMax-M2.7-Highspeed")
+    llm_rate_limit_min_interval_seconds: float = Field(default=0.2, ge=0)
+    llm_rate_limit_max_retries: int = Field(default=4, ge=0)
+    llm_rate_limit_backoff_seconds: float = Field(default=1.0, ge=0)
 
     # SQL cache — optional L1 search cache + L2 fetch cache.
     # Supports sqlite+aiosqlite:///... for local development and

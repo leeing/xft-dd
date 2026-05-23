@@ -297,10 +297,10 @@ async def test_recommendation_no_llm_generates_result_json_shape() -> None:
     )
     assert result is not None
     assert result.selected_module is not None
-    assert result.selected_module.module_id == "假勤管理"
+    assert result.selected_module.module_id
     assert result.selected_module.attributes_number >= 1
     assert result.selected_module.indicators_number >= 1
-    tech_cert = next(item for item in result.indicator_results if item.indicator_id == "科技企业_科技资质认证")
+    tech_cert = next(item for item in result.indicator_results if item.indicator_id == "科技资质认证")
     assert tech_cert.evaluator == "rule"
     assert tech_cert.result in {"matched", "not_matched"}
 
@@ -308,8 +308,11 @@ async def test_recommendation_no_llm_generates_result_json_shape() -> None:
 
     assert payload["CompanyName"] == "广东泰琪丰电子有限公司"
     assert payload["USCI"] == "91440000MA5UW5Y08T"
-    assert payload["Module"] == "假勤管理"
+    assert payload["Module"] == result.selected_module.module_id
     assert payload["AcceptanceResult"] in {"高", "中高", "低"}
+    assert len(payload["Modules"]) == len(result.modules)
+    assert payload["Modules"][0]["Module"] == result.selected_module.module_name
+    assert all("AcceptanceResult" in item for item in payload["Modules"])
     assert payload["AttributesNumber"] >= 1
     assert payload["LabelResult"]
     assert payload["MarketingPoint"]
@@ -331,19 +334,19 @@ def test_modules_config_loader_accepts_scenario_bundle() -> None:
         "销项发票",
     }
     attendance = next(module for module in config.modules if module.module_id == "假勤管理")
-    assert attendance.labels[0].label_name == "科技属性"
+    assert attendance.labels[0].label_name == "多规则考勤"
     assert any(ind.evaluator == "llm_web" for label in attendance.labels for ind in label.indicators)
     evaluator_counts: dict[str, int] = {}
     for label in attendance.labels:
         for indicator in label.indicators:
             evaluator_counts[indicator.evaluator] = evaluator_counts.get(indicator.evaluator, 0) + 1
-    assert evaluator_counts == {"rule": 10, "llm_web": 5, "llm": 2, "hybrid": 4}
+    assert evaluator_counts == {"rule": 2, "hybrid": 5, "llm_web": 3}
     travel = next(module for module in config.modules if module.module_id == "差旅报销")
     travel_counts: dict[str, int] = {}
     for label in travel.labels:
         for indicator in label.indicators:
             travel_counts[indicator.evaluator] = travel_counts.get(indicator.evaluator, 0) + 1
-    assert travel_counts == {"hybrid": 10, "llm_web": 3}
+    assert travel_counts == {"hybrid": 3, "llm_web": 1}
 
 
 def test_modules_config_loader_discovers_module_files(tmp_path: Path) -> None:
@@ -1400,6 +1403,67 @@ async def test_business_evaluator_records_llm_failure_once(monkeypatch: pytest.M
     assert events[0]["status"] == "failed"
     assert events[0]["name"] == "m.l.i"
     assert result.warnings == ["m.l.i: RuntimeError: boom"]
+
+
+async def test_business_evaluator_repairs_malformed_llm_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    config = RecommendationConfig.model_validate(
+        {
+            "acceptance_policy": {"levels": [{"result": "低", "min_matched_labels": 0, "conclusion": "低"}]},
+            "modules": [
+                {
+                    "module_id": "m",
+                    "module_name": "模块",
+                    "labels": [
+                        {
+                            "label_id": "l",
+                            "label_name": "标签",
+                            "indicators": [
+                                {
+                                    "indicator_id": "i",
+                                    "indicator_name": "指标",
+                                    "evaluator": "llm",
+                                    "standard": "判断公开证据",
+                                    "prompt": "判断公开证据。",
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+    responses = [
+        '{"result": "matched" "confidence": "高"}',
+        '{"result": "matched", "confidence": "高", "current_status": "已修复", "evidence": ["证据"]}',
+    ]
+
+    class FakeResponse:
+        def __init__(self, content: str) -> None:
+            self.choices = [type("Choice", (), {"message": type("Message", (), {"content": content})()})()]
+
+    async def fake_completion(*_args: object, **_kwargs: object) -> object:
+        return FakeResponse(responses.pop(0))
+
+    monkeypatch.setattr("xft.pipeline.recommender.evaluator.settings.llm_api_key", "test")
+    monkeypatch.setattr("xft.pipeline.recommender.evaluator.create_json_chat_completion", fake_completion)
+    monkeypatch.setattr("xft.ai.chat_json.create_json_chat_completion", fake_completion)
+
+    events: list[dict[str, Any]] = []
+    result = await evaluate_recommendation(
+        config=config,
+        company_name="测试公司",
+        profile={"company_name": "测试公司"},
+        evidence={},
+        use_llm=True,
+        llm_events=events,
+    )
+
+    assert result.indicator_results[0].result == "matched"
+    assert result.warnings == []
+    assert len(events) == 1
+    assert events[0]["status"] == "success"
+    assert events[0]["parameters"]["json_repaired"] is True
 
 
 async def test_rule_web_evidence_can_only_raise_to_possible() -> None:

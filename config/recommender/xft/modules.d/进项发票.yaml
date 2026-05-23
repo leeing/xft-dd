@@ -1,211 +1,242 @@
 module_id: 进项发票
 module_name: 进项发票
-priority: 50
-base_score: 0
+priority: 42
+base_score: 42
 acceptance_policy:
   levels:
-    - result: 高
-      min_matched_labels: 3
-      conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为高。
-    - result: 中高
-      min_matched_labels: 2
-      conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为中高。
-    - result: 低
-      min_matched_labels: 0
-      conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为低。
+  - result: 高
+    min_matched_labels: 3
+    conclusion: 命中供应链复杂、多主体、税务风控、采购重中3类。
+  - result: 中高
+    min_matched_labels: 2
+    conclusion: 命中2类进项管理场景。
+  - result: 低
+    min_matched_labels: 0
+    conclusion: 仅有行业泛线索。
 labels:
-  - label_id: 供应链复杂或供应商众多
-    label_name: 供应链复杂或供应商众多
-    description: ""
-    min_matched_indicators: 1
-    indicators:
-      - indicator_id: 供应商集中度
-        indicator_name: 供应商集中度
-        evaluator: llm_web
-        standard: 查看企业年报或招股书中“前五大供应商采购占比”。比例要<30%
-        data_sources: []
-        prompt: 请判断企业是否满足指标：供应商集中度。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 供应商集中度
-          - 查看企业年报或招股书中
-          - 前五大供应商采购占比
-          - 比例要
-          - "30"
-        web_search:
-          fixed_queries:
-            - "{company_name} 供应商"
-          auto: false
-      - indicator_id: 主营业务成本与原材料构成
-        indicator_name: 主营业务成本与原材料构成
-        evaluator: llm_web
-        standard: 上市公司年报中分析其营业成本中直接材料占比60%以上。占比越高，对上游供应链的依赖和管理难度越大。报告中对原材料种类描述繁多（如“主要涉及金属、塑料、电子元器件、包装材料等”），也暗示供应链复杂。
-        data_sources: []
-        prompt: 请判断企业是否满足指标：主营业务成本与原材料构成。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 主营业务成本与原材料构成
-          - 上市公司年报中分析其营业成本中直接材料占比60
-          - 以上
-          - 占比越高
-          - 对上游供应链的依赖和管理难度越大
-          - 报告中对原材料种类描述繁多
-          - 主要涉及金属
-          - 塑料
-        web_search:
-          fixed_queries:
-            - "{company_name} 主营业务"
-            - "{company_name} 原材料"
-          auto: false
-      - indicator_id: 业务与产品
-        indicator_name: 业务与产品
-        evaluator: llm_web
-        standard: "从官网和年报描述中含有以下关键词：
+- label_id: 供应链复杂
+  label_name: 供应链复杂
+  description: 装配型、集成型、多部件、多原材料行业。 痛点：进项票来源多，认证和抵扣管理复杂。 切入：进项采集、认证和风险识别切入。 角色：核心。
+  min_matched_indicators: 1
+  indicators:
+  - indicator_id: 供应链复杂行业
+    indicator_name: 供应链复杂行业
+    evaluator: hybrid
+    standard: 行业/经营范围属于装配、设备、电子、汽车零部件、工程集成。 普适核心。
+    evidence_hints:
+    - 装配
+    - 设备
+    - 电子
+    - 汽车零部件
+    - 工程集成
+    - 原材料
+    prompt: '请判断企业是否满足指标：供应链复杂行业。
 
-          产品特性：“定制化”、“多品种、小批量”、“SKU众多”
+      任务：判断采购端是否足够复杂。
 
-          业务模式：“供应链整合”、“协同采购”、“全球采购”。
+      matched：多部件装配、集成、原材料/零部件种类多。
 
-          行业地位：自称“平台型”或“集成商”的制造企业。"
-        data_sources: []
-        prompt: 请判断企业是否满足指标：业务与产品。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 业务与产品
-          - 从官网和年报描述中含有以下关键词
-          - 产品特性
-          - 定制化
-          - 多品种
-          - 小批量
-          - SKU众多
-          - 业务模式
-        web_search:
-          fixed_queries:
-            - "{company_name} 官网"
-            - "{company_name} 新闻"
-          auto: false
-      - indicator_id: 所属行业
-        indicator_name: 所属行业
-        evaluator: llm
-        standard: 处于产业链中游的装配型、集成型行业，包括但是不限于：汽车整车及零部件、电子设备制造（手机、电脑）、电气机械、通用/专用设备制造。
-        data_sources: []
-        prompt: 请判断企业是否满足指标：所属行业。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 所属行业
-          - 处于产业链中游的装配型
-          - 集成型行业
-          - 包括但是不限于
-          - 汽车整车及零部件
-          - 电子设备制造
-          - 手机
-          - 电脑
-  - label_id: 多法人主体的企业集团
-    label_name: 多法人主体的企业集团
-    description: ""
-    min_matched_indicators: 1
-    indicators:
-      - indicator_id: 名称与股权
-        indicator_name: 名称与股权
-        evaluator: rule
-        standard: 公司名称常含“集团”、“控股”字样；工商信息显示对外投资了多家子公司（持股≥50%或拥有控制权-3-5）。
-        data_sources:
-          - type: table
-            table: branches
-            field: branch_name
-            op: exists
-        prompt: 请判断企业是否满足指标：名称与股权。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 名称与股权
-          - 公司名称常含
-          - 集团
-          - 控股
-          - 字样
-          - 工商信息显示对外投资了多家子公司
-          - 持股
-          - "50"
-      - indicator_id: 企业图谱
-        indicator_name: 企业图谱
-        evaluator: llm
-        standard: 在商业查询平台中，“企业图谱”或“对外投资”栏显示复杂的控股结构。
-        data_sources: []
-        prompt: 请判断企业是否满足指标：企业图谱。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 企业图谱
-          - 在商业查询平台中
-          - 对外投资
-          - 栏显示复杂的控股结构
-      - indicator_id: 财报合并范围
-        indicator_name: 财报合并范围
-        evaluator: llm_web
-        standard: 上市公司年报的 “合并财务报表范围” 会详尽列出所有重要子公司名录，是金标准-3-4。
-        data_sources: []
-        prompt: 请判断企业是否满足指标：财报合并范围。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 财报合并范围
-          - 上市公司年报的
-          - 合并财务报表范围
-          - 会详尽列出所有重要子公司名录
-          - 是金标准
-        web_search:
-          fixed_queries:
-            - "{company_name} 上市"
-          auto: false
-  - label_id: 上市公司或拟上市公司
-    label_name: 上市公司或拟上市公司
-    description: ""
-    min_matched_indicators: 1
-    indicators:
-      - indicator_id: 股票代码
-        indicator_name: 股票代码
-        evaluator: llm
-        standard: 拥有并在公开市场交易的6位股票代码。
-        data_sources: []
-        prompt: 请判断企业是否满足指标：股票代码。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 股票代码
-          - 拥有并在公开市场交易的6位股票代码
-      - indicator_id: 法定信披
-        indicator_name: 法定信披
-        evaluator: llm
-        standard: 在 “巨潮资讯网” 等指定网站可查到其法定公告、定期报告（年报、季报等）-2-6-9。
-        data_sources: []
-        prompt: 请判断企业是否满足指标：法定信披。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 法定信披
-          - 巨潮资讯网
-          - 等指定网站可查到其法定公告
-          - 定期报告
-          - 年报
-          - 季报等
-      - indicator_id: po动态
-        indicator_name: PO动态
-        evaluator: llm_web
-        standard: .有明确的 “招股说明书” 披露，或财经新闻中有其进入“上市辅导”、“提交申报”、“问询反馈”等进程的报道-10。
-        data_sources: []
-        prompt: 请判断企业是否满足指标：PO动态。只能基于证据判断，不得编造。
-        evidence_hints:
-          - PO动态
-          - 有明确的
-          - 招股说明书
-          - 披露
-          - 或财经新闻中有其进入
-          - 上市辅导
-          - 提交申报
-          - 问询反馈
-        web_search:
-          fixed_queries:
-            - "{company_name} 上市"
-          auto: false
+      possible：行业可能相关但产品不清。
+
+      not_matched：轻资产服务或采购少。
+
+      unknown：证据不足。
+
+      禁止推断：不能用供应链完善等宣传语直接matched。
+
+      只能基于结构化证据、招聘证据或权威公开证据判断，不得编造。'
+    data_sources:
+    - type: field
+      op: contains_any
+      description: 来自 xlabel_v2.xlsx 本地证据规则。
+      path: business_scope
+      keywords:
+      - 装配
+      - 设备
+      - 电子
+      - 汽车零部件
+      - 工程集成
+      - 原材料
+      min_matches: 1
+    rule:
+      source_field: business_scope
+      op: contains_any
+      value:
+      - 装配
+      - 设备
+      - 电子
+      - 汽车零部件
+      - 工程集成
+      - 原材料
+    merge_policy: llm_confirm
+  - indicator_id: 采购岗位和原材料线索
+    indicator_name: 采购岗位和原材料线索
+    evaluator: hybrid
+    standard: 招聘或经营范围显示采购、原材料、设备、备件、供应商。 普适核心。
+    evidence_hints:
+    - 采购
+    - 原材料
+    - 设备
+    - 备件
+    - 供应商
+    - BOM
+    prompt: '请判断企业是否满足指标：采购岗位和原材料线索。
+
+      标准：招聘或经营范围显示采购、原材料、设备、备件、供应商。 普适核心。
+
+      证据不足时返回 unknown 或 possible；不得用行业常识直接推断为 matched。'
+    data_sources:
+    - type: table
+      op: text_contains
+      description: 来自 xlabel_v2.xlsx 本地证据规则。
+      table: recruitments
+      field: title
+      limit: 50
+      keywords:
+      - 采购
+      - 原材料
+      - 设备
+      - 备件
+      - 供应商
+      - BOM
+      min_matches: 1
+    rule:
+      source_field: __xlsx_table_only_rule__
+      op: text_contains
+      value:
+      - 采购
+      - 原材料
+      - 设备
+      - 备件
+      - 供应商
+      - BOM
+    merge_policy: llm_confirm
+- label_id: 多主体收票
+  label_name: 多主体收票
+  description: 多法人、多工厂、多采购主体分散收票。 痛点：集团无法统一查看进项票和抵扣情况。 切入：多主体归集和风险预警切入。 角色：核心。
+  min_matched_indicators: 1
+  indicators:
+  - indicator_id: 多法人采购主体
+    indicator_name: 多法人采购主体
+    evaluator: rule
+    standard: 集团、多子公司、多分支、多生产基地。 共享多主体口径。
+    evidence_hints:
+    - 集团
+    - 多子公司
+    - 多分支
+    - 多生产基地
+    - 共享多主体口径
+    data_sources:
+    - type: field
+      op: '>='
+      description: 来自 xlabel_v2.xlsx 本地证据规则。
+      path: branch_count
+      value: 3
+    - type: field
+      op: '>='
+      description: 来自 xlabel_v2.xlsx 本地证据规则。
+      path: outbound_investment_count
+      value: 3
+    rule:
+      source_field: branch_count
+      op: '>='
+      value: 3
+- label_id: 税务审计风控
+  label_name: 税务审计风控
+  description: 上市、拟上市、税务合规或审计要求强。 痛点：进项合规、异常票和留痕要求高。 切入：税务风险和审计留痕切入。 角色：核心。
+  min_matched_indicators: 1
+  indicators:
+  - indicator_id: 内控审计身份
+    indicator_name: 内控审计身份
+    evaluator: llm_web
+    standard: 上市/拟上市/国资/外资/审计或税务风控公开线索。 税务风控增强。
+    evidence_hints:
+    - '{company_name} 内控 审计 税务 风控'
+    - '{company_name} IPO 上市辅导 税务合规'
+    - 默认不自动扩查询；优先使用固定高意图查询，避免真实批量运行中单家公司触发过多低命中搜索。
+    prompt: '请判断企业是否满足指标：内控审计身份。
+
+      标准：上市/拟上市/国资/外资/审计或税务风控公开线索。 税务风控增强。
+
+      证据不足时返回 unknown 或 possible；不得用行业常识直接推断为 matched。'
+    web_search:
+      when: insufficient
+      effect: llm_evidence
+      fixed_queries:
+      - '{company_name} 内控 审计 税务 风控'
+      - '{company_name} IPO 上市辅导 税务合规'
+      auto:
+        enabled: false
+        max_queries: 0
+        intent: 默认不自动扩查询；优先使用固定高意图查询，避免真实批量运行中单家公司触发过多低命中搜索。
+      max_auto_rounds: 0
+      max_results: 5
+- label_id: 上市披露增强证据
+  label_name: 上市披露增强证据
+  description: 年报/招股书披露供应商集中度、主营业务成本、原材料结构。 痛点：只适合上市/拟上市企业增强判断。 切入：作为供应链复杂增强证据，不作为普适核心指标。 角色：增强（不单独成推荐理由）。
+  min_matched_indicators: 1
+  indicators:
+  - indicator_id: 年报供应商集中度
+    indicator_name: 年报供应商集中度
+    evaluator: llm_web
+    standard: 年报/招股书披露前五大供应商、供应商集中度、原材料成本结构。 只有年报/招股书披露才matched。
+    evidence_hints:
+    - '{company_name} 年报 前五大供应商'
+    - '{company_name} 招股书 供应商 主营业务成本'
+    - 保留高意图自动扩查询，但建议批量运行时进入候选模块后再触发；若未实现候选阶段，max_auto_rounds应限制为1。
+    prompt: '请判断企业是否满足指标：年报供应商集中度。
+
+      任务：判断上市披露是否能增强进项发票复杂度。
+
+      matched：年报/招股书明确供应商多、原材料品类多、供应商集中度或主营业务成本结构。
+
+      possible：行业和产品结构推断供应链复杂但无披露。
+
+      not_matched：披露内容与供应链复杂无关。
+
+      unknown：非上市且公开材料不足。
+
+      禁止推断：普通官网产品介绍不能推断供应商集中度。
+
+      只能基于结构化证据、招聘证据或权威公开证据判断，不得编造。'
+    web_search:
+      when: always
+      effect: llm_evidence
+      fixed_queries:
+      - '{company_name} 年报 前五大供应商'
+      - '{company_name} 招股书 供应商 主营业务成本'
+      auto:
+        enabled: true
+        max_queries: 1
+        intent: 保留高意图自动扩查询，但建议批量运行时进入候选模块后再触发；若未实现候选阶段，max_auto_rounds应限制为1。
+      max_auto_rounds: 1
+      max_results: 5
 marketing_points:
-  供应链复杂或供应商众多:
-    recommendation: ""
-    sale_rule: ""
+  供应链复杂:
+    recommendation: 企业存在“装配型、集成型、多部件、多原材料行业。”场景，建议沟通进项发票。
+    sale_rule: 围绕“进项票来源多，认证和抵扣管理复杂。”确认当前人工处理方式、系统覆盖和管理成本。
     kyc_questions:
-      - 了解企业对接的上游供应商是否非常多，是否需要维护Excel台账管理发票。理论上供应商越多，财务部门在发票采集、验真、勾选抵扣上的工作量是指数级增长的，而且容易遗漏造成税款损失。
-  多法人主体的企业集团:
-    recommendation: ""
-    sale_rule: ""
+    - 采购物料、设备、服务供应商数量是否较多，发票来源是否分散？
+    - 进项票是否需要和采购订单、入库、验收、付款逐项匹配？
+    - 发票异常、税率不一致或供应商开票延迟目前如何处理？
+  多主体收票:
+    recommendation: 企业存在“多法人、多工厂、多采购主体分散收票。”场景，建议沟通进项发票。
+    sale_rule: 围绕“集团无法统一查看进项票和抵扣情况。”确认当前人工处理方式、系统覆盖和管理成本。
     kyc_questions:
-      - 了解集团旗下各分子公司的进项发票，目前是各公司财务自己管理，还是由集团总部统一管理的。“分散管理”且存在数据汇总难、风险看不见等痛点，它就是高潜力客户。集中管理，但是切换账号登录电子税务局系统查看，操作复杂，它也是高潜力客户。
-  上市公司或拟上市公司:
-    recommendation: ""
-    sale_rule: ""
+    - 不同法人、分公司或项目是否分别收票，发票抬头是否容易开错？
+    - 跨主体采购或代采时，进项票认证和成本归属如何区分？
+    - 总部是否需要统一查看各主体待认证、已认证和异常发票？
+  税务审计风控:
+    recommendation: 企业存在“上市、拟上市、税务合规或审计要求强。”场景，建议沟通进项发票。
+    sale_rule: 围绕“进项合规、异常票和留痕要求高。”确认当前人工处理方式、系统覆盖和管理成本。
     kyc_questions:
-      - 了解作为上市公司，目前发票怎么管理的？是否存在应对审计时发票数据的取证繁琐等问题
+    - 进项发票是否需要做黑名单、重复、异常税率或高风险供应商校验？
+    - 税务审计时，发票、合同、入库、付款凭证能否一键关联导出？
+    - 目前是否有专人定期做进项票风险排查和留抵/抵扣分析？
+  上市披露增强证据:
+    recommendation: 企业存在“年报/招股书披露供应商集中度、主营业务成本、原材料结构。”场景，建议沟通进项发票。
+    sale_rule: 围绕“只适合上市/拟上市企业增强判断。”确认当前人工处理方式、系统覆盖和管理成本。
+    kyc_questions:
+    - 年报、招股书或审计材料是否要求披露主要供应商和采购金额？
+    - 供应商集中度、关联交易和采购真实性资料是否需要长期留档？
+    - 财务、采购、税务之间是否共享同一套供应商和发票数据？

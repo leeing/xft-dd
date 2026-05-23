@@ -1,340 +1,223 @@
 module_id: 日常报销
 module_name: 日常报销
-priority: 50
-base_score: 0
+priority: 40
+base_score: 40
 acceptance_policy:
   levels:
-    - result: 高
-      min_matched_labels: 3
-      conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为高。
-    - result: 中高
-      min_matched_labels: 2
-      conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为中高。
-    - result: 低
-      min_matched_labels: 0
-      conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为低。
+  - result: 高
+    min_matched_labels: 3
+    conclusion: 命中3个及以上高频费用场景。
+  - result: 中高
+    min_matched_labels: 2
+    conclusion: 命中2个高频费用场景。
+  - result: 低
+    min_matched_labels: 0
+    conclusion: 仅有单一弱线索。
 labels:
-  - label_id: 产销一体属性
-    label_name: 产销一体属性
-    description: ""
-    min_matched_indicators: 1
-    indicators:
-      - indicator_id: 经销商维护型业务员属性
-        indicator_name: 经销商维护型业务员属性
-        evaluator: llm_web
-        standard:
-          1. 招聘 JD 含 “经销商开发”“渠道维护”“区域销售”“代理商维护”“空白区域开拓” 关键词≥2 次；2. 或 “渠道”“经销商”“代理商”
-          单独出现≥3 次； 跨区域销售岗位≥3 个（不同省份 / 城市）
-        data_sources:
-          - type: table
-            table: recruitments
-            field: title
-            op: text_contains
-            keywords: []
-        prompt: 请判断企业是否满足指标：经销商维护型业务员属性。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 经销商维护型业务员属性
-          - 招聘
-          - JD
-          - 经销商开发
-          - 渠道维护
-          - 区域销售
-          - 代理商维护
-          - 空白区域开拓
-        web_search:
-          fixed_queries:
-            - "{company_name} 经销商"
-          auto: false
-      - indicator_id: 销售人员占比
-        indicator_name: 销售人员占比
-        evaluator: llm_web
-        standard: 销售人员占企业人数的10%-30%，可按照招聘人员比例分析
-        data_sources:
-          - type: table
-            table: recruitments
-            field: title
-            op: text_contains
-            keywords: []
-        prompt: 请判断企业是否满足指标：销售人员占比。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 销售人员占比
-          - 销售人员占企业人数的10
-          - "30"
-          - 可按照招聘人员比例分析
-        web_search:
-          fixed_queries:
-            - "{company_name} 销售人员"
-          auto: false
-      - indicator_id: 销售的_c_端商品的细分行业
-        indicator_name: 销售的 C 端商品的细分行业
-        evaluator: llm_web
-        standard: 大众家电、小家电、快消食品、农资产品、县域零售连锁
-        data_sources: []
-        prompt: 请判断企业是否满足指标：销售的 C 端商品的细分行业。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 销售的
-          - 端商品的细分行业
-          - 大众家电
-          - 小家电
-          - 快消食品
-          - 农资产品
-          - 县域零售连锁
-        web_search:
-          fixed_queries:
-            - "{company_name} 销售"
-          auto: false
-      - indicator_id: 销售模式
-        indicator_name: 销售模式
-        evaluator: llm_web
-        standard:
-          1. 企业官网 “销售网络” 提及 “千县千店”“县域经销商”“乡镇门店”；. 招聘 JD 含 “下沉市场销售”“县域经销商维护”“乡镇渠道拓展”
-          关键词≥2 次； 线下门店覆盖≥5 个县域
-        data_sources:
-          - type: table
-            table: recruitments
-            field: title
-            op: text_contains
-            keywords: []
-        prompt: 请判断企业是否满足指标：销售模式。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 销售模式
-          - 企业官网
-          - 销售网络
-          - 提及
-          - 千县千店
-          - 县域经销商
-          - 乡镇门店
-          - 招聘
-        web_search:
-          fixed_queries:
-            - "{company_name} 销售"
-          auto: false
-  - label_id: 售后属性
-    label_name: 售后属性
-    description: ""
-    min_matched_indicators: 1
-    indicators:
-      - indicator_id: 售后派驻属性
-        indicator_name: 售后派驻属性
-        evaluator: llm_web
-        standard:
-          1.招聘 JD 含 “售后派驻”“驻点维护”“外勤售后”“区域售后”“异地支援” 关键词≥2 次；2. 或 “派驻”“驻点”“外勤” 单独出现≥3
-          次；3. 跨区域售后岗位≥3 个（不同省份 / 城市）
-        data_sources:
-          - type: table
-            table: recruitments
-            field: title
-            op: text_contains
-            keywords: []
-        prompt: 请判断企业是否满足指标：售后派驻属性。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 售后派驻属性
-          - 招聘
-          - JD
-          - 售后派驻
-          - 驻点维护
-          - 外勤售后
-          - 区域售后
-          - 异地支援
-        web_search:
-          fixed_queries:
-            - "{company_name} 售后"
-          auto: false
-      - indicator_id: 售后人员占比
-        indicator_name: 售后人员占比
-        evaluator: llm_web
-        standard: 售后人员占企业人数的10%-30%，可按照招聘人员比例分析
-        data_sources:
-          - type: table
-            table: recruitments
-            field: title
-            op: text_contains
-            keywords: []
-        prompt: 请判断企业是否满足指标：售后人员占比。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 售后人员占比
-          - 售后人员占企业人数的10
-          - "30"
-          - 可按照招聘人员比例分析
-        web_search:
-          fixed_queries:
-            - "{company_name} 售后"
-          auto: false
-      - indicator_id: 售后的_b_端商品的细分行业
-        indicator_name: 售后的 B 端商品的细分行业
-        evaluator: llm_web
-        standard: 工业设备制造、商用装备、工业自动化、专用机械、通信基建
-        data_sources: []
-        prompt: 请判断企业是否满足指标：售后的 B 端商品的细分行业。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 售后的
-          - 端商品的细分行业
-          - 工业设备制造
-          - 商用装备
-          - 工业自动化
-          - 专用机械
-          - 通信基建
-        web_search:
-          fixed_queries:
-            - "{company_name}"
-          auto: false
-      - indicator_id: 技术含量
-        indicator_name: 技术含量
-        evaluator: llm_web
-        standard:
-          1. 发明专利≥3 项（核心技术专利，非外观 / 实用新型）；2. 持有设备类专项认证（工业产品生产许可证、设备安全认证）；3. 产品描述含
-          “定制化”“系统集成” 关键词≥2 次
-        data_sources:
-          - type: table
-            table: qualifications
-            field: qualification_name
-            op: exists
-          - type: field
-            path: ip_counts.patent
-            op: ">"
-            value: 0
-        prompt: 请判断企业是否满足指标：技术含量。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 技术含量
-          - 发明专利
-          - 核心技术专利
-          - 非外观
-          - 实用新型
-          - 持有设备类专项认证
-          - 工业产品生产许可证
-          - 设备安全认证
-        web_search:
-          fixed_queries:
-            - "{company_name} 技术"
-          auto: false
-      - indicator_id: 服务支持
-        indicator_name: 服务支持
-        evaluator: llm_web
-        standard:
-          1. 售后政策含 “安装调试”“质保≥1 年”“驻场服务” 关键词≥2 次；2. 招聘 “设备售后工程师”“技术支持专员” 岗位；3.
-          故障响应承诺≤2 小时（公开服务条款）
-        data_sources:
-          - type: table
-            table: recruitments
-            field: title
-            op: text_contains
-            keywords: []
-        prompt: 请判断企业是否满足指标：服务支持。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 服务支持
-          - 售后政策含
-          - 安装调试
-          - 质保
-          - 驻场服务
-          - 关键词
-          - 招聘
-          - 设备售后工程师
-        web_search:
-          fixed_queries:
-            - "{company_name} 服务"
-          auto: false
-  - label_id: 科技属性
-    label_name: 科技属性
-    description: ""
-    min_matched_indicators: 1
-    indicators:
-      - indicator_id: 研发人员占比
-        indicator_name: 研发人员占比
-        evaluator: llm_web
-        standard: ≥20%（研发岗员工数 / 总员工数）
-        data_sources: []
-        prompt: 请判断企业是否满足指标：研发人员占比。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 研发人员占比
-          - "20"
-          - 研发岗员工数
-          - 总员工数
-        web_search:
-          fixed_queries:
-            - "{company_name} 研发"
-          auto: false
-      - indicator_id: 研发费用占比
-        indicator_name: 研发费用占比
-        evaluator: llm_web
-        standard: 营收＜5000 万→≥5%；5000 万 - 2 亿→≥4%；营收＞2 亿→按数字化转型型标准（≥3%）
-        data_sources: []
-        prompt: 请判断企业是否满足指标：研发费用占比。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 研发费用占比
-          - 营收
-          - "5000"
-          - 按数字化转型型标准
-        web_search:
-          fixed_queries:
-            - "{company_name} 研发"
-          auto: false
-      - indicator_id: 细分行业
-        indicator_name: 细分行业
-        evaluator: llm
-        standard: 电子信息、生物医药、新材料制造、新能源装备、工业机器人、工业母机、汽车零部件、医疗设备、集成电路、半导体、电子元件、通讯设备、高端装备、航天航空设备制造、精密仪器、传感器、电池、精密制造等科技行业
-        data_sources: []
-        prompt: 请判断企业是否满足指标：细分行业。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 细分行业
-          - 电子信息
-          - 生物医药
-          - 新材料制造
-          - 新能源装备
-          - 工业机器人
-          - 工业母机
-          - 汽车零部件
-      - indicator_id: 科技企业_科技资质认证
-        indicator_name: 科技企业-科技资质认证
-        evaluator: rule
-        standard: 高新技术企业证书、双软认证、专精特新、小巨人、隐形冠军、单项冠军、科技型中小企业
-        data_sources:
-          - type: table
-            table: qualifications
-            field: qualification_name
-            op: exists
-          - type: field
-            path: labels
-            op: exists
-        prompt: 请判断企业是否满足指标：科技企业-科技资质认证。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 科技企业
-          - 科技资质认证
-          - 高新技术企业证书
-          - 双软认证
-          - 专精特新
-          - 小巨人
-          - 隐形冠军
-          - 单项冠军
-      - indicator_id: 知识产权数量多
-        indicator_name: 知识产权数量多
-        evaluator: rule
-        standard: 发明专利≥3 项 或 软件著作权≥5 项
-        data_sources:
-          - type: field
-            path: ip_counts.patent
-            op: ">"
-            value: 0
-        prompt: 请判断企业是否满足指标：知识产权数量多。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 知识产权数量多
-          - 发明专利
-          - 软件著作权
+- label_id: 日常外勤垫付
+  label_name: 日常外勤垫付
+  description: 外勤、销售、售后、市场人员频繁发生小额费用。 痛点：票据散、垫付多、报销周期长。 切入：移动报销和票据采集切入。 角色：核心。
+  min_matched_indicators: 1
+  indicators:
+  - indicator_id: 外勤岗位线索
+    indicator_name: 外勤岗位线索
+    evaluator: hybrid
+    standard: 招聘出现外勤、销售、市场、售后、巡店、驻点等。 与差旅区分：不要求跨省/长途。
+    evidence_hints:
+    - 外勤
+    - 销售
+    - 市场
+    - 售后
+    - 巡店
+    - 驻点
+    prompt: '请判断企业是否满足指标：外勤岗位线索。
+
+      任务：判断是否有高频小额报销场景。
+
+      matched：外勤、巡店、销售/售后跑动频繁，可能产生交通、餐补、物料费用。
+
+      possible：存在外勤岗位但频率不清。
+
+      not_matched：内勤为主。
+
+      unknown：证据不足。
+
+      禁止推断：不要把跨城市差旅和日常外勤混为一谈。
+
+      只能基于结构化证据、招聘证据或权威公开证据判断，不得编造。'
+    data_sources:
+    - type: table
+      op: text_contains
+      description: 来自 xlabel_v2.xlsx 本地证据规则。
+      table: recruitments
+      field: title
+      limit: 50
+      keywords:
+      - 外勤
+      - 销售
+      - 市场
+      - 售后
+      - 巡店
+      - 驻点
+      min_matches: 1
+    rule:
+      source_field: __xlsx_table_only_rule__
+      op: text_contains
+      value:
+      - 外勤
+      - 销售
+      - 市场
+      - 售后
+      - 巡店
+      - 驻点
+    merge_policy: llm_confirm
+- label_id: 门店网点运营
+  label_name: 门店网点运营
+  description: 多门店、多网点或区域运营人员。 痛点：门店费用分散，总部难统一归集。 切入：门店费用标准和集中管理切入。 角色：核心。
+  min_matched_indicators: 1
+  indicators:
+  - indicator_id: 门店网点线索
+    indicator_name: 门店网点线索
+    evaluator: llm_web
+    standard: 公开资料或招聘显示门店、直营网点、区域运营、巡店。 门店网点需公开证据。
+    evidence_hints:
+    - '{company_name} 门店 网点 区域运营'
+    - '{company_name} 巡店 直营网点'
+    - 默认不自动扩查询；优先使用固定高意图查询，避免真实批量运行中单家公司触发过多低命中搜索。
+    prompt: '请判断企业是否满足指标：门店网点线索。
+
+      标准：公开资料或招聘显示门店、直营网点、区域运营、巡店。 门店网点需公开证据。
+
+      证据不足时返回 unknown 或 possible；不得用行业常识直接推断为 matched。'
+    web_search:
+      when: insufficient
+      effect: llm_evidence
+      fixed_queries:
+      - '{company_name} 门店 网点 区域运营'
+      - '{company_name} 巡店 直营网点'
+      auto:
+        enabled: false
+        max_queries: 0
+        intent: 默认不自动扩查询；优先使用固定高意图查询，避免真实批量运行中单家公司触发过多低命中搜索。
+      max_auto_rounds: 0
+      max_results: 5
+- label_id: 研发试制费用
+  label_name: 研发试制费用
+  description: 研发打样、试制、实验耗材、小额采购频繁。 痛点：小额采购和临时报销频繁。 切入：研发试制费用和小额采购切入。 角色：核心。
+  min_matched_indicators: 1
+  indicators:
+  - indicator_id: 研发试制线索
+    indicator_name: 研发试制线索
+    evaluator: hybrid
+    standard: 存在研发、实验、打样、试制、样品、工艺岗位或科技资质。 科技资质不是充分条件，需结合研发试制场景。
+    evidence_hints:
+    - 研发
+    - 实验
+    - 打样
+    - 试制
+    - 样品
+    - 工艺
+    prompt: '请判断企业是否满足指标：研发试制线索。
+
+      标准：存在研发、实验、打样、试制、样品、工艺岗位或科技资质。 科技资质不是充分条件，需结合研发试制场景。
+
+      证据不足时返回 unknown 或 possible；不得用行业常识直接推断为 matched。'
+    data_sources:
+    - type: table
+      op: text_contains
+      description: 来自 xlabel_v2.xlsx 本地证据规则。
+      table: recruitments
+      field: title
+      limit: 50
+      keywords:
+      - 研发
+      - 实验
+      - 打样
+      - 试制
+      - 样品
+      - 工艺
+      min_matches: 1
+    rule:
+      source_field: __xlsx_table_only_rule__
+      op: text_contains
+      value:
+      - 研发
+      - 实验
+      - 打样
+      - 试制
+      - 样品
+      - 工艺
+    merge_policy: llm_confirm
+- label_id: 行政办公分散
+  label_name: 行政办公分散
+  description: 办公用品、福利、团建、培训等日常费用分散。 痛点：审批口径不统一，预算不可视。 切入：预算、标准和审批流切入。 角色：辅助。
+  min_matched_indicators: 1
+  indicators:
+  - indicator_id: 行政采购岗位线索
+    indicator_name: 行政采购岗位线索
+    evaluator: hybrid
+    standard: 招聘出现行政、采购、办公用品、后勤、费用报销。 辅助指标。
+    evidence_hints:
+    - 行政
+    - 采购
+    - 办公用品
+    - 后勤
+    - 费用报销
+    prompt: '请判断企业是否满足指标：行政采购岗位线索。
+
+      标准：招聘出现行政、采购、办公用品、后勤、费用报销。 辅助指标。
+
+      证据不足时返回 unknown 或 possible；不得用行业常识直接推断为 matched。'
+    data_sources:
+    - type: table
+      op: text_contains
+      description: 来自 xlabel_v2.xlsx 本地证据规则。
+      table: recruitments
+      field: title
+      limit: 50
+      keywords:
+      - 行政
+      - 采购
+      - 办公用品
+      - 后勤
+      - 费用报销
+      min_matches: 1
+    rule:
+      source_field: __xlsx_table_only_rule__
+      op: text_contains
+      value:
+      - 行政
+      - 采购
+      - 办公用品
+      - 后勤
+      - 费用报销
+    merge_policy: llm_confirm
 marketing_points:
-  产销一体属性:
-    recommendation: ""
-    sale_rule: ""
+  日常外勤垫付:
+    recommendation: 企业存在“外勤、销售、售后、市场人员频繁发生小额费用。”场景，建议沟通日常报销。
+    sale_rule: 围绕“票据散、垫付多、报销周期长。”确认当前人工处理方式、系统覆盖和管理成本。
     kyc_questions:
-      - 了解企业是否需要维护重点客户，衍生出一些招待费，或者寄送节日礼品、或者团队搞建设活动的费用，这些费用怎么管理的？
-      - 了解企业是否要开展会，宣传等活动，衍生出的广告费、展会费、宣传费等等，这些费用是怎么管理的？
-      - 了解销售人员目前是否有交通补贴、通讯补贴，目前是怎么管理的，是否需要票据报销。
-  售后属性:
-    recommendation: ""
-    sale_rule: ""
+    - 销售、售后、市场人员是否经常垫付交通、快递、样品或招待费用？
+    - 小额费用是随手拍票、月末集中贴票，还是由助理代报？
+    - 报销周期长导致员工催款或票据遗失的情况是否常见？
+  门店网点运营:
+    recommendation: 企业存在“多门店、多网点或区域运营人员。”场景，建议沟通日常报销。
+    sale_rule: 围绕“门店费用分散，总部难统一归集。”确认当前人工处理方式、系统覆盖和管理成本。
     kyc_questions:
-      - 了解企业是否需要售后处理，售后工程师交通补贴是否要凭票报销，是否要和行程关联？
-      - 了解是否存在工程师维修时，垫钱购买设备，事后报销的场景？
-  科技属性:
-    recommendation: ""
-    sale_rule: ""
+    - 门店/网点是否有日常水电、物料、维修、促销等零星费用？
+    - 总部如何控制不同门店的费用标准、预算和审批权限？
+    - 门店票据是否容易丢失、重复报销或无法及时归集？
+  研发试制费用:
+    recommendation: 企业存在“研发打样、试制、实验耗材、小额采购频繁。”场景，建议沟通日常报销。
+    sale_rule: 围绕“小额采购和临时报销频繁。”确认当前人工处理方式、系统覆盖和管理成本。
     kyc_questions:
-      - 了解是否存在工程师在做原型验证或应急调试时，为了抢时间，自己先网购一些小芯片、试剂，事后报销的场景。
+    - 研发打样、试制、测试时是否会临时采购小工具、耗材或配件？
+    - 这些费用是否需要关联研发项目、样机、试验批次或费用化/资本化口径？
+    - 研发费用归集、发票验真和加计扣除资料准备目前是否费时？
+  行政办公分散:
+    recommendation: 企业存在“办公用品、福利、团建、培训等日常费用分散。”场景，建议沟通日常报销。
+    sale_rule: 围绕“审批口径不统一，预算不可视。”确认当前人工处理方式、系统覆盖和管理成本。
+    kyc_questions:
+    - 办公用品、快递、印刷、保洁、维修等费用是否由多个部门分散采购？
+    - 行政费用是否有统一预算和供应商，还是各部门先垫付再报？
+    - 哪些行政费用最容易出现票据不合规、重复报销或审批绕行？

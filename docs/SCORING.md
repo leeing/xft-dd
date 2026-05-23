@@ -50,13 +50,89 @@ scoring:
     not_matched: 0
 ```
 
-模块得分由模块基础分、标签分和指标分组成，最终限制在 0-100：
+## 业务分计算
+
+业务分按 **Indicator → Label → Module** 三层逐级累加。每个模块的业务分：
 
 ```text
-module.score = module.base_score + sum(label.score) + sum(indicator.score)
+module.score = module.base_score + Σ(label.score)
 ```
 
-接受度由 `acceptance_policy.levels` 决定：
+Label 分数已包含其下所有 indicator 的贡献，不重复累加 indicator 分数。
+
+### 第一层：Indicator 得分
+
+每个 indicator 评估后得到一个结果值（`matched` / `possible` / `unknown` / `not_matched`），
+映射为 indicator 分数：
+
+```text
+indicator.score = indicator_scores[indicator.result]
+```
+
+| result | 分数 |
+| --- | ---: |
+| `matched` | 10 |
+| `possible` | 5 |
+| `unknown` | 0 |
+| `not_matched` | 0 |
+
+### 第二层：Label 得分
+
+一个 label 的得分取决于它下面所有 indicator 的评估结果汇总：
+
+1. 统计 matched 和 possible 的 indicator 数量
+2. 判定 label 结果：
+
+```text
+如果 matched >= label.min_matched_indicators → "matched"
+否则如果 (possible > 0 或 matched > 0)          → "possible"
+否则如果 全部 indicator 都是 unknown             → "unknown"
+否则                                              → "not_matched"
+```
+
+3. 将 label 结果映射为 label 分数：
+
+```text
+label.score = label_scores[label.result]
+```
+
+| result | 分数 |
+| --- | ---: |
+| `matched` | 30 |
+| `possible` | 15 |
+| `unknown` | 0 |
+| `not_matched` | 0 |
+
+关键点：`min_matched_indicators` 是 label 的命中门槛，定义在 `modules.d/*.yaml` 中。
+例如 `min_matched_indicators: 2` 表示该 label 下至少要有 2 个 indicator 为 matched 才算命中。
+
+### 第三层：Module 业务分
+
+```text
+module.score = module.base_score + Σ(label.score)
+```
+
+`base_score` 定义在每个 `modules.d/*.yaml` 中，用于区分模块的基础权重。
+不同模块即使 label 命中情况相同，base_score 高的模块排前面。
+
+### 计算示例
+
+假设"日常报销"模块（`base_score: 40`），包含 3 个 label：
+
+| Label | min_matched | indicator 结果 | label 结果 | label 得分 |
+| --- | --- | --- | --- | ---: |
+| 企业规模 | 1 | matched × 1 | matched | 30 |
+| 多地经营 | 2 | matched × 1, possible × 1 | possible | 15 |
+| 信息化程度 | 1 | unknown × 2 | unknown | 0 |
+
+```text
+module.score = 40 + 30 + 15 + 0 = 85
+```
+
+## 接受度
+
+接受度由 `acceptance_policy.levels` 决定，仅看 **matched 的 label 数量**（`attributes_number`），
+不看分数：
 
 ```yaml
 acceptance_policy:

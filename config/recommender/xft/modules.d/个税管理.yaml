@@ -1,269 +1,268 @@
 module_id: 个税管理
 module_name: 个税管理
-priority: 50
-base_score: 0
+priority: 42
+base_score: 42
 acceptance_policy:
   levels:
-    - result: 高
-      min_matched_labels: 3
-      conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为高。
-    - result: 中高
-      min_matched_labels: 2
-      conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为中高。
-    - result: 低
-      min_matched_labels: 0
-      conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为低。
+  - result: 高
+    min_matched_labels: 3
+    conclusion: 命中3个及以上薪税复杂度标签。
+  - result: 中高
+    min_matched_labels: 2
+    conclusion: 命中2个薪税复杂度标签。
+  - result: 低
+    min_matched_labels: 0
+    conclusion: 仅规模或行业泛线索。
 labels:
-  - label_id: 多分支机构_集团化制造企业
-    label_name: 多分支机构/集团化制造企业
-    description: ""
-    min_matched_indicators: 1
-    indicators:
-      - indicator_id: 分支机构
-        indicator_name: 分支机构：
-        evaluator: llm_web
-        standard: 在工商信息中登记有多个位于不同城市的“分公司”（非法人实体）。
-        data_sources:
-          - type: table
-            table: branches
-            field: branch_name
-            op: exists
-        prompt: 请判断企业是否满足指标：分支机构：。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 分支机构
-          - 在工商信息中登记有多个位于不同城市的
-          - 分公司
-          - 非法人实体
-        web_search:
-          fixed_queries:
-            - "{company_name} 分公司"
-          auto: false
-      - indicator_id: 官网信息
-        indicator_name: 官网信息
-        evaluator: llm_web
-        standard: 官网“联系我们”或“业务布局”中展示全国/全球的生产基地、工厂、销售网点。
-        data_sources:
-          - type: field
-            path: ip_counts.patent
-            op: ">"
-            value: 0
-        prompt: 请判断企业是否满足指标：官网信息。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 官网信息
-          - 官网
-          - 联系我们
-          - 业务布局
-          - 中展示全国
-          - 全球的生产基地
-          - 工厂
-          - 销售网点
-        web_search:
-          fixed_queries:
-            - "{company_name} 官网"
-          auto: false
-      - indicator_id: 招聘信息
-        indicator_name: 招聘信息
-        evaluator: llm_web
-        standard: 3. ：长期在多个城市招聘相同生产、技术、销售类岗位。
-        data_sources:
-          - type: table
-            table: recruitments
-            field: title
-            op: text_contains
-            keywords: []
-        prompt: 请判断企业是否满足指标：招聘信息。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 招聘信息
-          - 长期在多个城市招聘相同生产
-          - 技术
-          - 销售类岗位
-        web_search:
-          fixed_queries:
-            - "{company_name} 招聘"
-          auto: false
-      - indicator_id: 名称与股权
-        indicator_name: 名称与股权
-        evaluator: rule
-        standard: 公司名称常含“集团”、“控股”字样；工商信息显示对外投资了多家子公司（持股≥50%或拥有控制权-3-5）。
-        data_sources:
-          - type: table
-            table: branches
-            field: branch_name
-            op: exists
-        prompt: 请判断企业是否满足指标：名称与股权。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 名称与股权
-          - 公司名称常含
-          - 集团
-          - 控股
-          - 字样
-          - 工商信息显示对外投资了多家子公司
-          - 持股
-          - "50"
-  - label_id: 多法人主体的企业集团
-    label_name: 多法人主体的企业集团
-    description: ""
-    min_matched_indicators: 1
-    indicators:
-      - indicator_id: 名称与股权
-        indicator_name: 名称与股权
-        evaluator: rule
-        standard: 公司名称常含“集团”、“控股”字样；工商信息显示对外投资了多家子公司（持股≥50%或拥有控制权-3-5）。
-        data_sources:
-          - type: table
-            table: branches
-            field: branch_name
-            op: exists
-        prompt: 请判断企业是否满足指标：名称与股权。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 名称与股权
-          - 公司名称常含
-          - 集团
-          - 控股
-          - 字样
-          - 工商信息显示对外投资了多家子公司
-          - 持股
-          - "50"
-      - indicator_id: 企业图谱
-        indicator_name: 企业图谱
-        evaluator: llm
-        standard: 在商业查询平台中，“企业图谱”或“对外投资”栏显示复杂的控股结构。
-        data_sources: []
-        prompt: 请判断企业是否满足指标：企业图谱。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 企业图谱
-          - 在商业查询平台中
-          - 对外投资
-          - 栏显示复杂的控股结构
-      - indicator_id: 财报合并范围
-        indicator_name: 财报合并范围
-        evaluator: llm_web
-        standard: 上市公司年报的 “合并财务报表范围” 会详尽列出所有重要子公司名录，是金标准-3-4。
-        data_sources: []
-        prompt: 请判断企业是否满足指标：财报合并范围。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 财报合并范围
-          - 上市公司年报的
-          - 合并财务报表范围
-          - 会详尽列出所有重要子公司名录
-          - 是金标准
-        web_search:
-          fixed_queries:
-            - "{company_name} 投资"
-          auto: false
-  - label_id: 国有企业
-    label_name: 国有企业
-    description: ""
-    min_matched_indicators: 1
-    indicators:
-      - indicator_id: 国有企业
-        indicator_name: 国有企业
-        evaluator: llm
-        standard: 1、工商登记类型标注为 "国有独资"" 国有控股 "或" 国有企业 "（含央企、地方国企）；2、国有股东持股比例≥50%（绝对控股）或≥20%（相对控股且为第一大股东）
-        data_sources: []
-        prompt: 请判断企业是否满足指标：国有企业。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 国有企业
-          - 工商登记类型标注为
-          - 国有独资
-          - 国有控股
-          - 含央企
-          - 地方国企
-          - 国有股东持股比例
-          - "50"
-  - label_id: 外资背景
-    label_name: 外资背景
-    description: ""
-    min_matched_indicators: 1
-    indicators:
-      - indicator_id: 外资背景
-        indicator_name: 外资背景
-        evaluator: llm
-        standard:
-          1. 工商登记类型标注：国家企业信用信息公示系统显示 “外商独资”“中外合资”“中外合作” 或 “港澳台投资”；2. 股权结构：企查查
-          / 天眼查公开外资股东持股比例≥25%（法定外资企业认定阈值）；3. 股东类型：工商公示股东含 “外国（地区）企业”“境外自然人”；4. 注册资本为外币
-        data_sources: []
-        prompt: 请判断企业是否满足指标：外资背景。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 外资背景
-          - 工商登记类型标注
-          - 国家企业信用信息公示系统显示
-          - 外商独资
-          - 中外合资
-          - 中外合作
-          - 港澳台投资
-          - 股权结构
-  - label_id: 上市公司或拟上市公司
-    label_name: 上市公司或拟上市公司
-    description: ""
-    min_matched_indicators: 1
-    indicators:
-      - indicator_id: 股票代码
-        indicator_name: 股票代码
-        evaluator: llm
-        standard: 拥有并在公开市场交易的6位股票代码。
-        data_sources: []
-        prompt: 请判断企业是否满足指标：股票代码。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 股票代码
-          - 拥有并在公开市场交易的6位股票代码
-      - indicator_id: 法定信披
-        indicator_name: 法定信披
-        evaluator: llm
-        standard: 在 “巨潮资讯网” 等指定网站可查到其法定公告、定期报告（年报、季报等）-2-6-9。
-        data_sources: []
-        prompt: 请判断企业是否满足指标：法定信披。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 法定信披
-          - 巨潮资讯网
-          - 等指定网站可查到其法定公告
-          - 定期报告
-          - 年报
-          - 季报等
-      - indicator_id: po动态
-        indicator_name: PO动态
-        evaluator: llm_web
-        standard: .有明确的 “招股说明书” 披露，或财经新闻中有其进入“上市辅导”、“提交申报”、“问询反馈”等进程的报道-10。
-        data_sources: []
-        prompt: 请判断企业是否满足指标：PO动态。只能基于证据判断，不得编造。
-        evidence_hints:
-          - PO动态
-          - 有明确的
-          - 招股说明书
-          - 披露
-          - 或财经新闻中有其进入
-          - 上市辅导
-          - 提交申报
-          - 问询反馈
-        web_search:
-          fixed_queries:
-            - "{company_name} 上市"
-          auto: false
+- label_id: 多地人员组织
+  label_name: 多地人员组织
+  description: 员工分布在多个城市或长期异地招聘。 痛点：个税属地、社保个税协同和人员归属复杂。 切入：多地薪税申报和人员归属切入。 角色：核心。
+  min_matched_indicators: 1
+  indicators:
+  - indicator_id: 分支机构跨城
+    indicator_name: 分支机构跨城
+    evaluator: hybrid
+    standard: 分支机构、招聘城市或官网布局显示多城市人员。 结构化优先，官网补充。
+    evidence_hints:
+    - '{company_name} 全国布局 分公司 招聘'
+    - '{company_name} 多地招聘 生产基地'
+    - 默认不自动扩查询；优先使用固定高意图查询，避免真实批量运行中单家公司触发过多低命中搜索。
+    prompt: '请判断企业是否满足指标：分支机构跨城。
+
+      任务：判断是否影响个税属地和薪税管理。
+
+      matched：多地员工/招聘/分支/基地明确。
+
+      possible：只有分支但人员属性不明。
+
+      not_matched：单地经营。
+
+      unknown：证据不足。
+
+      禁止推断：不能把对外投资直接等同于员工多地申报。
+
+      只能基于结构化证据、招聘证据或权威公开证据判断，不得编造。'
+    data_sources:
+    - type: field
+      op: '>='
+      description: 来自 xlabel_v2.xlsx 本地证据规则。
+      path: branch_count
+      value: 2
+    rule:
+      source_field: branch_count
+      op: '>='
+      value: 2
+    merge_policy: llm_confirm
+    web_search:
+      when: rule_not_matched
+      effect: possible_on_evidence
+      fixed_queries:
+      - '{company_name} 全国布局 分公司 招聘'
+      - '{company_name} 多地招聘 生产基地'
+      auto:
+        enabled: false
+        max_queries: 0
+        intent: 默认不自动扩查询；优先使用固定高意图查询，避免真实批量运行中单家公司触发过多低命中搜索。
+      max_auto_rounds: 0
+      max_results: 5
+- label_id: 多法人集团
+  label_name: 多法人集团
+  description: 集团、控股、多子公司、多对外投资。 痛点：多主体薪酬、个税、报表口径统一难。 切入：集团薪税集中管控切入。 角色：核心。
+  min_matched_indicators: 1
+  indicators:
+  - indicator_id: 集团控股结构
+    indicator_name: 集团控股结构
+    evaluator: rule
+    standard: 名称含集团/控股，或对外投资/子公司数量达到阈值。 共享多主体口径。
+    evidence_hints:
+    - 集团
+    - 控股
+    data_sources:
+    - type: field
+      op: contains_any
+      description: 来自 xlabel_v2.xlsx 本地证据规则。
+      path: company_name
+      keywords:
+      - 集团
+      - 控股
+      min_matches: 1
+    - type: field
+      op: '>='
+      description: 来自 xlabel_v2.xlsx 本地证据规则。
+      path: outbound_investment_count
+      value: 3
+    rule:
+      source_field: company_name
+      op: contains_any
+      value:
+      - 集团
+      - 控股
+- label_id: 治理合规强化
+  label_name: 治理合规强化
+  description: 上市、拟上市、国资、外资等治理要求高。 痛点：薪税合规、内控留痕和审计要求更强。 切入：薪税合规和内控切入。 角色：核心。
+  min_matched_indicators: 1
+  indicators:
+  - indicator_id: 股票代码上市身份
+    indicator_name: 股票代码上市身份
+    evaluator: rule
+    standard: company_profile.stock_code存在。 法定信披不参与判定。
+    evidence_hints:
+    - company
+    - profile
+    - stock
+    - code存在
+    - 法定信披不参与判定
+    data_sources:
+    - type: field
+      op: exists
+      description: 来自 xlabel_v2.xlsx 本地证据规则。
+      path: stock_code
+      min_matches: 1
+    rule:
+      source_field: stock_code
+      op: exists
+  - indicator_id: 国资外资身份
+    indicator_name: 国资外资身份
+    evaluator: hybrid
+    standard: 企业类型、股东或标签显示国资、国有控股、外资、港澳台投资。 字段不足再Web。
+    evidence_hints:
+    - 国有
+    - 国资
+    - 外资
+    - 港澳台
+    - 中外合资
+    prompt: '请判断企业是否满足指标：国资外资身份。
+
+      任务：判断身份是否带来薪税合规/治理复杂度。
+
+      matched：国资/外资/港澳台投资身份明确，且有治理或薪酬合规合理关联。
+
+      possible：身份线索存在但与薪税复杂度关联弱。
+
+      not_matched：无身份或身份不相关。
+
+      unknown：证据不足。
+
+      禁止推断：身份不能独立承担全部推荐理由。
+
+      只能基于结构化证据、招聘证据或权威公开证据判断，不得编造。'
+    data_sources:
+    - type: field
+      op: contains_any
+      description: 来自 xlabel_v2.xlsx 本地证据规则。
+      path: company_org_type
+      keywords:
+      - 国有
+      - 国资
+      - 外资
+      - 港澳台
+      - 中外合资
+      min_matches: 1
+    rule:
+      source_field: company_org_type
+      op: contains_any
+      value:
+      - 国有
+      - 国资
+      - 外资
+      - 港澳台
+      - 中外合资
+    merge_policy: llm_confirm
+  - indicator_id: IPO拟上市动态
+    indicator_name: IPO拟上市动态
+    evaluator: llm_web
+    standard: 公开资料显示上市辅导、招股书、提交申报、问询反馈。 动态类才Web。
+    evidence_hints:
+    - '{company_name} 上市辅导 招股书'
+    - '{company_name} IPO 申报 问询'
+    - 保留高意图自动扩查询，但建议批量运行时进入候选模块后再触发；若未实现候选阶段，max_auto_rounds应限制为1。
+    prompt: '请判断企业是否满足指标：IPO拟上市动态。
+
+      任务：判断拟上市动态是否增强薪税合规要求。
+
+      matched：上市辅导、招股书、申报、问询反馈明确。
+
+      possible：融资/资本市场泛新闻。
+
+      not_matched：无拟上市证据。
+
+      unknown：证据不足。
+
+      禁止推断：法定信披不参与独立判定。
+
+      只能基于结构化证据、招聘证据或权威公开证据判断，不得编造。'
+    web_search:
+      when: always
+      effect: llm_evidence
+      fixed_queries:
+      - '{company_name} 上市辅导 招股书'
+      - '{company_name} IPO 申报 问询'
+      auto:
+        enabled: true
+        max_queries: 1
+        intent: 保留高意图自动扩查询，但建议批量运行时进入候选模块后再触发；若未实现候选阶段，max_auto_rounds应限制为1。
+      max_auto_rounds: 1
+      max_results: 5
+- label_id: 派驻与灵活用工
+  label_name: 派驻与灵活用工
+  description: 外派、驻场、兼职、劳务或灵活用工。 痛点：用工关系和个税处理复杂。 切入：复杂用工薪税合规切入。 角色：辅助。
+  min_matched_indicators: 1
+  indicators:
+  - indicator_id: 复杂用工岗位线索
+    indicator_name: 复杂用工岗位线索
+    evaluator: hybrid
+    standard: 招聘出现外派、驻场、劳务、兼职、灵活用工、薪酬社保。 需判断是否影响个税管理。
+    evidence_hints:
+    - '{company_name} 外派 驻场 灵活用工'
+    - '{company_name} 劳务 派遣 薪酬 社保'
+    - 默认不自动扩查询；优先使用固定高意图查询，避免真实批量运行中单家公司触发过多低命中搜索。
+    prompt: '请判断企业是否满足指标：复杂用工岗位线索。
+
+      标准：招聘出现外派、驻场、劳务、兼职、灵活用工、薪酬社保。 需判断是否影响个税管理。
+
+      证据不足时返回 unknown 或 possible；不得用行业常识直接推断为 matched。'
+    rule:
+      source_field: __xlsx_no_local_rule__
+      op: exists
+    merge_policy: rule_first
+    web_search:
+      when: insufficient
+      effect: llm_evidence
+      fixed_queries:
+      - '{company_name} 外派 驻场 灵活用工'
+      - '{company_name} 劳务 派遣 薪酬 社保'
+      auto:
+        enabled: false
+        max_queries: 0
+        intent: 默认不自动扩查询；优先使用固定高意图查询，避免真实批量运行中单家公司触发过多低命中搜索。
+      max_auto_rounds: 0
+      max_results: 5
 marketing_points:
-  多分支机构_集团化制造企业:
-    recommendation: ""
-    sale_rule: ""
+  多地人员组织:
+    recommendation: 企业存在“员工分布在多个城市或长期异地招聘。”场景，建议沟通个税管理。
+    sale_rule: 围绕“个税属地、社保个税协同和人员归属复杂。”确认当前人工处理方式、系统覆盖和管理成本。
     kyc_questions:
-      - 了解公司是否在全国各地都有工厂、分子公司，需要在当地报税，目前是集团统一报税还是每个分区报自己的？“各个分区报送自己个税”可以进一步咨询是否计划统一上收。如果“集团统一报税”，但是切换账号登录国税扣缴端缴税，操作复杂，是高潜力客户。
-  多法人主体的企业集团:
-    recommendation: ""
-    sale_rule: ""
+    - 员工是否在多个城市工作或缴纳社保个税，申报地如何确定？
+    - 跨城市调岗、外派、异地招聘后，薪税和社保资料如何同步？
+    - 不同地区政策、基数、专项附加扣除资料由谁负责核对？
+  多法人集团:
+    recommendation: 企业存在“集团、控股、多子公司、多对外投资。”场景，建议沟通个税管理。
+    sale_rule: 围绕“多主体薪酬、个税、报表口径统一难。”确认当前人工处理方式、系统覆盖和管理成本。
     kyc_questions:
-      - 集团下是否有多个独立法人子公司，每个子公司是集团统一报税还是每个子公司报自己的？“分公司送自己个税”可以进一步咨询是否计划统一上收。如果“集团统一报税”，但是切换账号登录国税扣缴端缴税，操作复杂，是高潜力客户。
-  国有企业:
-    recommendation: 国企管理比较正规，员工工资都进行个税核算和缴纳，因此必须会使用个税功能。国企一般会有分公司管理模式，需要给不同分公司员工核算和缴纳个税。
-    sale_rule: 国企管理正规，分公司模式，需核算和缴纳个税。
+    - 集团内是否存在多个法人主体共同用工或人员借调？
+    - 员工薪酬、个税申报、成本归属是否需要跨主体拆分？
+    - 多主体报表、个税数据和银行发薪数据是否能统一校验？
+  治理合规强化:
+    recommendation: 企业存在“上市、拟上市、国资、外资等治理要求高。”场景，建议沟通个税管理。
+    sale_rule: 围绕“薪税合规、内控留痕和审计要求更强。”确认当前人工处理方式、系统覆盖和管理成本。
     kyc_questions:
-      - 了解目前应发工资核算后，怎样核算和缴纳个税？是不是人事和财务分开管理。
-      - 了解企业是否要给分子公司员工统一核算个税。
-      - 是否存在同一个部门员工归属不通分公司的情况（借调、兼任等）
-  外资背景:
-    recommendation: 外资企业管理比较正规，员工工资都进行个税核算和缴纳，因此必须会使用个税功能。
-    sale_rule: 外资企业管理正规，需核算员工工资个税。
+    - 上市、拟上市、国资或外资背景下，薪税数据是否需要审计留痕？
+    - 高管、股权激励、奖金递延或专项扣除资料是否有专门复核？
+    - 税务检查或审计时，历史薪酬个税资料能否快速追溯导出？
+  派驻与灵活用工:
+    recommendation: 企业存在“外派、驻场、兼职、劳务或灵活用工。”场景，建议沟通个税管理。
+    sale_rule: 围绕“用工关系和个税处理复杂。”确认当前人工处理方式、系统覆盖和管理成本。
     kyc_questions:
-      - 了解目前应发工资核算后，怎样核算和缴纳个税？是不是人事和财务分开管理。
-  上市公司或拟上市公司:
-    recommendation: ""
-    sale_rule: ""
-    kyc_questions:
-      - 在冲刺IPO阶段，财务合规与数据安全是审核重点。了解当前的个税申报在效率、准确性及审计追溯方面，是否已满足上市公司的规范性要求？
+    - 是否有驻场、外派、兼职、劳务派遣或灵活用工人员？
+    - 这些人员的报酬、个税、社保、公积金由谁申报和复核？
+    - 用工关系变化后，合同、考勤、薪酬和个税是否能同步更新？

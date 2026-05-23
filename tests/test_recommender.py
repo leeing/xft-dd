@@ -81,6 +81,8 @@ async def test_run_recommendation_business_first_without_llm(monkeypatch: pytest
     payload = json.loads((output_dir / "result.json").read_text(encoding="utf-8"))
     assert "Module" in payload
     assert "AcceptanceResult" in payload
+    assert len(payload["Modules"]) == 7
+    assert all("AcceptanceResult" in item for item in payload["Modules"])
     report = (output_dir / "report.md").read_text(encoding="utf-8")
     assert "推荐模块总览" in report
     assert "业务推荐结果" in report

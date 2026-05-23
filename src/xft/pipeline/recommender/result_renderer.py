@@ -6,6 +6,7 @@ from typing import Any
 
 from xft.pipeline.recommender.models import (
     ModuleConfig,
+    ModuleResult,
     RecommendationConfig,
     RecommendationResult,
 )
@@ -33,37 +34,17 @@ def render_result_json(
             "Module": "",
             "Conclusion": "未生成业务推荐结果。",
             "AcceptanceResult": "低",
+            "Modules": [],
         }
 
     selected = result.selected_module
     module_config = _module_config(config, selected.module_id)
-    matched_labels = [item for item in selected.label_results if item.result == "matched"]
-    matched_indicators = [
-        indicator
-        for label in selected.label_results
-        for indicator in label.indicator_results
-        if indicator.result == "matched"
-    ]
+    matched_labels = _matched_labels(selected)
+    modules = sorted(result.modules, key=lambda item: (-item.score, -item.attributes_number, item.module_id))
     return {
-        "Acceptance": [
-            {
-                "AcceptanceDetermination": "满足",
-                "LabelType": label.label_name,
-                "KeyIndicatorVerify": label.key_indicator_verify,
-            }
-            for label in matched_labels
-        ],
+        "Acceptance": _acceptance_items(selected),
         "USCI": str(profile.get("credit_code") or ""),
-        "LabelResult": [
-            {
-                "QuantitativeStandard": indicator.standard,
-                "CurrentStatus": indicator.current_status,
-                "ProfileName": indicator.indicator_name,
-                "AnalysisResults": result_text(indicator.result),
-                "LabelType": indicator.label_name,
-            }
-            for indicator in matched_indicators
-        ],
+        "LabelResult": _label_result_items(selected),
         "CoreBusinessAreas": _core_business_areas(profile),
         "AttributesNumber": selected.attributes_number,
         "CompanyName": str(profile.get("company_name") or result.company_name),
@@ -72,11 +53,66 @@ def render_result_json(
         "Module": selected.module_name,
         "Conclusion": selected.conclusion,
         "AcceptanceResult": selected.acceptance_result,
+        "Modules": [_module_result_json(module=module, config=config) for module in modules],
     }
 
 
 def _module_config(config: RecommendationConfig, module_id: str) -> ModuleConfig | None:
     return next((item for item in config.modules if item.module_id == module_id), None)
+
+
+def _module_result_json(*, module: ModuleResult, config: RecommendationConfig) -> dict[str, Any]:
+    module_config = _module_config(config, module.module_id)
+    matched_labels = _matched_labels(module)
+    return {
+        "ModuleId": module.module_id,
+        "Module": module.module_name,
+        "Score": module.score,
+        "AcceptanceResult": module.acceptance_result,
+        "Conclusion": module.conclusion,
+        "AttributesNumber": module.attributes_number,
+        "IndicatorsNumber": module.indicators_number,
+        "Acceptance": _acceptance_items(module),
+        "LabelResult": _label_result_items(module),
+        "MarketingPoint": _marketing_points(module_config, matched_labels),
+    }
+
+
+def _matched_labels(module: ModuleResult) -> list[Any]:
+    return [item for item in module.label_results if item.result == "matched"]
+
+
+def _matched_indicators(module: ModuleResult) -> list[Any]:
+    return [
+        indicator
+        for label in module.label_results
+        for indicator in label.indicator_results
+        if indicator.result == "matched"
+    ]
+
+
+def _acceptance_items(module: ModuleResult) -> list[dict[str, Any]]:
+    return [
+        {
+            "AcceptanceDetermination": "满足",
+            "LabelType": label.label_name,
+            "KeyIndicatorVerify": label.key_indicator_verify,
+        }
+        for label in _matched_labels(module)
+    ]
+
+
+def _label_result_items(module: ModuleResult) -> list[dict[str, Any]]:
+    return [
+        {
+            "QuantitativeStandard": indicator.standard,
+            "CurrentStatus": indicator.current_status,
+            "ProfileName": indicator.indicator_name,
+            "AnalysisResults": result_text(indicator.result),
+            "LabelType": indicator.label_name,
+        }
+        for indicator in _matched_indicators(module)
+    ]
 
 
 def _marketing_points(module: ModuleConfig | None, matched_labels: list[Any]) -> list[dict[str, Any]]:

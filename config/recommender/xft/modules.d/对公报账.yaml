@@ -1,158 +1,291 @@
 module_id: 对公报账
 module_name: 对公报账
-priority: 50
-base_score: 0
+priority: 42
+base_score: 42
 acceptance_policy:
   levels:
-    - result: 高
-      min_matched_labels: 3
-      conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为高。
-    - result: 中高
-      min_matched_labels: 2
-      conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为中高。
-    - result: 低
-      min_matched_labels: 0
-      conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为低。
+  - result: 高
+    min_matched_labels: 3
+    conclusion: 命中采购复杂、供应商对账、合同付款、跨区/跨境采购中3类，且至少1类来自岗位或公开业务证据而非行业泛词。
+  - result: 中高
+    min_matched_labels: 2
+    conclusion: 命中采购复杂付款，并额外命中合同付款、跨区采购、供应商协同或项目/设备采购任一场景。
+  - result: 低
+    min_matched_labels: 0
+    conclusion: 只有泛制造或泛采购线索。
 labels:
-  - label_id: 对公付款需求多
-    label_name: 对公付款需求多
-    description: ""
-    min_matched_indicators: 1
-    indicators:
-      - indicator_id: 细分行业
-        indicator_name: 细分行业
-        evaluator: llm
-        standard: 机械装备、金属加工、智能装备、化工涂料、机械装备集群、五金集群、电子元件、食品加工
-        data_sources: []
-        prompt: 请判断企业是否满足指标：细分行业。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 细分行业
-          - 机械装备
-          - 金属加工
-          - 智能装备
-          - 化工涂料
-          - 机械装备集群
-          - 五金集群
-          - 电子元件
-      - indicator_id: 行业特性推导
-        indicator_name: 行业特性推导
-        evaluator: llm_web
-        standard: 快周转行业、存在大量采购行业
-        data_sources: []
-        prompt: 请判断企业是否满足指标：行业特性推导。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 行业特性推导
-          - 快周转行业
-          - 存在大量采购行业
-        web_search:
-          fixed_queries:
-            - "{company_name} 行业"
-          auto: false
-      - indicator_id: 产品类型标签
-        indicator_name: 产品类型标签
-        evaluator: llm
-        standard: 1、企业生产产品是多部件机械装备 、3C 电子元器件模组 、定制化金属结构件 、食品加工半成品
-        data_sources: []
-        prompt: 请判断企业是否满足指标：产品类型标签。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 产品类型标签
-          - 企业生产产品是多部件机械装备
-          - 3C
-          - 电子元器件模组
-          - 定制化金属结构件
-          - 食品加工半成品
-      - indicator_id: 产业链位置
-        indicator_name: 产业链位置
-        evaluator: llm_web
-        standard: 1、处于产业链中游；2、采购多品类原料 / 部件；3、供应商结构分散或多领域合作；4、企业地址为产业集群聚集
-        data_sources: []
-        prompt: 请判断企业是否满足指标：产业链位置。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 产业链位置
-          - 处于产业链中游
-          - 采购多品类原料
-          - 部件
-          - 供应商结构分散或多领域合作
-          - 企业地址为产业集群聚集
-        web_search:
-          fixed_queries:
-            - "{company_name} 产业链"
-          auto: false
-      - indicator_id: 供应商数量
-        indicator_name: 供应商数量
-        evaluator: llm_web
-        standard: 1. 备案供应商数量≥25 家（行业协会备案 / 官网公示可查）；2. 企业官网 “合作伙伴 / 供应商” 板块；3. 产业展会参展公示配套企业
-        data_sources: []
-        prompt: 请判断企业是否满足指标：供应商数量。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 供应商数量
-          - 备案供应商数量
-          - "25"
-          - 行业协会备案
-          - 官网公示可查
-          - 企业官网
-          - 合作伙伴
-          - 供应商
-        web_search:
-          fixed_queries:
-            - "{company_name} 供应商"
-          auto: false
-      - indicator_id: 跨区域_跨境采购
-        indicator_name: 跨区域 / 跨境采购
-        evaluator: llm_web
-        standard: 1. 招聘 “全国 / 跨境采购专员” 岗；2. 官网产品描述 “核心部件进口 / 全国配套”；3. 供应商地域分布
-        data_sources:
-          - type: table
-            table: recruitments
-            field: title
-            op: text_contains
-            keywords: []
-        prompt: 请判断企业是否满足指标：跨区域 / 跨境采购。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 跨区域
-          - 跨境采购
-          - 招聘
-          - 全国
-          - 跨境采购专员
-          - 官网产品描述
-          - 核心部件进口
-          - 全国配套
-        web_search:
-          fixed_queries:
-            - "{company_name} 跨境采购"
-          auto: false
-      - indicator_id: 招聘关键词
-        indicator_name: 招聘关键词
-        evaluator: llm_web
-        standard: 供应商管理、批量对账、多品类采购、BOM 管理、定制化生产客户定制、短账期30天付款、高频结算、月结、短账期；关键词≥1次
-        data_sources:
-          - type: table
-            table: recruitments
-            field: title
-            op: text_contains
-            keywords: []
-        prompt: 请判断企业是否满足指标：招聘关键词。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 招聘关键词
-          - 供应商管理
-          - 批量对账
-          - 多品类采购
-          - BOM
-          - 管理
-          - 定制化生产客户定制
-          - 短账期30天付款
-        web_search:
-          fixed_queries:
-            - "{company_name} 招聘"
-          auto: false
+- label_id: 采购复杂付款
+  label_name: 采购复杂付款
+  description: 采购品类多、供应商分散、付款频繁。 痛点：采购订单、到货验收、发票和付款匹配复杂。 切入：三单匹配、供应商台账和付款审批切入。 角色：核心。
+  min_matched_indicators: 1
+  indicators:
+  - indicator_id: 装配集成型行业
+    indicator_name: 装配集成型行业
+    evaluator: hybrid
+    standard: 经营范围显示设备、机械、电子、工程、集成、制造多部件产品。 装配/设备/电子/工程集成只给采购复杂的可能性；需采购岗位、BOM、供应商、应付或合同证据增强。
+    evidence_hints:
+    - 设备
+    - 机械
+    - 电子
+    - 工程
+    - 集成
+    - 零部件
+    - 装配
+    prompt: '请判断企业是否满足指标：装配集成型行业。
+
+      标准：经营范围显示设备、机械、电子、工程、集成、制造多部件产品。 装配/设备/电子/工程集成只给采购复杂的可能性；需采购岗位、BOM、供应商、应付或合同证据增强。
+
+      证据不足时返回 unknown 或 possible；不得用行业常识直接推断为 matched。'
+    data_sources:
+    - type: field
+      op: contains_any
+      description: 来自 xlabel_v2.xlsx 本地证据规则。
+      path: business_scope
+      keywords:
+      - 设备
+      - 机械
+      - 电子
+      - 工程
+      - 集成
+      - 零部件
+      - 装配
+      min_matches: 1
+    rule:
+      source_field: business_scope
+      op: contains_any
+      value:
+      - 设备
+      - 机械
+      - 电子
+      - 工程
+      - 集成
+      - 零部件
+      - 装配
+    merge_policy: llm_confirm
+  - indicator_id: 采购供应商岗位
+    indicator_name: 采购供应商岗位
+    evaluator: hybrid
+    standard: 招聘出现采购、供应商管理、对账、BOM、成本、应付。 招聘表强线索。
+    evidence_hints:
+    - 采购
+    - 供应商
+    - 对账
+    - BOM
+    - 成本
+    - 应付
+    prompt: '请判断企业是否满足指标：采购供应商岗位。
+
+      任务：判断是否存在供应商付款/对账复杂度。
+
+      matched：采购、供应商管理、应付、对账、BOM、成本或采购工程师等岗位明确，并能指向供应商付款/对账复杂度。
+
+      possible：只有采购泛线索或装配型行业，但没有供应商、对账、应付、BOM、合同等证据。
+
+      not_matched：无采购或供应商线索。
+
+      unknown：证据不足。
+
+      禁止推断：不能从制造业自动推断供应商众多。
+
+      只能基于结构化证据、招聘证据或权威公开证据判断，不得编造。'
+    data_sources:
+    - type: table
+      op: text_contains
+      description: 来自 xlabel_v2.xlsx 本地证据规则。
+      table: recruitments
+      field: title
+      limit: 50
+      keywords:
+      - 采购
+      - 供应商
+      - 对账
+      - BOM
+      - 成本
+      - 应付
+      min_matches: 1
+    rule:
+      source_field: __xlsx_table_only_rule__
+      op: text_contains
+      value:
+      - 采购
+      - 供应商
+      - 对账
+      - BOM
+      - 成本
+      - 应付
+    merge_policy: llm_confirm
+- label_id: 合同付款管控
+  label_name: 合同付款管控
+  description: 工程、设备、项目制支出按合同节点付款。 痛点：预付款、进度款、验收款、尾款计划难管。 切入：付款计划、预付核销、合同节点切入。 角色：核心。
+  min_matched_indicators: 1
+  indicators:
+  - indicator_id: 项目合同付款线索
+    indicator_name: 项目合同付款线索
+    evaluator: hybrid
+    standard: 招聘或公开资料出现项目采购、工程付款、合同管理、项目成本。 区分合同节点付款。
+    evidence_hints:
+    - 项目采购
+    - 工程付款
+    - 合同管理
+    - 项目成本
+    prompt: '请判断企业是否满足指标：项目合同付款线索。
+
+      任务：判断是否存在按合同/项目节点付款管理。
+
+      matched：合同管理、项目采购、工程付款、项目成本或节点付款明确。
+
+      possible：项目或合同泛线索但付款不明。
+
+      not_matched：无项目/合同付款证据。
+
+      unknown：证据不足。
+
+      禁止推断：不能把所有项目制企业都判付款复杂。
+
+      只能基于结构化证据、招聘证据或权威公开证据判断，不得编造。'
+    data_sources:
+    - type: table
+      op: text_contains
+      description: 来自 xlabel_v2.xlsx 本地证据规则。
+      table: recruitments
+      field: title
+      limit: 50
+      keywords:
+      - 项目采购
+      - 工程付款
+      - 合同管理
+      - 项目成本
+      min_matches: 1
+    rule:
+      source_field: __xlsx_table_only_rule__
+      op: text_contains
+      value:
+      - 项目采购
+      - 工程付款
+      - 合同管理
+      - 项目成本
+    merge_policy: llm_confirm
+- label_id: 跨区域采购协同
+  label_name: 跨区域采购协同
+  description: 全国采购、进口部件、跨境采购、多生产基地。 痛点：跨区域审批、资料和付款回单同步复杂。 切入：统一审批和回单同步切入。 角色：核心。
+  min_matched_indicators: 1
+  indicators:
+  - indicator_id: 跨区跨境采购线索
+    indicator_name: 跨区跨境采购线索
+    evaluator: llm_web
+    standard: 公开或招聘出现全国采购、进口、跨境采购、海外供应商。 本地不足时Web。
+    evidence_hints:
+    - 货物进出口
+    - 技术进出口
+    - 进口
+    - 进出口业务
+    - 自营和代理
+    - 进口采购
+    - 海外采购
+    - 供应链
+    - 采购经理
+    - 采购工程师
+    - 供应商开发
+    - '{company_name} 进口 部件 供应商'
+    prompt: '请判断企业是否满足指标：跨区跨境采购线索。
+
+      标准：公开或招聘出现全国采购、进口、跨境采购、海外供应商。 本地不足时Web。
+
+      证据不足时返回 unknown 或 possible；不得用行业常识直接推断为 matched。'
+    data_sources:
+    - type: field
+      op: contains_any
+      description: 来自 xlabel_v2.xlsx 本地证据规则。
+      path: business_scope
+      keywords:
+      - 货物进出口
+      - 技术进出口
+      - 进口
+      - 进出口业务
+      - 自营和代理
+      min_matches: 1
+    - type: table
+      op: text_contains
+      description: 来自 xlabel_v2.xlsx 本地证据规则。
+      table: recruitments
+      field: title
+      limit: 50
+      keywords:
+      - 进口采购
+      - 海外采购
+      - 供应链
+      - 采购经理
+      - 采购工程师
+      - 供应商开发
+      min_matches: 1
+    web_search:
+      when: rule_not_matched
+      effect: llm_evidence
+      fixed_queries:
+      - '{company_name} 进口 部件 供应商'
+      - '{company_name} 全球采购 跨境采购'
+      auto:
+        enabled: false
+        max_queries: 0
+        intent: 已有本地/规则线索不足时再补Web；不要在全量批次中扩展低命中泛查询。
+      max_auto_rounds: 0
+      max_results: 5
+- label_id: 公开供应商合作
+  label_name: 公开供应商合作
+  description: 公开资料能看到供应商、合作伙伴或供应链生态。 痛点：供应链协同和付款对账复杂度更可信。 切入：只作为采购复杂度增强证据，需与采购/合同/跨区付款场景共同使用。 角色：增强（不单独成推荐理由）。
+  min_matched_indicators: 1
+  indicators:
+  - indicator_id: 供应商合作伙伴公开线索
+    indicator_name: 供应商合作伙伴公开线索
+    evaluator: llm_web
+    standard: 官网/年报/展会材料出现供应商、合作伙伴、供应链生态。 仅增强，不作为唯一核心。
+    evidence_hints:
+    - '{company_name} 供应商 合作伙伴'
+    - '{company_name} 供应链 采购 合作'
+    - 默认不自动扩查询；优先使用固定高意图查询，避免真实批量运行中单家公司触发过多低命中搜索。
+    prompt: '请判断企业是否满足指标：供应商合作伙伴公开线索。
+
+      标准：官网/年报/展会材料出现供应商、合作伙伴、供应链生态。 仅增强，不作为唯一核心。
+
+      证据不足时返回 unknown 或 possible；不得用行业常识直接推断为 matched。'
+    web_search:
+      when: insufficient
+      effect: llm_evidence
+      fixed_queries:
+      - '{company_name} 供应商 合作伙伴'
+      - '{company_name} 供应链 采购 合作'
+      auto:
+        enabled: false
+        max_queries: 0
+        intent: 默认不自动扩查询；优先使用固定高意图查询，避免真实批量运行中单家公司触发过多低命中搜索。
+      max_auto_rounds: 0
+      max_results: 5
 marketing_points:
-  对公付款需求多:
-    recommendation: ""
-    sale_rule: ""
+  采购复杂付款:
+    recommendation: 企业存在“采购品类多、供应商分散、付款频繁。”场景，建议沟通对公报账。
+    sale_rule: 围绕“采购订单、到货验收、发票和付款匹配复杂。”确认当前人工处理方式、系统覆盖和管理成本。
     kyc_questions:
-      - 了解企业对公付款是否通过ERP来管理。
-      - 了解企业怎样管理供应商、合同和付款计划？是否需要做付款提醒？
-      - 了解企业是否存在预付和核销的情况？财务是否记录一个预付台账，及时提醒完成核销操作
-      - 了解企业付款申请怎样管理，是否有系统管理。是否出现付款不及时的情况
-      - 了解企业付款审批完后怎样支付费用？有没有存在付错款的情况（关注云直联需求）
-      - 了解企业采购员是否经常要问财务支付状态，并且要照财务要支付回单，发给供应商？
+    - 采购付款是否涉及多品类、多供应商、多批次到货或预付款？
+    - 付款申请是否需要匹配合同、订单、入库、验收和发票？
+    - 采购对账差异、付款进度和供应商催款现在由谁跟进？
+  合同付款管控:
+    recommendation: 企业存在“工程、设备、项目制支出按合同节点付款。”场景，建议沟通对公报账。
+    sale_rule: 围绕“预付款、进度款、验收款、尾款计划难管。”确认当前人工处理方式、系统覆盖和管理成本。
+    kyc_questions:
+    - 合同是否约定预付、进度款、验收款、质保金等分阶段付款？
+    - 付款节点是否能自动提醒并校验合同余额、发票和验收材料？
+    - 合同变更、超合同付款或无合同付款目前如何管控？
+  跨区域采购协同:
+    recommendation: 企业存在“全国采购、进口部件、跨境采购、多生产基地。”场景，建议沟通对公报账。
+    sale_rule: 围绕“跨区域审批、资料和付款回单同步复杂。”确认当前人工处理方式、系统覆盖和管理成本。
+    kyc_questions:
+    - 不同工厂、区域或事业部是否各自采购同类物料或服务？
+    - 跨区域采购是否需要统一供应商准入、价格和付款流程？
+    - 总部能否实时看到各区域采购申请、到货、发票和付款状态？
+  公开供应商合作:
+    recommendation: 企业存在“公开资料能看到供应商、合作伙伴或供应链生态。”场景，建议沟通对公报账。
+    sale_rule: 围绕“供应链协同和付款对账复杂度更可信。”确认当前人工处理方式、系统覆盖和管理成本。
+    kyc_questions:
+    - 是否有核心供应商、战略合作伙伴或长期框架协议？
+    - 供应商对账、付款排期和发票催收是否有统一协同入口？
+    - 供应商资料、合同、银行账号变更是否有风控审核流程？
