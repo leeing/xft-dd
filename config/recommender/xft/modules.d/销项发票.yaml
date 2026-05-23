@@ -1,255 +1,434 @@
 module_id: 销项发票
 module_name: 销项发票
-priority: 50
-base_score: 0
+priority: 42
+base_score: 42
 acceptance_policy:
   levels:
-    - result: 高
-      min_matched_labels: 3
-      conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为高。
-    - result: 中高
-      min_matched_labels: 2
-      conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为中高。
-    - result: 低
-      min_matched_labels: 0
-      conclusion: 企业满足{attributes_number}个属性标签及{indicators_number}个指标，接受度为低。
+  - result: 高
+    min_matched_labels: 3
+    conclusion: 命中高频订单/渠道客户/开票时效/多主体/业财税数字化中3类，且至少包含高频订单或渠道客户之一。
+  - result: 中高
+    min_matched_labels: 2
+    conclusion: 命中高频订单或渠道客户任一核心场景，并额外命中开票时效、多主体或财税系统线索。仅泛销售不构成中高。
+  - result: 低
+    min_matched_labels: 0
+    conclusion: 仅有泛销售线索。
 labels:
-  - label_id: 高频开票
-    label_name: 高频开票
-    description: ""
-    min_matched_indicators: 1
-    indicators:
-      - indicator_id: 行业与产品特性
-        indicator_name: 行业与产品特性
-        evaluator: llm_web
-        standard: 产品终端化与SKU数量：直接面向终端消费者、产品型号/款式多（如家电、家具、服装）的企业，订单更零散，开票频次高。行业开票数据：参考地区税务部门发布的行业平均开票数据。
-        data_sources: []
-        prompt: 请判断企业是否满足指标：行业与产品特性。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 行业与产品特性
-          - 产品终端化与SKU数量
-          - 直接面向终端消费者
-          - 产品型号
-          - 款式多
-          - 如家电
-          - 家具
-          - 服装
-        web_search:
-          fixed_queries:
-            - "{company_name} 产品"
-          auto: false
-      - indicator_id: 销售渠道与客户结构
-        indicator_name: 销售渠道与客户结构
-        evaluator: llm_web
-        standard: 渠道模式：官网、新闻稿中明确有“电商直销”、“线上零售”、“全国经销商网络”等描述。下游客户分散：产品或服务直接面向大量中小企业或个人客户。
-        data_sources: []
-        prompt: 请判断企业是否满足指标：销售渠道与客户结构。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 销售渠道与客户结构
-          - 渠道模式
-          - 官网
-          - 新闻稿中明确有
-          - 电商直销
-          - 线上零售
-          - 全国经销商网络
-          - 等描述
-        web_search:
-          fixed_queries:
-            - "{company_name} 销售"
-            - "{company_name} 客户"
-          auto: false
-      - indicator_id: 供应链与结算模式
-        indicator_name: 供应链与结算模式
-        evaluator: llm_web
-        standard: 下游客户强势：主要客户为大型集团或国企，通常要求“先票后款”或“货票同行”，这会倒逼企业开票必须高效及时。结算周期短：业务具有快消性质，回款周期短，开票是回款前提。
-        data_sources: []
-        prompt: 请判断企业是否满足指标：供应链与结算模式。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 供应链与结算模式
-          - 下游客户强势
-          - 主要客户为大型集团或国企
-          - 通常要求
-          - 先票后款
-          - 货票同行
-          - 这会倒逼企业开票必须高效及时
-          - 结算周期短
-        web_search:
-          fixed_queries:
-            - "{company_name} 供应链"
-            - "{company_name} 结算"
-          auto: false
-      - indicator_id: 政策与试点身份
-        indicator_name: 政策与试点身份
-        evaluator: llm_web
-        standard: “全电发票”试点企业：已纳入试点的企业，其所有交易都需通过数字化发票进行，开票行为完全线上化、频率可视化。数据要素相关试点：被列为数据资源入表或数据资产化试点，其发票数据是核心财税数据源。
-        data_sources: []
-        prompt: 请判断企业是否满足指标：政策与试点身份。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 政策与试点身份
-          - 全电发票
-          - 试点企业
-          - 已纳入试点的企业
-          - 其所有交易都需通过数字化发票进行
-          - 开票行为完全线上化
-          - 频率可视化
-          - 数据要素相关试点
-        web_search:
-          fixed_queries:
-            - "{company_name} 政策"
-            - "{company_name} 试点"
-          auto: false
-      - indicator_id: 招聘与团队配置
-        indicator_name: 招聘与团队配置
-        evaluator: llm_web
-        standard: 持续招聘开票、结算等基础财务岗：频繁发布“开票专员”、“税务会计”、“销售会计”等岗位，且招聘人数多或长期在招。
-        data_sources:
-          - type: table
-            table: recruitments
-            field: title
-            op: text_contains
-            keywords: []
-        prompt: 请判断企业是否满足指标：招聘与团队配置。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 招聘与团队配置
-          - 持续招聘开票
-          - 结算等基础财务岗
-          - 频繁发布
-          - 开票专员
-          - 税务会计
-          - 销售会计
-          - 等岗位
-        web_search:
-          fixed_queries:
-            - "{company_name} 招聘"
-          auto: false
-  - label_id: 数字化投入与阶段
-    label_name: 数字化投入与阶段
-    description: ""
-    min_matched_indicators: 1
-    indicators:
-      - indicator_id: 已启动业财一体化项目
-        indicator_name: 已启动业财一体化项目
-        evaluator: llm_web
-        standard: 公司官网、新闻稿中出现 “业财一体化”、“财务共享中心”、“税务数字化” 等具体项目报道。
-        data_sources: []
-        prompt: 请判断企业是否满足指标：已启动业财一体化项目。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 已启动业财一体化项目
-          - 公司官网
-          - 新闻稿中出现
-          - 业财一体化
-          - 财务共享中心
-          - 税务数字化
-          - 等具体项目报道
-        web_search:
-          fixed_queries:
-            - "{company_name} 业财一体化"
-          auto: false
-      - indicator_id: 核心erp升级_替换中
-        indicator_name: 核心ERP升级/替换中
-        evaluator: llm_web
-        standard: 公司发布与用友、金蝶、SAP等主流厂商的合作新闻，或招聘特定ERP系统（如U9 cloud） 的实施、运维人员-9-10。
-        data_sources: []
-        prompt: 请判断企业是否满足指标：核心ERP升级/替换中。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 核心ERP升级
-          - 替换中
-          - 公司发布与用友
-          - 金蝶
-          - SAP等主流厂商的合作新闻
-          - 或招聘特定ERP系统
-          - 如U9
-          - cloud
-        web_search:
-          fixed_queries:
-            - "{company_name} ERP"
-          auto: false
-      - indicator_id: 招聘与团队配置
-        indicator_name: 招聘与团队配置
-        evaluator: llm_web
-        standard: 财务信息化岗位：招聘“财务系统运维”、“ERP财务模块顾问”等，表明财务流程正在数字化改造中。
-        data_sources:
-          - type: table
-            table: recruitments
-            field: title
-            op: text_contains
-            keywords: []
-        prompt: 请判断企业是否满足指标：招聘与团队配置。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 招聘与团队配置
-          - 财务信息化岗位
-          - 招聘
-          - 财务系统运维
-          - ERP财务模块顾问
-          - 表明财务流程正在数字化改造中
-        web_search:
-          fixed_queries:
-            - "{company_name} 招聘"
-          auto: false
-  - label_id: 多法人主体的企业集团
-    label_name: 多法人主体的企业集团
-    description: ""
-    min_matched_indicators: 1
-    indicators:
-      - indicator_id: 名称与股权
-        indicator_name: 名称与股权
-        evaluator: rule
-        standard: 公司名称常含“集团”、“控股”字样；工商信息显示对外投资了多家子公司（持股≥50%或拥有控制权-3-5）。
-        data_sources:
-          - type: table
-            table: branches
-            field: branch_name
-            op: exists
-        prompt: 请判断企业是否满足指标：名称与股权。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 名称与股权
-          - 公司名称常含
-          - 集团
-          - 控股
-          - 字样
-          - 工商信息显示对外投资了多家子公司
-          - 持股
-          - "50"
-      - indicator_id: 企业图谱
-        indicator_name: 企业图谱
-        evaluator: llm
-        standard: 在商业查询平台中，“企业图谱”或“对外投资”栏显示复杂的控股结构。
-        data_sources: []
-        prompt: 请判断企业是否满足指标：企业图谱。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 企业图谱
-          - 在商业查询平台中
-          - 对外投资
-          - 栏显示复杂的控股结构
-      - indicator_id: 财报合并范围
-        indicator_name: 财报合并范围
-        evaluator: llm_web
-        standard: 上市公司年报的 “合并财务报表范围” 会详尽列出所有重要子公司名录，是金标准-3-4。
-        data_sources: []
-        prompt: 请判断企业是否满足指标：财报合并范围。只能基于证据判断，不得编造。
-        evidence_hints:
-          - 财报合并范围
-          - 上市公司年报的
-          - 合并财务报表范围
-          - 会详尽列出所有重要子公司名录
-          - 是金标准
-        web_search:
-          fixed_queries:
-            - "{company_name} 财报"
-          auto: false
+- label_id: 高频订单开票
+  label_name: 高频订单开票
+  description: 订单多、SKU多、客户频繁下单或快周转。 痛点：开票频次高，人工开票效率低。 切入：订单到开票自动化切入。 角色：核心。
+  min_matched_indicators: 1
+  indicators:
+  - indicator_id: 高频交易产品线索
+    indicator_name: 高频交易产品线索
+    evaluator: hybrid
+    standard: 产品面向终端/渠道/SKU多/快周转，或公开订单频繁。 需同时看到终端/渠道/快周转/订单/电商/经销等至少一类销售侧线索；泛制造、泛销售不得matched。
+    evidence_hints:
+    - 家电
+    - 电器
+    - 食品
+    - 饮料
+    - 日用品
+    - 印刷
+    - 包装
+    - 制冷
+    - 医疗耗材
+    - 消费品
+    - 零售
+    - 批发
+    prompt: '请判断企业是否满足指标：高频交易产品线索。
+
+      任务：判断销售开票频次。
+
+      matched：产品或业务明确面向终端/渠道/电商/经销/快周转，且能合理说明订单或客户开票频次高。
+
+      possible：产品可能高频但只看到制造/销售泛词，客户结构、渠道或订单频次不清。
+
+      not_matched：低频大项目或客户集中。
+
+      unknown：证据不足。
+
+      禁止推断：不能把所有制造企业、所有销售岗位或进出口业务都判为高频开票。
+
+      只能基于结构化证据、招聘证据或权威公开证据判断，不得编造。'
+    data_sources:
+    - type: field
+      op: contains_any
+      description: 来自 xlabel_v2.xlsx 本地证据规则。
+      path: business_scope
+      keywords:
+      - 家电
+      - 电器
+      - 食品
+      - 饮料
+      - 日用品
+      - 印刷
+      - 包装
+      - 制冷
+      - 医疗耗材
+      - 消费品
+      - 零售
+      - 批发
+      - 电商
+      - 电子商务
+      - 经销
+      min_matches: 1
+    - type: field
+      op: contains_any
+      description: 来自 xlabel_v2.xlsx 本地证据规则。
+      path: industry
+      keywords:
+      - 食品
+      - 饮料
+      - 医药
+      - 印刷
+      - 包装
+      - 家具
+      - 家电
+      - 日用品
+      - 消费品
+      - 零售
+      - 批发
+      min_matches: 1
+    - type: table
+      op: text_contains
+      description: 来自 xlabel_v2.xlsx 本地证据规则。
+      table: recruitments
+      field: title
+      limit: 50
+      keywords:
+      - 电商
+      - 客服
+      - 订单
+      - 跟单
+      - 渠道
+      - 区域销售
+      - 销售内勤
+      - 业务员
+      - 外贸业务员
+      - 经销商
+      min_matches: 1
+    rule:
+      source_field: business_scope
+      op: contains_any
+      value:
+      - 家电
+      - 电器
+      - 食品
+      - 饮料
+      - 日用品
+      - 印刷
+      - 包装
+      - 制冷
+      - 医疗耗材
+      - 消费品
+      - 零售
+      - 批发
+      - 电商
+      - 电子商务
+      - 经销
+    merge_policy: llm_confirm
+- label_id: 开票时效压力
+  label_name: 开票时效压力
+  description: 客户要求先票后款、货票同行或开票影响回款。 痛点：开票慢会影响回款和客户交付。 切入：开票时效和回款效率切入。 角色：核心。
+  min_matched_indicators: 1
+  indicators:
+  - indicator_id: 先票后款或货票同行线索
+    indicator_name: 先票后款或货票同行线索
+    evaluator: llm_web
+    standard: 公开资料或行业场景显示先票后款、货票同行、开票影响回款。 独立于票量，解决回款时效。
+    evidence_hints:
+    - '{company_name} 先票后款 货票同行 回款'
+    - '{company_name} 客户结算 开票 回款'
+    - 已有本地/规则线索不足时再补Web；不要在全量批次中扩展低命中泛查询。
+    prompt: '请判断企业是否满足指标：先票后款或货票同行线索。
+
+      任务：判断开票是否影响回款或交付时效。
+
+      matched：先票后款、货票同行、开票后回款或客户强结算要求明确。
+
+      possible：存在销售结算但开票时效关系不明。
+
+      not_matched：无开票影响回款证据。
+
+      unknown：证据不足。
+
+      禁止推断：不要把票量和时效压力混为一谈。
+
+      只能基于结构化证据、招聘证据或权威公开证据判断，不得编造。'
+    web_search:
+      when: rule_not_matched
+      effect: llm_evidence
+      fixed_queries:
+      - '{company_name} 先票后款 货票同行 回款'
+      - '{company_name} 客户结算 开票 回款'
+      auto:
+        enabled: false
+        max_queries: 0
+        intent: 已有本地/规则线索不足时再补Web；不要在全量批次中扩展低命中泛查询。
+      max_auto_rounds: 0
+      max_results: 5
+- label_id: 渠道客户分散
+  label_name: 渠道客户分散
+  description: 经销商、代理商、电商、终端客户分散。 痛点：客户开票需求多样，回款依赖开票。 切入：渠道客户开票和回款效率切入。 角色：核心。
+  min_matched_indicators: 1
+  indicators:
+  - indicator_id: 渠道客户线索
+    indicator_name: 渠道客户线索
+    evaluator: hybrid
+    standard: 经销商、代理商、电商、直营网点、区域销售等证据。 招聘和产品信息本地可判，渠道网络Web补证。
+    evidence_hints:
+    - 经销商
+    - 代理商
+    - 电商
+    - 直营网点
+    - 区域销售
+    - 渠道
+    - 批发
+    - 零售
+    - 经销
+    - 代理
+    - 电子商务
+    - 国内贸易
+    prompt: '请判断企业是否满足指标：渠道客户线索。
+
+      标准：经销商、代理商、电商、直营网点、区域销售等证据。 招聘和产品信息本地可判，渠道网络Web补证。
+
+      证据不足时返回 unknown 或 possible；不得用行业常识直接推断为 matched。'
+    data_sources:
+    - type: table
+      op: text_contains
+      description: 来自 xlabel_v2.xlsx 本地证据规则。
+      table: recruitments
+      field: title
+      limit: 50
+      keywords:
+      - 经销商
+      - 代理商
+      - 电商
+      - 直营网点
+      - 区域销售
+      - 渠道
+      min_matches: 1
+    - type: field
+      op: contains_any
+      description: 来自 xlabel_v2.xlsx 本地证据规则。
+      path: business_scope
+      keywords:
+      - 批发
+      - 零售
+      - 经销
+      - 代理
+      - 电商
+      - 电子商务
+      - 国内贸易
+      - 货物进出口
+      min_matches: 1
+    rule:
+      source_field: __xlsx_table_only_rule__
+      op: text_contains
+      value:
+      - 经销商
+      - 代理商
+      - 电商
+      - 直营网点
+      - 区域销售
+      - 渠道
+    merge_policy: llm_confirm
+- label_id: 业财税数字化
+  label_name: 业财税数字化
+  description: ERP、业财一体化、财务共享、税务数字化项目。 痛点：开票、回款、财务凭证需系统打通。 切入：业财税一体化接口和流程切入。 角色：核心。
+  min_matched_indicators: 1
+  indicators:
+  - indicator_id: 业财ERP税务项目
+    indicator_name: 业财ERP税务项目
+    evaluator: llm_web
+    standard: 公开资料出现业财一体化、ERP、财务共享、税务数字化。 泛ERP不直接matched。
+    evidence_hints:
+    - '{company_name} 业财一体化 ERP 税务数字化'
+    - '{company_name} 财务共享 开票 系统'
+    - 已有本地/规则线索不足时再补Web；不要在全量批次中扩展低命中泛查询。
+    prompt: '请判断企业是否满足指标：业财ERP税务项目。
+
+      任务：判断数字化项目是否与财税/开票相关。
+
+      matched：业财一体化、ERP财务、税务数字化、财务共享、开票系统明确。
+
+      possible：仅泛数字化或IT建设。
+
+      not_matched：无财税系统相关证据。
+
+      unknown：证据不足。
+
+      禁止推断：不能把泛ERP合作直接等同于销项发票需求。
+
+      只能基于结构化证据、招聘证据或权威公开证据判断，不得编造。'
+    web_search:
+      when: rule_not_matched
+      effect: llm_evidence
+      fixed_queries:
+      - '{company_name} 业财一体化 ERP 税务数字化'
+      - '{company_name} 财务共享 开票 系统'
+      auto:
+        enabled: false
+        max_queries: 0
+        intent: 已有本地/规则线索不足时再补Web；不要在全量批次中扩展低命中泛查询。
+      max_auto_rounds: 0
+      max_results: 5
+  - indicator_id: 财务系统岗位线索
+    indicator_name: 财务系统岗位线索
+    evaluator: hybrid
+    standard: 招聘财务系统运维、ERP财务模块顾问、税务系统、开票系统。 招聘可本地判。
+    evidence_hints:
+    - 财务系统
+    - ERP
+    - 税务系统
+    - 开票系统
+    - 财务模块
+    prompt: '请判断企业是否满足指标：财务系统岗位线索。
+
+      标准：招聘财务系统运维、ERP财务模块顾问、税务系统、开票系统。 招聘可本地判。
+
+      证据不足时返回 unknown 或 possible；不得用行业常识直接推断为 matched。'
+    data_sources:
+    - type: table
+      op: text_contains
+      description: 来自 xlabel_v2.xlsx 本地证据规则。
+      table: recruitments
+      field: title
+      limit: 50
+      keywords:
+      - 财务系统
+      - ERP
+      - 税务系统
+      - 开票系统
+      - 财务模块
+      min_matches: 1
+    rule:
+      source_field: __xlsx_table_only_rule__
+      op: text_contains
+      value:
+      - 财务系统
+      - ERP
+      - 税务系统
+      - 开票系统
+      - 财务模块
+    merge_policy: llm_confirm
+- label_id: 多主体开票管控
+  label_name: 多主体开票管控
+  description: 集团、多法人、多销售主体。 痛点：开票主体、税号、额度和风险统一管控。 切入：集团销项开票集中管控切入。 角色：核心。
+  min_matched_indicators: 1
+  indicators:
+  - indicator_id: 多主体销售组织
+    indicator_name: 多主体销售组织
+    evaluator: hybrid
+    standard: 多法人、多分支、多销售主体或集团集中开票诉求。 共享多主体口径。
+    evidence_hints:
+    - 多法人
+    - 多分支
+    - 多销售主体或集团集中开票诉求
+    - 共享多主体口径
+    prompt: '请判断企业是否满足指标：多主体销售组织。
+
+      标准：多法人、多分支、多销售主体或集团集中开票诉求。 共享多主体口径。
+
+      证据不足时返回 unknown 或 possible；不得用行业常识直接推断为 matched。'
+    data_sources:
+    - type: field
+      op: '>='
+      description: 来自 xlabel_v2.xlsx 本地证据规则。
+      path: branch_count
+      value: 3
+    - type: field
+      op: '>='
+      description: 来自 xlabel_v2.xlsx 本地证据规则。
+      path: outbound_investment_count
+      value: 3
+    rule:
+      source_field: branch_count
+      op: '>='
+      value: 3
+    merge_policy: llm_confirm
+- label_id: 政策试点身份
+  label_name: 政策试点身份
+  description: 全电发票、数电票、数据要素等官方试点身份。 痛点：政策试点会提高开票数字化要求。 切入：仅作为有官方证据时的增强切入。 角色：增强（不单独成推荐理由）。
+  min_matched_indicators: 1
+  indicators:
+  - indicator_id: 全电发票试点证据
+    indicator_name: 全电发票试点证据
+    evaluator: llm_web
+    standard: 官方/税局/企业公告显示全电发票、数电票等试点。 泛新闻不能matched。
+    evidence_hints:
+    - '{company_name} 全电发票 试点'
+    - '{company_name} 数电票 电子发票 税局'
+    - 保留高意图自动扩查询，但建议批量运行时进入候选模块后再触发；若未实现候选阶段，max_auto_rounds应限制为1。
+    prompt: '请判断企业是否满足指标：全电发票试点证据。
+
+      任务：判断是否有官方试点身份。
+
+      matched：税局/官方/企业公告明确全电发票、数电票试点。
+
+      possible：有政策宣传但未指向企业。
+
+      not_matched：无企业试点证据。
+
+      unknown：证据不足。
+
+      禁止推断：泛新闻或政策解读不能matched。
+
+      只能基于结构化证据、招聘证据或权威公开证据判断，不得编造。'
+    web_search:
+      when: always
+      effect: llm_evidence
+      fixed_queries:
+      - '{company_name} 全电发票 试点'
+      - '{company_name} 数电票 电子发票 税局'
+      auto:
+        enabled: true
+        max_queries: 1
+        intent: 保留高意图自动扩查询，但建议批量运行时进入候选模块后再触发；若未实现候选阶段，max_auto_rounds应限制为1。
+      max_auto_rounds: 1
+      max_results: 5
 marketing_points:
-  高频开票:
-    recommendation: ""
-    sale_rule: ""
+  高频订单开票:
+    recommendation: 企业存在“订单多、SKU多、客户频繁下单或快周转。”场景，建议沟通销项发票。
+    sale_rule: 围绕“开票频次高，人工开票效率低。”确认当前人工处理方式、系统覆盖和管理成本。
     kyc_questions:
-      - 了解企业的下游客户是B端企业还是面向终端消费者，销售模式是经销商模式还是电商直销，平时是通过什么系统开票的，是否有什么痛点？如果是电商直销，一般电商平台配套销项发票，没有太多的营销机会。
-  数字化投入与阶段:
-    recommendation: ""
-    sale_rule: ""
+    - 订单是否高频、小额、多SKU或多渠道，开票申请量是否集中爆发？
+    - 订单、出库、收款和开票是否能自动匹配，还是人工逐单开票？
+    - 月底、促销或大客户结算时，开票排队和错票率是否明显上升？
+  开票时效压力:
+    recommendation: 企业存在“客户要求先票后款、货票同行或开票影响回款。”场景，建议沟通销项发票。
+    sale_rule: 围绕“开票慢会影响回款和客户交付。”确认当前人工处理方式、系统覆盖和管理成本。
     kyc_questions:
-      - 了解企业的销售开票，是财务同事手动登录电子税务局操作，还是已经和业务系统（比如ERP）打通，能自动开票了？是否具备研发能力打通自动开票。
-  多法人主体的企业集团:
-    recommendation: ""
-    sale_rule: ""
+    - 客户是否要求先开票、到货即开票或开票后才安排回款？
+    - 开票申请从业务提交到财务开票平均需要多久？
+    - 错票、红冲、重开是否会影响客户验收、对账或回款节点？
+  渠道客户分散:
+    recommendation: 企业存在“经销商、代理商、电商、终端客户分散。”场景，建议沟通销项发票。
+    sale_rule: 围绕“客户开票需求多样，回款依赖开票。”确认当前人工处理方式、系统覆盖和管理成本。
     kyc_questions:
-      - 了解集团旗下各分子公司的销项发票，目前是各公司财务自己管理，还是由集团总部统一管理的。“分散管理”且存在数据汇总难、风险看不见等痛点，它就是高潜力客户。集中管理，但是切换账号登录电子税务局系统查看，操作复杂，它也是高潜力客户。
+    - 经销商、代理商、门店或终端客户数量是否较多且开票信息分散？
+    - 客户抬头、税号、地址电话、银行账号变更如何维护和审核？
+    - 不同渠道客户的开票规则、账期和对账方式是否一致？
+  业财税数字化:
+    recommendation: 企业存在“ERP、业财一体化、财务共享、税务数字化项目。”场景，建议沟通销项发票。
+    sale_rule: 围绕“开票、回款、财务凭证需系统打通。”确认当前人工处理方式、系统覆盖和管理成本。
+    kyc_questions:
+    - 销售订单、ERP、财务系统和开票系统之间是否已经打通？
+    - 业务提交开票时，财务是否还需要重复录入客户、商品和金额？
+    - 未来是否计划做数电票、自动开票、自动归档或税务数据看板？
+  多主体开票管控:
+    recommendation: 企业存在“集团、多法人、多销售主体。”场景，建议沟通销项发票。
+    sale_rule: 围绕“开票主体、税号、额度和风险统一管控。”确认当前人工处理方式、系统覆盖和管理成本。
+    kyc_questions:
+    - 集团内不同法人是否分别开票，客户是否指定开票主体？
+    - 跨主体销售、代销或项目分摊时，收入和开票主体如何校验？
+    - 各主体发票额度、税盘/数电账号、红冲权限是否集中管控？
+  政策试点身份:
+    recommendation: 企业存在“全电发票、数电票、数据要素等官方试点身份。”场景，建议沟通销项发票。
+    sale_rule: 围绕“政策试点会提高开票数字化要求。”确认当前人工处理方式、系统覆盖和管理成本。
+    kyc_questions:
+    - 是否已经接入数电票/全电发票，或收到税局相关试点通知？
+    - 数电票上线后，开票、交付、归档和客户接收流程是否改变？
+    - 历史纸票/电票和数电票数据是否需要统一查询、统计和风控？

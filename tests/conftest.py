@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Generator
 
 import pytest
+from xft.ai.chat_json import reset_llm_rate_limiter
 from xft.ai.client import reset_ai_client
 from xft.settings import settings
 
@@ -13,8 +14,10 @@ from xft.settings import settings
 def reset_openai_client() -> Generator[None, None, None]:
     """Reset the AsyncOpenAI singleton before and after each test for isolation."""
     reset_ai_client()
+    reset_llm_rate_limiter()
     yield
     reset_ai_client()
+    reset_llm_rate_limiter()
 
 
 @pytest.fixture(autouse=True)

@@ -13,9 +13,8 @@ from typing import Any
 from openai import OpenAIError
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
-from xft.ai.chat_json import create_json_chat_completion
+from xft.ai.chat_json import create_json_chat_completion, parse_json_object_with_repair
 from xft.ai.client import get_ai_client
-from xft.ai.json_extractor import extract_json
 from xft.core.search_models import SearchItem, make_item_id
 from xft.pipeline.recommender.evidence_loader import indicator_key
 from xft.pipeline.recommender.models import (
@@ -526,7 +525,6 @@ async def _plan_auto_queries_with_llm(  # noqa: PLR0913
 ) -> list[str]:
     if not (settings.llm_api_key or settings.minimax_api_key):
         return []
-    display.info(f"  LLM 自动生成搜索词: {indicator.indicator_name}")
     system = (
         "你是企业推荐系统的Web搜索词规划器。"
         "只输出JSON，字段为queries。"
@@ -565,15 +563,25 @@ async def _plan_auto_queries_with_llm(  # noqa: PLR0913
             timeout=30,
         )
         raw = resp.choices[0].message.content or "{}"
-        parsed = _AutoQueryPayload.model_validate(json.loads(extract_json(raw)))
+        parsed_payload, _, _ = await parse_json_object_with_repair(
+            client=client,
+            raw=raw,
+            model=settings.llm_model,
+            timeout=30,
+            target_description="Web搜索词规划结果，字段为 queries。",
+        )
+        parsed = _AutoQueryPayload.model_validate(parsed_payload)
     except (OpenAIError, json.JSONDecodeError, ValidationError, OSError, RuntimeError, TypeError, ValueError):
         return []
-    return _indicatorized_queries(
+    rendered = _indicatorized_queries(
         company_name=company_name,
         indicator=indicator,
         queries=[query.strip() for query in parsed.queries if query.strip()],
         max_queries=max_queries,
     )
+    if rendered:
+        display.info(f"  LLM 为 [{indicator.indicator_name}] 生成搜索词: {rendered}")
+    return rendered
 
 
 def _result_evidence(query_row: dict[str, Any], rows: list[dict[str, Any]]) -> list[dict[str, Any]]:

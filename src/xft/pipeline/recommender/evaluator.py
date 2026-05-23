@@ -11,9 +11,8 @@ from typing import Any, cast
 from openai import OpenAIError
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
-from xft.ai.chat_json import create_json_chat_completion
+from xft.ai.chat_json import create_json_chat_completion, parse_json_object_with_repair
 from xft.ai.client import get_ai_client
-from xft.ai.json_extractor import extract_json
 from xft.ai.llm_trace import (
     exception_summary,
     llm_event,
@@ -661,7 +660,14 @@ async def _evaluate_llm_indicator(  # noqa: PLR0913
             timeout=LLM_TIMEOUT_SECONDS,
         )
         raw = resp.choices[0].message.content or "{}"
-        parsed = _LlmIndicatorPayload.model_validate(json.loads(extract_json(raw)))
+        parsed_payload, parsed_raw, json_repaired = await parse_json_object_with_repair(
+            client=client,
+            raw=raw,
+            model=settings.llm_model,
+            timeout=LLM_TIMEOUT_SECONDS,
+            target_description="业务指标判断结果，字段为 result、confidence、current_status、evidence。",
+        )
+        parsed = _LlmIndicatorPayload.model_validate(parsed_payload)
     except (OpenAIError, json.JSONDecodeError, ValidationError, OSError, RuntimeError, TypeError, ValueError) as exc:
         llm_events.append(
             llm_event(
@@ -694,11 +700,15 @@ async def _evaluate_llm_indicator(  # noqa: PLR0913
             status="success",
             elapsed_seconds=perf_counter() - started,
             request=request_summary,
-            response_preview=preview_text(raw),
-            response_text=raw,
+            response_preview=preview_text(parsed_raw),
+            response_text=parsed_raw,
             system_prompt=system,
             user_payload=payload,
-            parameters={"temperature": 0.0, "timeout_seconds": LLM_TIMEOUT_SECONDS},
+            parameters={
+                "temperature": 0.0,
+                "timeout_seconds": LLM_TIMEOUT_SECONDS,
+                "json_repaired": json_repaired,
+            },
             result=parsed.result,
             confidence=parsed.confidence,
         )
